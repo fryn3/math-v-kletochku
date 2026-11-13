@@ -30,6 +30,13 @@
   --cell: 22px;
   color-scheme: light;
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #11151d; --grid: rgba(130, 155, 225, 0.075); --card: #181d28; --ink: #e5e9f2; --muted: #9aa3b6;
+    --line: #2a3142; --pen: #8ea6ff; --pen-soft: rgba(142, 166, 255, 0.10); --red: #ff8273; --red-soft: rgba(255, 130, 115, 0.09);
+    --green: #63d396; --green-soft: rgba(99, 211, 150, 0.10); --shade: #5d76d8; color-scheme: dark;
+  }
+}
 :root[data-theme="dark"] {
   --paper: #11151d; --grid: rgba(130, 155, 225, 0.075); --card: #181d28; --ink: #e5e9f2; --muted: #9aa3b6;
   --line: #2a3142; --pen: #8ea6ff; --pen-soft: rgba(142, 166, 255, 0.10); --red: #ff8273; --red-soft: rgba(255, 130, 115, 0.09);
@@ -59,6 +66,11 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid 
 .brand { font: 700 1.05rem/1.2 var(--f-display); color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
 .brand b { color: var(--pen); font-weight: 700; }
 .top nav { display: flex; gap: 16px; font-size: 0.95rem; }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.theme { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.theme button { font: 500 0.82rem/1 var(--f-body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.theme button:hover { color: var(--ink); }
+.theme button[aria-pressed="true"], .theme button[aria-pressed="true"]:hover { background: var(--pen); color: var(--card); }
 main { padding-block: 8px 56px; }
 
 h1, h2, h3 { font-family: var(--f-display); font-weight: 700; line-height: 1.2; text-wrap: balance; letter-spacing: -0.01em; overflow-wrap: break-word; hyphens: auto; }
@@ -175,20 +187,31 @@ footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media print {
   body { background: #fff; color: #000; font-size: 12pt; }
-  .top nav, .tasks, .pager, footer, .progress { display: none !important; }
+  .tools, .tasks, .pager, footer, .progress { display: none !important; }
   .sheet section, .toc section { border-color: #999; }
 }
 </style>
+<script>
+  /* Сохранённая тема применяется до отрисовки, чтобы страница не мигала. */
+  try { var t = localStorage.getItem('mvk-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 </head>
 <body>
 
 <div class="wrap" lang="ru">
   <header class="top">
     <a class="brand" href="#">Математика <b>в клеточку</b></a>
-    <nav aria-label="Разделы">
-      <a href="#">Оглавление</a>
-      <a href="#shpargalka">Шпаргалка</a>
-    </nav>
+    <div class="tools">
+      <nav aria-label="Разделы">
+        <a href="#">Оглавление</a>
+        <a href="#shpargalka">Шпаргалка</a>
+      </nav>
+      <div class="theme" id="theme" role="group" aria-label="Тема оформления">
+        <button type="button" data-mode="auto" aria-pressed="true" title="Как в системе">Авто</button>
+        <button type="button" data-mode="light" aria-pressed="false">Светлая</button>
+        <button type="button" data-mode="dark" aria-pressed="false">Тёмная</button>
+      </div>
+    </div>
   </header>
   <main id="app" aria-live="polite">
     <p>Загружаю темы…</p>
