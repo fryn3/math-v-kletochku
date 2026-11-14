@@ -36,6 +36,11 @@ You make ONE lesson of the Papermorph lesson book «Математика в кл
 - An answer in a fixed form (a mixed number, an improper fraction, a decimal) gets separate boxes (whole part and fraction; numerator and denominator), like ch13's `q4`. `lowest: true` demands lowest terms and rejects a decimal. Decimals are typed with a comma or a point; both are accepted.
 - An opening where nothing moves for 4 s or more reads as a frozen picture: put the subject on the board at once, reveal the rest on the words, and split a long line that is said in parts («17 : 5 =», «3», «(ост. 2)») across marks.
 - When pieces move (dealt, grouped, slid), the motion must be true: the count, the size and the place agree with the narration at every moment.
+- `pulse()` on a `klRow` or `klMath` group scales about the stage origin, because those groups sit at 0,0: wrap the row in `G(p, {x, y})` first. A colour tween on a `klMath` group throws (the group has no fill): fade in a coloured copy instead.
+- The answer box takes numbers only: an answer that is a word, a Roman numeral or an expression is a choice. A side card (`{x: 820, y: 220, w: 700, cls: 'side'}`, as in ch09 `q3`) passes the layout check.
+- Shoot the intro at `intro:sub+1`: at `intro:end` it has already faded out. Re-shoot the sheet after your last layout fix.
+- `check.py` in Chromium may print one console warning, «Did not find element expected to be parsed from: <link rel=expect href="#bar">»: it comes from the engine's head (approved ch13 has it too) and is not yours to fix.
+- Finished lessons hold helpers worth copying under your own prefix (list in `chapters.md`, «Кандидаты в общую библиотеку»): read the one you need, not the whole page.
 
 ## Check before you report
 

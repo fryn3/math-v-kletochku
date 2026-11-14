@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чётные и нечётные числа · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 2.4 «Чётные и нечётные числа» (5–6 класс). Beat ids match papermorph/content/uroki/ch12/narration.ru.json.
+const CHAPTER = { number: 12, label: '2.4', title: 'Чётные и нечётные числа', minutes: 7, language: 'ru', next: '../ch13/' };
+
+// Colours of this topic: a dot that has a partner (and the word «чётное») — KL.DEN; the lone dot without a partner
+// (the remainder 1, as in topic 1.4, and the word «нечётное») — KL.NUM; rules — KL.RULE.
+const EVEN = KL.DEN, ODD = KL.NUM, RULE = KL.RULE;
+
+/* ---------- dots set out in pairs ---------- */
+// Dot i of a number sits in column ⌊i/2⌋, row i mod 2 from (x0, y0): every column is a pair, and an odd number's last
+// dot is alone at the top of the last column.
+const c12Pos = (x0, y0, step = 60) => i => [x0 + Math.floor(i / 2) * step, y0 + (i % 2) * step];
+// n dots, each a group (move it with tw x, y) holding a circle _c (recolour it with tw c_fill). at(i) gives the start
+// place (default: the pair layout); colour(i) the fill. Hidden until t0 (no t0: shown at once).
+function c12Dots(p, n, at, t0, { r = 16, colour = () => COL.chalk, step = .05 } = {}) {
+  return Array.from({ length: n }, (_, i) => {
+    const [x, y] = at(i), g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+    g._c = mk('circle', { r, fill: colour(i), stroke: COL.board, 'stroke-width': 2.5 }, g);
+    if (t0 !== undefined) tw(g, { o: 1 }, t0 + i * step, .3);
+    return g;
+  });
+}
+// Fill colours for the pair layout: partners EVEN, the lone last dot of an odd n ODD.
+const c12Col = n => i => (n % 2 && i === n - 1) ? ODD : EVEN;
+// Recolour dots at t (one after another, step apart).
+const c12Tint = (dots, fill, t, step = 0, move = tw) => dots.forEach((d, i) => move(d._c, { c_fill: fill }, t + i * step, .35));
+// A rounded outline round a pair (a column of the pair layout at x, rows y and y + step), drawn on at t0.
+function c12Pair(p, x, y, t0, { step = 60, r = 16, col = EVEN } = {}) {
+  const k = r + 9, w = 2 * k, h = step + 2 * k, x0 = x - k, y0 = y - k;
+  const d = `M${x0 + k} ${y0}H${x0 + w - k}A${k} ${k} 0 0 1 ${x0 + w} ${y0 + k}V${y0 + h - k}A${k} ${k} 0 0 1 ${x0 + w - k} ${y0 + h}` +
+    `H${x0 + k}A${k} ${k} 0 0 1 ${x0} ${y0 + h - k}V${y0 + k}A${k} ${k} 0 0 1 ${x0 + k} ${y0}Z`;
+  const e = path(p, d, { stroke: col, 'stroke-width': 2.5, 'stroke-opacity': .7 }, { d: 0 });
+  if (t0 !== undefined) draw(e, t0, .4);
+  return e;
+}
+// A ring round the point (x, y), drawn on at t0 (the lone dot).
+function c12Ring(p, x, y, r, t0, col = ODD) {
+  const e = path(p, `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`, { stroke: col, 'stroke-width': 3.5 }, { d: 0 });
+  draw(e, t0, .45);
+  return e;
+}
+// A dashed arc over two dots that join into a pair (they stay in their places), drawn on at t0.
+function c12Link(p, x1, x2, y, t0, lift = 80) {
+  const e = path(p, `M${x1} ${y - 22}Q${(x1 + x2) / 2} ${y - lift} ${x2} ${y - 22}`, { stroke: EVEN, 'stroke-width': 3.5, 'stroke-dasharray': '9 8' }, { d: 0 });
+  draw(e, t0, .5);
+  return e;
+}
+
+/* ---------- words «чётное» / «нечётное» in their colours ---------- */
+// A line of the words: 'ч' → «чётное» (EVEN), 'н' → «нечётное» (ODD), anything else as written in chalk.
+function c12Par(p, list, x, y, t0, { size = 34, anchor = 'middle', weight = 600 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), inner = G(g);
+  let cx = 0;
+  for (const it of list) {
+    const [str, fill] = it === 'ч' ? ['чётное', EVEN] : it === 'н' ? ['нечётное', ODD] : [it, COL.chalk];
+    T(inner, str, { x: cx, y, size, fill, weight });
+    cx += klW(str, size, weight);
+  }
+  put(inner, { x: x - (anchor === 'middle' ? cx / 2 : anchor === 'end' ? cx : 0) });
+  g._w = cx;
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+
+/* ---------- number cards and coins ---------- */
+// A card w × h centred on (cx, cy) with a number: _fill (hidden, bring in with o), _frame, _t.
+function c12Card(p, cx, cy, w, h, label, t0, { size = 52, col = COL.chalk } = {}) {
+  const g = G(p, { x: cx, y: cy, o: t0 === undefined ? 1 : 0 });
+  g._fill = put(mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 14, fill: col, 'fill-opacity': .3 }, g), { o: 0 });
+  g._frame = mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 14, fill: 'none', stroke: col, 'stroke-width': 3 }, g);
+  g._t = T(g, String(label), { x: 0, y: size * .35, size, fill: COL.chalk, font: MATH, anchor: 'middle', weight: 600 });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+// A coin of radius r at (x, y) worth `label` roubles: _t is the number (recolour it with c_fill).
+function c12Coin(p, x, y, r, label, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('circle', { r, fill: '#c9a45c', 'fill-opacity': .22, stroke: '#d8b56a', 'stroke-width': 4 }, g);
+  mk('circle', { r: r - 9, fill: 'none', stroke: '#d8b56a', 'stroke-width': 1.5, 'stroke-opacity': .6 }, g);
+  g._t = T(g, label, { x: 0, y: r * .36, size: r * .95, fill: COL.chalk, font: MATH, anchor: 'middle', weight: 700 });
+  if (t0 !== undefined) tw(g, { o: 1 }, t0, .3);
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Чётные и нечётные числа', (m, D) => klIntro(m, D, {
+    unit: 'Глава 2 · Делимость · Тема 2.4',
+    title: 'Чётные и нечётные числа',
+    sub: 'Как по чётности угадать ответ, ничего не вычисляя',
+    art: (g, t0) => {
+      const pos = c12Pos(710, 590);
+      c12Dots(g, 7, pos, t0, { colour: c12Col(7), step: .08 });
+      [0, 1, 2].forEach(k => c12Pair(g, 710 + k * 60, 590, t0 + .7 + k * .15));
+      c12Ring(g, 890, 590, 28, t0 + 1.3);
+    },
+  })],
+
+  ['pairs', 'Пары', m => {
+    const p = panel(0);
+    klTitle(p, 'Чётное и нечётное', 'У каждой точки есть пара?');
+    // Eight dots in a row pair up into four columns; nine dots make four pairs and one dot is left alone.
+    const P8 = c12Pos(295, 300, 70), P9 = c12Pos(1060, 300, 70);
+    const d8 = c12Dots(p, 8, i => [130 + i * 76, 300], .2, { step: .06 });
+    d8.forEach((d, i) => { const [x, y] = P8(i); tw(d, { x, y }, m('pair', i * .06), .7, io); });
+    c12Tint(d8, EVEN, m('pair', .5), .04);
+    [0, 1, 2, 3].forEach(k => c12Pair(p, 295 + k * 70, 300, m('pair', 1 + k * .15), { step: 70 }));
+    klMath(p, ['8 : 2 = 4'], 400, 520, m('even'), { size: 60 });
+    klText(p, 'чётное', 400, 600, m('even', .3), { size: 38, fill: EVEN, weight: 700, anchor: 'middle' });
+    const d9 = c12Dots(p, 9, i => [900 + i * 76, 300], m('nine'), { step: .06 });
+    d9.forEach((d, i) => { const [x, y] = P9(i); tw(d, { x, y }, m('pair9', i * .06), .7, io); });
+    c12Tint(d9.slice(0, 8), EVEN, m('pair9', .5), .04);
+    [0, 1, 2, 3].forEach(k => c12Pair(p, 1060 + k * 70, 300, m('pair9', 1 + k * .15), { step: 70 }));
+    c12Tint([d9[8]], ODD, m('lone'));
+    pulse(d9[8], m('lone', .2), 1.6);
+    c12Ring(p, 1340, 300, 30, m('lone', .3));
+    pulse(d9[8], m('rule', 3.6), 1.6);
+    klRow(p, [{ m: '9 : 2 = 4 ' }, { m: '(ост. 1)', fill: ODD }], 1200, 520, m('odd'), { size: 44, msize: 60 });
+    klText(p, 'нечётное', 1200, 600, m('odd', .3), { size: 38, fill: ODD, weight: 700, anchor: 'middle' });
+    klRow(p, ['остаток при делении на ', { m: '2' }, ' — либо ', { m: '0', fill: EVEN }, ', либо ', { m: '1', fill: ODD }], 800, 790, m('rule'), { size: 36, msize: 48, fill: RULE, weight: 600 });
+  }],
+
+  ['digits', 'По очереди', m => {
+    const p = panel(0);
+    klTitle(p, 'Чётные и нечётные идут по очереди');
+    // Cards 0 … 11, each with its number of small dots in pairs: the lone dot comes and goes with every step.
+    const CX = k => 173 + k * 114, CY = 280;
+    const cards = Array.from({ length: 12 }, (_, k) => {
+      const t = m('row', .3 + k * .45);
+      const c = c12Card(p, CX(k), CY, 96, 96, k, t, { size: 50 });
+      const pos = c12Pos(CX(k) - 7.5 * Math.floor((k - 1) / 2), 360, 15);
+      c12Dots(p, k, pos, t + .1, { r: 5.5, colour: c12Col(k), step: 0 });
+      return c;
+    });
+    cards.forEach((c, k) => {
+      const col = k % 2 ? ODD : EVEN;
+      tw(c._frame, { c_stroke: col }, m('alt', k * .08), .35);
+      tw(c._fill, { o: 1 }, m('alt', k * .08), .35);
+      c._fill.setAttribute('fill', col);
+    });
+    // The last digit of a big number decides: an arrow from it to its card.
+    const big = (head, last, x, y, t, tLast, col, word, tWord, k) => {
+      klMath(p, [head], x, y, t, { size: 110, anchor: 'end' });
+      const L = klMath(p, [last], x, y, t, { size: 110, anchor: 'start' });
+      hide(L, tLast, .4);
+      klMath(p, [last], x, y, tLast, { size: 110, anchor: 'start', fill: col });
+      c12Ring(p, x + 30, y - 38, 54, tLast, col);
+      klArrow(p, x + 30, y - 100, CX(k), 400, y - 230, col, tLast + .3);
+      klText(p, word, x - 60, y + 90, tWord, { size: 38, fill: col, weight: 700, anchor: 'middle' });
+    };
+    big('3 57', '4', 560, 660, m('big'), m('d4'), EVEN, 'чётное', m('bigE'), 4);
+    big('2 01', '9', 1200, 660, m('big2'), m('d9'), ODD, 'нечётное', m('big2O'), 9);
+    cards.slice(0, 10).forEach((c, k) => pulse(c, m('last', .8 + k * .1), 1.15));
+    [0, 2, 4, 6, 8].forEach((k, i) => pulse(cards[k], m('rule', 2.4 + i * .6), 1.2));
+    klRow(p, ['чётные числа оканчиваются на ', { m: '0, 2, 4, 6, 8', fill: EVEN }], 800, 860, m('rule'), { size: 34, msize: 46, fill: RULE, weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q1 = ['346', '1 000', '258', '723', '90', '5 112'].map((s, k) => c12Card(p, 200 + k * 240, 330, 200, 120, s, .2 + k * .08, { size: 54 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-nechet', prompt: 'Нажми на нечётное число.',
+    build: pickEls(S.q1.map((c, k) => ({ el: c, box: [200 + k * 240 - 108, 262, 216, 136], label: c._t.textContent })), 3,
+      'Число 723 оканчивается нечётной цифрой 3 — значит, оно нечётное.',
+      () => 'Это число оканчивается чётной цифрой, значит, оно чётное. Смотри на последнюю цифру.',
+      () => { fx(S.q1[3]._fill, { o: 1 }, 0, .3); S.q1[3]._fill.setAttribute('fill', ODD); fx(S.q1[3]._frame, { c_stroke: ODD }, 0, .3); pulseFx(S.q1[3]._t, 1.3); }),
+  }], done) }],
+
+  ['sum', 'Сумма', m => {
+    const p = panel(0);
+    klTitle(p, 'Складываем чётные и нечётные');
+    // 7 + 9: the nine slides onto the seven, its lone dot taking the free place beside the seven's lone dot.
+    const PA = c12Pos(150, 260), d7 = c12Dots(p, 7, PA, .2, { colour: c12Col(7) });
+    const d9 = c12Dots(p, 9, c12Pos(490, 260), m('b'), { colour: c12Col(9) });
+    const plus1 = klMath(p, ['+'], 410, 312, m('b'), { size: 64 });
+    const l7 = klMath(p, ['7'], 240, 410, m('a'), { size: 52, fill: COL.dim }), l9 = klMath(p, ['9'], 610, 410, m('b'), { size: 52, fill: COL.dim });
+    [0, 1, 2].forEach(k => c12Pair(p, 150 + k * 60, 260, m('a', .4 + k * .12)));
+    const caps9 = [0, 1, 2, 3].map(k => c12Pair(p, 490 + k * 60, 260, m('b', .4 + k * .12)));
+    const tj = m('join');
+    [plus1, l7, l9, ...caps9].forEach(e => hide(e, tj, .3));
+    [4, 5, 6, 7].forEach(k => c12Pair(p, 150 + k * 60, 260, tj + 1.3 + (k - 4) * .1));
+    d9.forEach((d, i) => { const [x, y] = PA(i === 8 ? 7 : i + 8); tw(d, { x, y }, tj + .2 + (i === 8 ? 0 : .3), .8, io); });
+    c12Tint([d7[6], d9[8]], EVEN, m('meet'));
+    c12Pair(p, 330, 260, m('meet', .2));
+    klRow(p, [{ m: '7 + 9 = ' }, { m: '16', fill: EVEN }], 360, 420, m('sum'), { size: 40, msize: 56 });
+    // 6 + 5: the five slides onto the six and its lone dot stays alone.
+    const PB = c12Pos(150, 560), d6 = c12Dots(p, 6, PB, m('c'), { colour: c12Col(6) });
+    const d5 = c12Dots(p, 5, c12Pos(390, 560), m('c', .4), { colour: c12Col(5) });
+    const plus2 = klMath(p, ['+'], 330, 612, m('c', .3), { size: 64 });
+    hide(plus2, m('left'), .3);
+    d5.forEach((d, i) => { const [x, y] = PB(i + 6); tw(d, { x, y }, m('left', .2), .7, io); });
+    pulse(d5[4], m('left', 1.1), 1.6);
+    c12Ring(p, 450, 560, 30, m('left', 1.2));
+    klRow(p, [{ m: '6 + 5 = ' }, { m: '11', fill: ODD }], 330, 720, m('left', 1.5), { size: 40, msize: 56 });
+    // The three rules collect on the right.
+    const box = G(p, { o: 0 });
+    mk('rect', { x: 860, y: 240, width: 640, height: 420, rx: 18, fill: COL.chalk, 'fill-opacity': .04, stroke: RULE, 'stroke-width': 2.5 }, box);
+    T(box, 'чётность суммы', { x: 1180, y: 300, size: 30, fill: RULE, weight: 700, anchor: 'middle' });
+    show(box, m('sum'));
+    c12Par(p, ['н', '  +  ', 'н', '  =  ', 'ч'], 1180, 390, m('sum', .5));
+    c12Par(p, ['ч', '  +  ', 'н', '  =  ', 'н'], 1180, 490, m('left', 1.8));
+    c12Par(p, ['ч', '  +  ', 'ч', '  =  ', 'ч'], 1180, 590, m('table'));
+    klRow(p, [{ m: '6 + 8 = ' }, { m: '14', fill: EVEN }], 1180, 760, m('table', 1.8), { size: 40, msize: 56 });
+  }],
+
+  ['many', 'Много слагаемых', m => {
+    const p = panel(0);
+    klTitle(p, 'Много слагаемых', 'Лишние точки — только у нечётных');
+    // 3 + 5 + 7 + 2: groups in the pair layout; two lone dots join by an arc, the third stays alone.
+    const G0 = [[3, 400], [5, 600], [7, 870], [2, 1200]];
+    const groups = G0.map(([n, x0], j) => {
+      const t = j ? m('three', 2.3 + j * .7) : .2;
+      const d = c12Dots(p, n, c12Pos(x0, 300), t, { colour: c12Col(n) });
+      klMath(p, [String(n)], x0 + Math.floor((n - 1) / 2) * 30, 460, t, { size: 52, fill: COL.dim });
+      return d;
+    });
+    [530, 800, 1130].forEach((x, j) => klMath(p, ['+'], x, 352, m('three', 2.3 + (j + 1) * .7 - .3), { size: 64 }));
+    const lones = [groups[0][2], groups[1][4], groups[2][6]];
+    lones.forEach((d, i) => pulse(d, m('lones', i * .3), 1.6));
+    c12Link(p, 460, 720, 300, m('pairup'), 150);
+    c12Tint(lones.slice(0, 2), EVEN, m('pairup', .3));
+    pulse(lones[2], m('stay'), 1.7);
+    c12Ring(p, 1050, 300, 30, m('stay', .2));
+    klRow(p, [{ m: '3 + 5 + 7 + 2 = ' }, { m: '17', fill: ODD }], 800, 580, m('total'), { size: 40, msize: 60 });
+    c12Par(p, ['нечётных слагаемых чётное количество  →  сумма ', 'ч'], 800, 720, m('rule'), { size: 32 });
+    c12Par(p, ['нечётных слагаемых нечётное количество  →  сумма ', 'н'], 800, 790, m('rule', 4.2), { size: 32 });
+    pulse(lones[2], m('rule', 4.6), 1.7);
+  }],
+
+  ['diff', 'Разность', m => {
+    const p = panel(0);
+    klTitle(p, 'Разность');
+    // 15 − 8: four pairs leave, three pairs and the lone dot stay.
+    const P = c12Pos(200, 300), d = c12Dots(p, 15, P, .2, { colour: c12Col(15) });
+    const caps = [0, 1, 2, 3, 4, 5, 6].map(k => c12Pair(p, 200 + k * 60, 300, .5 + k * .06));
+    const l15 = klMath(p, ['15'], 410, 450, .4, { size: 52, fill: COL.dim });
+    hide(l15, m('take'), .3);
+    d.slice(0, 8).forEach((e, i) => { tw(e, { y: st(e).y + 330 }, m('take', i * .05), .7, io); tw(e, { o: .3 }, m('take', .5 + i * .05), .4); });
+    caps.slice(0, 4).forEach((e, i) => { tw(e, { y: 330 }, m('take', i * .1), .7, io); tw(e, { o: .3 }, m('take', .5 + i * .1), .4); });
+    klMath(p, ['7'], 530, 450, m('res'), { size: 52, fill: ODD });
+    klText(p, 'убрали 8', 290, 790, m('take', .8), { size: 30, fill: COL.dim, anchor: 'middle' });
+    pulse(d[14], m('lone'), 1.6);
+    c12Ring(p, 620, 300, 30, m('lone', .2));
+    klMath(p, ['15 − 8 ='], 1180, 360, m('d'), { size: 64, anchor: 'end' });
+    klMath(p, ['7'], 1210, 360, m('res'), { size: 64, anchor: 'start', fill: ODD });
+    klMath(p, ['15 + 8 ='], 1180, 480, m('plus'), { size: 64, anchor: 'end' });
+    klMath(p, ['23'], 1210, 480, m('plus', .6), { size: 64, anchor: 'start', fill: ODD });
+    klText(p, 'у разности та же чётность, что у суммы', 1080, 600, m('rule'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klRow(p, [{ m: '13' }, { m: '5', fill: ODD }, { m: ' + 24' }, { m: '7', fill: ODD }, { m: ' ' }], 1060, 330, .2, { msize: 110, anchor: 'end' });
+    S.q2r = klMath(p, ['= ?'], 1080, 330, .4, { size: 110, anchor: 'start' });
+    S.q2a = klMath(p, ['= 382'], 1080, 330, undefined, { size: 110, anchor: 'start', fill: EVEN });
+    put(S.q2a, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-summa', prompt: ['Сумма ', $m('135 + 247'), ' — чётное или нечётное число?'],
+    build: choice(['чётное', 'нечётное'], 0,
+      'Оба слагаемых нечётные (оканчиваются на 5 и 7): их лишние единицы вместе дают пару. 135 + 247 = 382.',
+      [null, 'Нечётное + нечётное — это чётное: две лишние единицы вместе дают пару.'],
+      () => { fx(S.q2r, { o: 0 }, 0, .2); fx(S.q2a, { o: 1 }, .1, .4); }),
+  }], done) }],
+
+  ['product', 'Произведение', m => {
+    const p = panel(0);
+    klTitle(p, 'Произведение');
+    // 4 · 3: three groups of four, all in pairs. 5 · 3: three groups of five, three lone dots.
+    const A = [150, 330, 510], B = [150, 390, 630];
+    const ga = A.map((x0, j) => c12Dots(p, 4, c12Pos(x0, 250), m('g4', j * .3), { step: .04 }));
+    ga.forEach(g => c12Tint(g, EVEN, m('pairs4'), .03));
+    A.forEach(x0 => [0, 1].forEach(k => c12Pair(p, x0 + k * 60, 250, m('pairs4', .3 + k * .1))));
+    ga.flat().forEach((d, i) => pulse(d, m('pairs4', 2.6 + i * .06), 1.3));
+    ga.flat().forEach((d, i) => pulse(d, m('rule', 1.2 + i * .05), 1.3));
+    klMath(p, ['4 · 3 ='], 1060, 300, m('g4'), { size: 60, anchor: 'end' });
+    klMath(p, ['12'], 1085, 300, m('even'), { size: 60, anchor: 'start', fill: EVEN });
+    klText(p, 'чётное', 1260, 300, m('even', .3), { size: 36, fill: EVEN, weight: 700 });
+    const gb = B.map((x0, j) => c12Dots(p, 5, c12Pos(x0, 490), m('g5', j * .3), { step: .04, colour: i => i < 4 ? EVEN : COL.chalk }));
+    B.forEach((x0, j) => [0, 1].forEach(k => c12Pair(p, x0 + k * 60, 490, m('g5', .4 + j * .3))));
+    klMath(p, ['5 · 3 ='], 1060, 540, m('g5'), { size: 60, anchor: 'end' });
+    const lones = gb.map(g => g[4]);
+    lones.forEach((d, i) => pulse(d, m('rule', 6.4 + i * .3), 1.6));
+    c12Tint(lones, ODD, m('lones'), .25);
+    lones.forEach((d, i) => pulse(d, m('lones', i * .25), 1.6));
+    c12Link(p, 270, 510, 490, m('pairup'), 130);
+    c12Tint(lones.slice(0, 2), EVEN, m('pairup', .3));
+    pulse(lones[2], m('stay'), 1.7);
+    c12Ring(p, 750, 490, 30, m('stay', .2));
+    klMath(p, ['15'], 1085, 540, m('stay', .6), { size: 60, anchor: 'start', fill: ODD });
+    klText(p, 'нечётное', 1260, 540, m('stay', .9), { size: 36, fill: ODD, weight: 700 });
+    c12Par(p, ['хоть один множитель чётный  →  произведение ', 'ч'], 800, 730, m('rule'), { size: 32 });
+    c12Par(p, ['все множители нечётные  →  произведение ', 'н'], 800, 800, m('rule', 4.6), { size: 32 });
+  }],
+
+  ['trap', 'Частые ошибки', m => {
+    const p = panel(0);
+    klTitle(p, 'Частые ошибки');
+    // Left: the mistakes, struck out. Right: the right way.
+    const gw = G(p, { x: 430, y: 320 }), w1 = c12Par(gw, ['н', '  +  ', 'н', '  =  ', 'н'], 0, 10, m('w1'), { size: 34 });
+    pulse(gw, m('w1', 2.4), 1.08);
+    klStrike(p, 430 - w1._w / 2 - 14, 336, 430 + w1._w / 2 + 14, 300, m('x1'));
+    klText(p, 'ошибка!', 430, 395, m('x1', .2), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klRow(p, [{ m: '3 + 5 = ' }, { m: '8', fill: EVEN }], 1170, 340, m('x1', .6), { size: 40, msize: 72 });
+    klText(p, 'чётное', 1170, 410, m('x1', 1.2), { size: 34, fill: EVEN, weight: 700, anchor: 'middle' });
+    const fac = ['3', '·', '5', '·', '7', '·', '2'].map((s, i) => klMath(p, [s], 280 + i * 50, 590, m('w2'), { size: 60, fill: COL.dim }));
+    [0, 2, 4].forEach((i, k) => {
+      const t = m('w2', 2.2 + k * .3), c = klMath(p, [String(3 + i)], 280 + i * 50, 590, t, { size: 60, fill: ODD });
+      hide(fac[i], t, .3); pulse(c, t, 1.3);
+    });
+    klText(p, 'нечётных много — значит, нечётное?', 430, 650, m('w2', .4), { size: 28, fill: COL.dim, anchor: 'middle' });
+    klStrike(p, 180, 660, 680, 545, m('x2'));
+    klText(p, 'ошибка!', 430, 715, m('x2', .2), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    const two = G(p, { x: 1170, y: 585 });
+    klRow(two, [{ m: '2', fill: EVEN }, { m: ' · 3 · 5 · 7 = ' }, { m: '210', fill: EVEN }], 0, 15, m('x2', 3.6), { size: 40, msize: 64 });
+    klText(p, 'хватит одного чётного множителя', 1170, 670, m('x2', .8), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    pulse(two, m('x2', 6.6), 1.12);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3 = [[7, 8], [12, 13], [25, 26]].map(([a, b], j) => {
+      const cx = 400 + j * 400;
+      klMath(p, ['·'], cx, 345, .3 + j * .15, { size: 64 });
+      return [a, b].map((v, i) => c12Card(p, cx + (i ? 85 : -85), 330, 130, 110, v, .2 + j * .15, { size: 56 }));
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sosedi', prompt: ['Произведение двух соседних чисел (', $m('7 · 8'), ', ', $m('12 · 13'), ', ', $m('25 · 26'), ' …) всегда:'],
+    build: choice(['чётное', 'нечётное', 'бывает по-разному'], 0,
+      'Из двух соседних чисел одно обязательно чётное, а одного чётного множителя хватает: 7 · 8 = 56.',
+      [null, 'Нечётным произведение бывает, только когда все множители нечётные. А из двух соседних чисел одно всегда чётное.',
+        'Посмотри на пары: в каждой одно число чётное — и так у любых соседних чисел.'],
+      () => S.q3.forEach(([a, b], j) => { const c = [a, b].find(e => +e._t.textContent % 2 === 0); c._fill.setAttribute('fill', EVEN); fx(c._fill, { o: 1 }, j * .2, .3); fx(c._frame, { c_stroke: EVEN }, j * .2, .3); pulseFx(c); })),
+  }], done) }],
+
+  ['coins', 'Можно ли?', m => {
+    const p = panel(0);
+    klTitle(p, 'Задача «можно ли?»');
+    const q = klText(p, 'Можно ли разменять 25 ₽ десятью монетами по 1 ₽ и 5 ₽?', 760, 240, m('q'), { size: 34, anchor: 'middle', weight: 600 });
+    const L = ['5', '1', '1', '5', '1', '5', '1', '1', '5', '1'];
+    const coins = L.map((s, i) => c12Coin(p, 170 + i * 140, 410, 50, s, .2 + i * .06));
+    coins.forEach((c, i) => pulse(c, m('q', 2.6 + i * .08), 1.15));
+    coins.forEach((c, i) => tw(c._t, { c_fill: ODD }, m('odd', i * .08), .3));
+    const each = klText(p, 'каждая монета — нечётное число рублей', 800, 530, m('odd', .5), { size: 30, fill: ODD, anchor: 'middle' });
+    hide(each, m('pair'), .3);
+    // Into five pairs: pair k centred on 230 + 285k.
+    coins.forEach((c, i) => tw(c, { x: 230 + Math.floor(i / 2) * 285 + (i % 2 ? 55 : -55) }, m('pair'), .7, io));
+    [0, 1, 2, 3, 4].forEach(k => klBrace(p, 230 + k * 285 - 105, 230 + k * 285 + 105, 480, 'чётное', m('pairs', k * .3), { up: false, fill: EVEN, size: 30 }));
+    c12Par(p, ['ч', ' + ', 'ч', ' + ', 'ч', ' + ', 'ч', ' + ', 'ч', '  =  ', 'ч'], 800, 640, m('even'), { size: 32 });
+    klRow(p, ['а ', { m: '25', fill: ODD }, ' — нечётное'], 800, 730, m('no'), { size: 34, msize: 48, weight: 600 });
+    klMark(p, 1330, 228, m('nope'), false);
+    klText(p, 'нельзя', 800, 820, m('nope', .1), { size: 40, fill: RULE, weight: 700, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q4 = ['3', '1', '3', '3', '1', '1', '3'].map((s, i) => c12Coin(p, 290 + i * 170, 300, 56, s, .2 + i * .06));
+    klText(p, 'семь монет  →  20 ₽ ?', 800, 470, .5, { size: 40, anchor: 'middle', weight: 600 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-monety', prompt: 'Можно ли набрать 20 ₽ семью монетами по 1 ₽ и 3 ₽?',
+    build: choice(['да', 'нет'], 1,
+      'Каждая монета — нечётное число рублей, а монет семь — нечётное количество. Сумма нечётна, а 20 — чётное число.',
+      ['Монеты нечётные, и их семь — нечётное количество. Значит, сумма нечётная, а 20 — чётное.', null],
+      () => { S.q4.forEach((c, i) => fx(c._t, { c_fill: ODD }, i * .06, .3)); pulseFx(S.q4[6], 1.3); }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Чётное число делится на ', { m: '2' }, ', у нечётного остаток ', { m: '1' }],
+    ['Чётные числа оканчиваются на ', { m: '0, 2, 4, 6, 8' }],
+    'Сумма чётна, если нечётных слагаемых чётное количество',
+    'Произведение чётно, если хоть один множитель чётный',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-chetnost', prompt: 'Отметь, чётное или нечётное получится число.',
+    build: grid([
+      { parts: ['135 + 247'], ans: ['e'], why: 'Оба слагаемых нечётные — сумма чётная: 382.' },
+      { parts: ['13 · 15 · 17 · 19'], ans: ['o'], why: 'Все множители нечётные — произведение нечётное.' },
+      { parts: ['1 + 2 + 3 + … + 10'], ans: ['o'], why: 'Нечётных слагаемых пять (1, 3, 5, 7, 9) — нечётное количество. И правда: сумма равна 55.' },
+      { parts: ['48 · 37'], ans: ['e'], why: 'Множитель 48 чётный — значит, и произведение чётное.' },
+      { parts: ['91 − 36'], ans: ['o'], why: 'У разности та же чётность, что у суммы 91 + 36, а она нечётная: 91 − 36 = 55.' },
+    ], [['e', 'чётное', null, '1'], ['o', 'нечётное', null, '2']], { multi: false }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-bolshee', prompt: 'Какое наибольшее чётное трёхзначное число можно записать цифрами 3, 4 и 7, если каждую цифру взять один раз?',
+    build: blanks([{ parts: [{ box: '734' }], why: 'Чётное число оканчивается чётной цифрой — здесь это только 4. Из 3 и 7 впереди ставим большую: 734.', hint: 'Последней должна стоять чётная цифра.' }]),
+  }, {
+    id: 'p-menshee', prompt: 'Какое наименьшее нечётное трёхзначное число можно записать цифрами 2, 5 и 8, если каждую цифру взять один раз?',
+    build: blanks([{ parts: [{ box: '285' }], why: 'Нечётное число оканчивается нечётной цифрой — здесь это только 5. Из 2 и 8 впереди ставим меньшую: 285.', hint: 'Последней должна стоять нечётная цифра.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-kuznechik', prompt: 'Кузнечик сидит на числе 0 числового луча и прыгает на единицу вправо или влево. Может ли он через 9 прыжков снова оказаться на 0?',
+    build: choice(['да', 'нет'], 1,
+      'Каждый прыжок меняет чётность числа, на котором сидит кузнечик: чётное, нечётное, чётное… После нечётного числа прыжков он всегда на нечётном числе, а 0 — чётное.',
+      ['Проследи чётность: после 1 прыжка число нечётное, после 2 — чётное, после 3 — нечётное… А после 9?', null]),
+  }, {
+    id: 'p-proizv', prompt: 'Сумма двух натуральных чисел нечётна. Каким будет их произведение?',
+    build: choice(['только чётным', 'только нечётным', 'может быть любым'], 0,
+      'Сумма нечётна, только если одно число чётное, а другое нечётное. А с чётным множителем произведение чётно.',
+      [null, 'Чтобы сумма была нечётной, одно из чисел должно быть чётным — а тогда и произведение чётно.',
+        'Одно из чисел обязательно чётное, поэтому произведение всегда чётно.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

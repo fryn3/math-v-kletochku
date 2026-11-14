@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Признаки делимости · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 2.2 «Признаки делимости» (5 класс). Beat ids match papermorph/content/uroki/ch10/narration.ru.json.
+const CHAPTER = { number: 10, label: '2.2', title: 'Признаки делимости', minutes: 8, language: 'ru', next: '../ch11/' };
+
+// Colours of this topic: the part that always divides (whole tens, hundreds, 99s and 9s) is KL.WHOLE; the part that
+// decides (the last digit, the last two digits, the digit sum) is KL.NUM; cuts into groups are KL.DEN; rules KL.RULE.
+const SURE = KL.WHOLE, DEC = KL.NUM, CUT = KL.DEN, RULE = KL.RULE;
+const NBSP = ' ';
+const c10Fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+
+// Centres of the digits of a written number: `pitch` apart, plus `gap` between classes (threes from the right).
+function c10Pos(s, x, pitch, gap = 0, anchor = 'middle') {
+  s = String(s);
+  const L = s.length, cls = i => Math.floor((L - 1 - i) / 3);
+  const off = Array.from({ length: L }, (_, i) => i * pitch + (cls(0) - cls(i)) * gap), w = off[L - 1];
+  const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+  return off.map(o => x0 + o);
+}
+// One digit as a group whose origin is its visual centre (x, y), so it slides and scales in place; g._t is the text.
+function c10Dig(p, ch, x, y, { size = 120, fill = COL.chalk, t0 } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  g._t = T(g, String(ch), { x: 0, y: size * .35, size, fill, font: MATH, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A written number as separate digit groups; fills(i, ch) may colour each digit. digs.xs holds the centres.
+function c10Num(p, s, x, y, { size = 120, pitch = size * .6, gap = size * .25, anchor = 'middle', fill = COL.chalk, fills, t0, step = 0 } = {}) {
+  s = String(s);
+  const xs = c10Pos(s, x, pitch, gap, anchor);
+  const digs = s.split('').map((ch, i) => c10Dig(p, ch, xs[i], y, { size, fill: fills ? fills(i, ch) : fill, t0: t0 === undefined ? undefined : t0 + i * step }));
+  digs.xs = xs;
+  return digs;
+}
+// Numbers and signs in the maths face, fading in at t0 (y is the baseline).
+function c10M(p, str, x, y, t0, { size = 64, fill = COL.chalk, anchor = 'middle', weight = 400 } = {}) {
+  const e = T(p, str, { x, y, size, fill, font: MATH, anchor, weight, o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) show(e, t0);
+  return e;
+}
+// Digits drop into a sum: copies of digits ds (centres xs at height y0, size s0) fly down to «a + b + … = res», centred
+// on cx with its digits' centres at y1 (size s1). Digit i flies at ts[i] (its «+» comes with it); «= res» at tEq.
+// Returns { res, x1 } (the result group and the right end of the line).
+function c10Sum(p, ds, xs, y0, s0, cx, y1, s1, ts, tEq, res, { fill = DEC, resFill = DEC } = {}) {
+  const tok = [];
+  ds.forEach((d, i) => { if (i) tok.push(['+', i]); tok.push([d, i, true]); });
+  tok.push(['=', -1], [String(res), -2]);
+  const gap = s1 * .3, ws = tok.map(([s]) => textW(s, s1));
+  let x = cx - (ws.reduce((a, b) => a + b) + gap * (tok.length - 1)) / 2, out = {};
+  tok.forEach(([s, i, dig], k) => {
+    const c = x + ws[k] / 2;
+    if (dig) {
+      const g = c10Dig(p, s, xs[i], y0, { size: s0, fill });
+      put(g, { o: 0 });
+      tw(g, { o: 1 }, ts[i], .15);
+      tw(g, { x: c, y: y1, s: s1 / s0 }, ts[i], .7, io);
+    } else if (i > 0) c10M(p, '+', c, y1 + s1 * .35, ts[i] + .4, { size: s1 });
+    else if (i === -1) c10M(p, '=', c, y1 + s1 * .35, tEq, { size: s1 });
+    else out.res = c10Dig(p, s, c, y1, { size: s1, fill: resFill, t0: tEq + .3 });
+    x += ws[k] + gap;
+  });
+  out.x1 = x - gap;
+  return out;
+}
+// One square cell of side c as a group at (x, y) (its top left), so it can slide and scale; g._r is the rect.
+function c10Cell(p, x, y, c, fill, { inset = 3, o = 1 } = {}) {
+  const g = G(p, { x, y, o });
+  g._r = mk('rect', { x: inset, y: inset, width: c - 2 * inset, height: c - 2 * inset, rx: Math.min(5, c / 6), fill, 'fill-opacity': .85 }, g);
+  return g;
+}
+// A number on a card (for questions that pick a number on the board): a group centred on (x, y) with g.box.
+function c10Card(p, str, x, y, t0, { w = 250, h = 130, size = 64 } = {}) {
+  const g = G(p, { x, y, o: 0 });
+  g._f = mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 18, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.dim, 'stroke-width': 2.5 }, g);
+  T(g, str, { x: 0, y: size * .35, size, font: MATH, anchor: 'middle' });
+  show(g, t0);
+  g.box = [x - w / 2, y - h / 2, w, h];
+  return g;
+}
+// A block of hundreds/tens drawn as cells of side c: w × h cells at (x, y), filled `fill`, with faint cell lines
+// and a frame. The bottom-right cell is a separate group (blk.last) that can be peeled off; blk.hole is the dark
+// gap it leaves (hidden until shown).
+function c10Block(p, x, y, w, h, c, fill, t0) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x, y, width: w * c, height: h * c, fill, 'fill-opacity': .8 }, g);
+  const hole = mk('rect', { x: x + (w - 1) * c, y: y + (h - 1) * c, width: c, height: c, fill: COL.board }, g);
+  put(hole, { o: 0 });
+  let d = '';
+  for (let k = 1; k < w; k++) d += `M${x + k * c} ${y}V${y + h * c}`;
+  for (let k = 1; k < h; k++) d += `M${x} ${y + k * c}H${x + w * c}`;
+  path(g, d, { stroke: COL.board, 'stroke-width': 1.5, 'stroke-opacity': .7 });
+  mk('rect', { x, y, width: w * c, height: h * c, fill: 'none', stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .7 }, g);
+  const last = c10Cell(p, x + (w - 1) * c, y + (h - 1) * c, c, fill, { inset: 0, o: 0 });
+  last._r.setAttribute('rx', 0); last._r.setAttribute('fill-opacity', .8);
+  show(g, t0); show(last, t0);
+  return { g, hole, last };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Признаки делимости', (m, D) => klIntro(m, D, {
+    unit: 'Глава 2 · Делимость · Тема 2.2',
+    title: 'Признаки делимости',
+    sub: 'Как по цифрам числа увидеть, на что оно делится',
+    art: (g, t0) => {
+      const n = c10Num(g, '4572', 700, 600, { size: 76, pitch: 50, gap: 0, fills: i => i === 3 ? DEC : COL.chalk, t0, step: .1 });
+      // The last digit pulses on «на два», the digit sum comes in on «на три».
+      tw(n[3], { s: 1.35 }, 6.8, .25, out); tw(n[3], { s: 1 }, 7.05, .35);
+      c10M(g, '→', 838, 627, 8.2, { size: 56, fill: COL.dim });
+      c10M(g, '4 + 5 + 7 + 2 = 18', 890, 622, 8.4, { size: 44, fill: DEC, anchor: 'start' });
+    },
+  })],
+
+  ['tens', 'Десятки делятся всегда', m => {
+    const p = panel(0);
+    klTitle(p, 'Десятки делятся всегда');
+    const C = 52, X0 = 130, RY = [225, 293, 361, 429, 527];
+    const rows = RY.map((y, r) => Array.from({ length: r < 4 ? 10 : 5 }, (_, i) => c10Cell(p, X0 + i * C, y, C, r < 4 ? SURE : DEC, { o: 0 })));
+    rows.forEach((row, r) => row.forEach((c, i) => show(c, .2 + r * .12 + i * .015, .3)));
+    klText(p, '4 десятка', 840, 345, m('rods'), { size: 34, fill: SURE, weight: 700 });
+    klText(p, '5 единиц', 840, 565, m('rods', 1.5), { size: 34, fill: DEC, weight: 700 });
+    // Regroup every row: cells slide into groups of k (k = 0: back together).
+    const group = (k, gap, t) => rows.forEach(row => row.forEach((c, i) => tw(c, { x: X0 + i * C + (k ? Math.floor(i / k) * gap : 0) }, t, .7, io)));
+    const lone = rows[4][4];
+    group(2, 16, m('p2'));
+    // «в нём пять пар»: the pairs of the first ten are counted.
+    const pairs = klCount(p, [0, 1, 2, 3, 4].map(k => [X0 + k * (2 * C + 16) + C, RY[0] - 14]), m('p2', 3.4), { step: .3, size: 30, fill: SURE });
+    pairs.forEach(e => hide(e, m('p5', -.3), .3));
+    tw(lone, { y: RY[4] + 22 }, m('left2'), .35, out);
+    tw(lone._r, { c_fill: COL.bad }, m('left2'), .3);
+    group(5, 40, m('p5'));
+    tw(lone, { y: RY[4] }, m('p5'), .4);
+    tw(lone._r, { c_fill: DEC }, m('p5'), .3);
+    rows.slice(0, 4).forEach(row => row.forEach((c, i) => { tw(c._r, { 'a_fill-opacity': i < 5 ? .5 : .85 }, m('p5', 2.9), .3); tw(c._r, { 'a_fill-opacity': .85 }, m('p5', 3.9), .3); }));
+    rows[4].forEach((c, i) => { tw(c, { s: 1.08 }, m('ok5', i * .05), .2, out); tw(c, { s: 1 }, m('ok5', .25 + i * .05), .3); });
+    group(0, 0, m('p10'));
+    // «до десятка не хватает»: the empty places of a ten after the five ones.
+    draw(path(p, `M${X0 + 5 * C + 3} ${RY[4] + 3}h${5 * C - 6}v${C - 6}h${-5 * C + 6}z`, { stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '8 7', fill: 'none' }, { d: 0 }), m('p10', .4), .6);
+    // The verdicts on the right, one per grouping.
+    const verdict = (y, div, ok, note, t) => {
+      klRow(p, [{ m: '45 : ' + div }], 1100, y, t, { size: 44, msize: 56, anchor: 'start' });
+      klMark(p, 1370, y - 18, t + .2, ok, .9);
+      klText(p, note, 1100, y + 46, t + .3, { size: 27, fill: COL.dim });
+    };
+    verdict(290, 2, false, 'одна клетка без пары', m('left2', 4.1));
+    verdict(430, 5, true, 'ровно одна пятёрка', m('ok5', 3.3));
+    verdict(570, 10, false, 'до десятка не хватает', m('p10', .6));
+    rows.slice(0, 4).forEach((row, r) => row.forEach(c => { tw(c._r, { c_fill: RULE }, m('only', r * .1), .3); tw(c._r, { c_fill: SURE }, m('only', 1.2 + r * .1), .5); }));
+    rows[4].forEach((c, i) => { tw(c, { s: 1.1 }, m('only', 3.3 + i * .05), .2, out); tw(c, { s: 1 }, m('only', 3.55 + i * .05), .3); tw(c._r, { c_fill: RULE }, m('only', 3.3), .3); tw(c._r, { c_fill: DEC }, m('only', 4.6), .5); });
+    klText(p, 'десятки делятся всегда — решают единицы', 800, 760, m('only', .3), { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['last', 'Последняя цифра решает', m => {
+    const p = panel(0);
+    klTitle(p, 'Последняя цифра решает');
+    const Y = 270, SZ = 150;
+    const digs = c10Num(p, '3468', 800, Y, { size: SZ, pitch: 90, gap: 40, t0: .2, step: .08 });
+    // 3 468 = 3 460 + 8: the 8 slides away, a zero takes its place, the line re-centres.
+    const NX = [530, 660, 750], ZX = 840, PX = 955, EX = 1070, ts = m('split');
+    digs.slice(0, 3).forEach((d, i) => tw(d, { x: NX[i] }, ts, .8, io));
+    tw(digs[3], { x: EX }, ts, .8, io);
+    tw(digs[3]._t, { c_fill: DEC }, m('eight'), .3);
+    const zero = c10Dig(p, '0', ZX, Y - 70, { size: SZ, fill: SURE });
+    put(zero, { o: 0 });
+    tw(zero, { o: 1, y: Y }, ts + .8, .45, out);
+    c10M(p, '+', PX, Y + SZ * .35, ts + .9, { size: 110 });
+    digs.slice(0, 3).forEach(d => tw(d._t, { c_fill: SURE }, ts + .8, .4));
+    klBrace(p, 485, 885, 380, '346 десятков', ts + 1.2, { up: false, fill: SURE, size: 34 });
+    klBrace(p, 1030, 1110, 380, 'последняя цифра', m('eight'), { up: false, fill: DEC, size: 30 });
+    { let x = 685 - klW('делятся на 2, на 5 и на 10', 28) / 2;   // said in parts: «и на два, и на пять, и на десять»
+      [['делятся на 2,', 0], [' на 5', 1.2], [' и на 10', 2.2]].forEach(([w, dt]) => { klText(p, w, x, 470, m('tens', dt), { size: 28, fill: SURE }); x += klW(w, 28); }); }
+    [digs[0], digs[1], digs[2], zero].forEach((d, i) => { tw(d, { s: 1.1 }, m('tens', i * .08), .2, out); tw(d, { s: 1 }, m('tens', .2 + i * .08), .3); });
+    // Three rules, each a card with the endings that work.
+    const cards = [['на 10', '0', 'оканчивается нулём', 'r10'], ['на 5', '0  или  5', 'нулём или пятёркой', 'r5'], ['на 2', '0, 2, 4, 6, 8', 'чётной цифрой', 'r2']];
+    cards.forEach(([head, ends, note, mark], k) => {
+      const x = 200 + k * 410, g = G(p, { o: 0 });
+      mk('rect', { x, y: 540, width: 380, height: 240, rx: 18, fill: COL.chalk, 'fill-opacity': .04, stroke: RULE, 'stroke-width': 2.5 }, g);
+      T(g, head, { x: x + 190, y: 598, size: 40, fill: RULE, weight: 700, anchor: 'middle' });
+      if (k < 2) T(g, ends, { x: x + 190, y: 680, size: 52, fill: DEC, font: MATH, anchor: 'middle' });
+      else ends.split(', ').forEach((d, i) => c10M(p, d + (i < 4 ? ',' : ''), x + 70 + i * 60, 680, m('r2', 2.2 + i * .75), { size: 52, fill: DEC }));
+      T(g, note, { x: x + 190, y: 740, size: 26, fill: COL.dim, anchor: 'middle' });
+      show(g, m(mark));
+      klMark(p, x + 340, 584, m('ex', [5.9, 5, 3.3][k]), k === 2, .8);
+    });
+    tw(digs[3], { s: 1.2 }, m('ex', 1.5), .25, out); tw(digs[3], { s: 1 }, m('ex', 1.75), .3);
+    draw(path(p, 'M1010 270a60 88 0 1 0 120 0a60 88 0 1 0 -120 0', { stroke: RULE, 'stroke-width': 4, fill: 'none' }, { d: 0 }), m('tens', 4.6), .5);
+    tw(digs[3], { s: 1.25 }, m('tens', 5), .25, out); tw(digs[3], { s: 1 }, m('tens', 5.25), .35);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'на 5: последняя цифра 0 или 5', 800, 470, .4, { size: 30, fill: COL.dim, anchor: 'middle' });
+    S.q1 = ['1252', '3705', '4558', '9001'].map((n, i) => c10Card(p, c10Fmt(n), 260 + i * 360, 320, .2 + i * .1, { w: 270, h: 140, size: 70 }));
+    S.q1ok = klMark(p, 760, 230, 0, true, .9);
+    put(S.q1ok, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-na5', prompt: 'Нажми на число, которое делится на 5.',
+    build: pickEls(S.q1.map((e, i) => ({ el: e, box: e.box, label: ['1 252', '3 705', '4 558', '9 001'][i] })), 1,
+      '3 705 оканчивается пятёркой: на 5 делится.',
+      i => ['1 252 оканчивается двойкой: оно чётное, но на 5 не делится.', null, '4 558 оканчивается восьмёркой — на 5 не делится.', '9 001 оканчивается единицей — на 5 не делится.'][i],
+      () => { fx(S.q1[1]._f, { c_stroke: COL.good, 'a_stroke-width': 5 }, 0, .3); fx(S.q1[1], { s: 1.08 }, 0, .2, out); fx(S.q1[1], { s: 1 }, .2, .3); fx(S.q1ok, { o: 1 }, .2, .3); }),
+  }], done) }],
+
+  ['hundreds', 'На 4 и на 25', m => {
+    const p = panel(0);
+    klTitle(p, 'На 4 и на 25 — две последние цифры');
+    const H = klHundred(p, { x: 150, y: 220, c: 40, t0: .2 });
+    [[0, 0], [0, 5], [5, 0], [5, 5]].forEach(([i, j], k) => {
+      const b = H.cell(i, j, 5, 5, SURE);
+      tw(b, { o: (k % 2 ? .55 : 1) }, m('sq', .4 + k * .25), .35);
+      klMath(p, ['25'], 150 + (j + 2.5) * 40, 220 + (i + 2.5) * 40 + 16, m('sq', .4 + k * .25), { size: 46, fill: COL.board });
+    });
+    draw(path(p, 'M350 220V620M150 420H550', { stroke: CUT, 'stroke-width': 5 }, { d: 0 }), m('sq'), .5);
+    klMath(p, ['100 = 4 · 25'], 350, 700, m('sq', 1.6), { size: 56, fill: SURE });
+    klText(p, 'сотни делятся на 4 и на 25', 350, 770, m('sq', 4.5), { size: 30, fill: SURE, weight: 600, anchor: 'middle' });
+    const digs = c10Num(p, '1316', 1100, 290, { size: 130, pitch: 90, gap: 60, t0: .3, step: .08 });
+    digs.slice(0, 2).forEach(d => tw(d._t, { c_fill: SURE }, m('num'), .4));
+    klBrace(p, 895, 1125, 222, '13 сотен', m('num', .3), { up: true, fill: SURE, size: 30 });
+    digs.slice(2).forEach(d => tw(d._t, { c_fill: DEC }, m('last2'), .4));
+    klBrace(p, 1135, 1305, 370, 'две последние цифры', m('last2', .2), { up: false, fill: DEC, size: 28 });
+    klMath(p, ['16 : 4 = 4'], 1100, 560, m('ok'), { size: 60, fill: DEC });
+    klMark(p, 1340, 540, m('ok', .6), true, .9);
+    klText(p, 'на 25 — если в конце', 1080, 760, m('r25'), { size: 32, anchor: 'end' });
+    ['00', '25', '50', '75'].forEach((e, i) => c10M(p, e + (i < 3 ? ',' : ''), 1100 + i * 82, 762, m('r25', [4, 5.2, 6.4, 7.4][i]), { size: 44, fill: DEC, anchor: 'start' }));
+  }],
+
+  ['sum', 'Почему работает сумма цифр', m => {
+    const p = panel(0);
+    klTitle(p, 'Почему работает сумма цифр');
+    const c = 17, Y = 240, HX = [110, 300, 490], RX = [700, 740, 780, 820], OX = [880, 905];
+    const hs = HX.map((x, k) => c10Block(p, x, Y, 10, 10, c, SURE, .2 + k * .1));
+    const rs = RX.map((x, k) => c10Block(p, x, Y, 1, 10, c, SURE, .5 + k * .06));
+    const ones = OX.map((x, k) => { const o = c10Cell(p, x, Y + 9 * c, c, DEC, { inset: 0, o: 0 }); show(o, .8 + k * .06); return o; });
+    const digs = c10Num(p, '342', 1220, 300, { size: 140, pitch: 90, t0: .3, step: .08 });
+    klText(p, '3 сотни', 395, Y - 22, m('num', .5), { size: 30, fill: SURE, weight: 600, anchor: 'middle' });
+    klText(p, '4 десятка', 769, Y - 22, m('num', 1.3), { size: 30, fill: SURE, weight: 600, anchor: 'middle' });
+    klText(p, '2', 902, Y + 9 * c - 18, m('num', 2.2), { size: 30, fill: DEC, weight: 600, anchor: 'middle' });
+    // Peel one cell off every hundred (99 + 1) and every ten (9 + 1): it turns into a «decider» and steps out.
+    const peel = (blk, t, lab, lx) => {
+      show(blk.hole, t, .3);
+      tw(blk.last._r, { c_fill: DEC }, t, .3);
+      tw(blk.last, { x: st(blk.last).x + 10, y: st(blk.last).y + 26 }, t, .4, out);
+      klText(p, lab, lx, Y + 10 * c + 72, t + .3, { size: 34, fill: SURE, weight: 700, anchor: 'middle' });
+    };
+    const flash = (b, t) => { tw(b.last._r, { c_fill: RULE }, t, .25); tw(b.last._r, { c_fill: SURE }, t + .7, .3); };
+    hs.forEach((b, k) => { tw(b.g, { o: .6 }, m('h', .2 + k * .1), .25); tw(b.g, { o: 1 }, m('h', .6 + k * .1), .3); flash(b, m('h', 3)); });
+    rs.forEach((b, k) => { tw(b.g, { o: .6 }, m('t', .2 + k * .1), .25); tw(b.g, { o: 1 }, m('t', .6 + k * .1), .3); flash(b, m('t', 2.4)); });
+    hs.forEach((b, k) => peel(b, m('h', 4.7 + k * .25), '99', HX[k] + 85));
+    rs.forEach((b, k) => peel(b, m('t', 3.75 + k * .2), '9', RX[k] + 8));
+    // The pile: the peeled cells, then the ones, fly into one row on the right.
+    const tray = mk('rect', { x: 1030, y: 505, width: 360, height: 64, rx: 12, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '9 8' }, p);
+    put(tray, { o: 0 }); show(tray, m('pile', -.3));
+    const pile = [...hs.map(b => b.last), ...rs.map(b => b.last), ...ones], CS = 30, sc = CS / c;
+    pile.forEach((e, k) => tw(e, { x: 1048 + k * 37, y: 522, s: sc }, m('pile', .3 + (k < 3 ? 0 : k < 7 ? 1 : 2) * .8 + (k % 3) * .06), .8, io));
+    [[0, 3, '3'], [3, 4, '4'], [7, 2, '2']].forEach(([a, n, lab], k) => {
+      klText(p, lab, 1048 + (a + n / 2) * 37 - 3, 612, m('pile', 3.8 + k * .6), { size: 34, fill: DEC, weight: 700, anchor: 'middle' });
+      tw(digs[k]._t, { c_fill: DEC }, m('pile', 3.8 + k * .6), .3);
+    });
+    c10M(p, '3 + 4 + 2 = 9', 1210, 690, m('ds', 1), { size: 60, fill: DEC });
+    tw(tray, { 'a_stroke-width': 5, c_stroke: DEC }, m('ds'), .3);
+    klText(p, 'делятся на 9 и на 3', 470, 540, m('rest', 1.2), { size: 32, fill: SURE, weight: 600, anchor: 'middle' });
+    [...hs, ...rs].forEach((b, k) => { tw(b.g, { o: .55 }, m('rest', k * .08), .3); tw(b.g, { o: 1 }, m('rest', .5 + k * .08), .4); });
+    klRow(p, [{ m: '342 = ' }, { m: '3 · 99 + 4 · 9', fill: SURE }, { m: ' + ' }, { m: '(3 + 4 + 2)', fill: DEC }], 640, 790, m('ok'), { size: 40, msize: 56 });
+    klMark(p, 1420, 670, m('ok', 4.2), true, .9);
+    c10M(p, '342 : 9 = 38', 1220, 440, m('ok', 6.6), { size: 44, fill: COL.dim });
+  }],
+
+  ['digits', 'Признаки делимости на 3 и на 9', m => {
+    const p = panel(0);
+    klTitle(p, 'На 3 и на 9 — сумма цифр');
+    // Each rule is written as it is said: «на 9 — если», then «сумма цифр делится на 9».
+    const rule = (k, y, t1, t2) => {
+      const a = 'на ' + k + ' — если ', b = 'сумма цифр', w = klW(a, 34, 600);
+      klText(p, a, 100, y, t1, { size: 34, fill: RULE, weight: 600 });
+      klText(p, b, 100 + w, y, t2, { size: 34, fill: DEC, weight: 600 });
+      klText(p, ' делится на ' + k, 100 + w + klW(b, 34, 600), y, t2 + .3, { size: 34, fill: RULE, weight: 600 });
+    };
+    rule(9, 220, m('r9'), m('r9', 2.2));
+    rule(3, 276, m('r3'), m('r3', 1));
+    const col = (n, ds, res, cx, tN, tSum, [t9, t3, tP], v3, v9) => {
+      const digs = c10Num(p, String(n), cx, 420, { size: 120, pitch: 76, gap: 34, t0: tN });
+      c10Sum(p, ds, digs.xs, 420, 120, cx, 580, 64, ds.map((_, i) => tSum + i * .45), tSum + ds.length * .45, res);
+      [['на 9', v9, t9], ['на 3', v3, t3]].forEach(([lab, ok, t], k) => {
+        klText(p, lab, cx - 120 + k * 200, 740, t, { size: 34, weight: 600, anchor: 'end' });
+        klMark(p, cx - 80 + k * 200, 728, t + .1, ok, .8);
+      });
+      digs.forEach((d, i) => { tw(d, { s: 1.12 }, tP + i * .06, .2, out); tw(d, { s: 1 }, tP + .2 + i * .06, .3); });
+    };
+    col(4572, ['4', '5', '7', '2'], 18, 420, m('a'), m('asum'), [m('ayes', 1.6), m('ayes', 2.5), m('ayes', 3.8)], true, true);
+    col(2019, ['2', '0', '1', '9'], 12, 1180, m('b'), m('bsum', -.8), [m('bres', 2), m('bres', .9), m('bres', 3.6)], true, false);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'подсказка: сложи цифры числа', 800, 470, .4, { size: 30, fill: COL.dim, anchor: 'middle' });
+    S.q2 = ['1234', '2718', '5136', '4009'].map((n, i) => c10Card(p, c10Fmt(n), 260 + i * 360, 320, .2 + i * .1, { w: 270, h: 140, size: 70 }));
+    S.q2sum = c10M(p, '2 + 7 + 1 + 8 = 18', 620, 230, undefined, { size: 40, fill: DEC });
+    put(S.q2sum, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-na9', prompt: 'Нажми на число, которое делится на 9.',
+    build: pickEls(S.q2.map((e, i) => ({ el: e, box: e.box, label: ['1 234', '2 718', '5 136', '4 009'][i] })), 1,
+      '2 + 7 + 1 + 8 = 18, а 18 делится на 9. Значит, и 2 718 делится на 9.',
+      i => ['1 + 2 + 3 + 4 = 10 — на 9 не делится.', null, '5 + 1 + 3 + 6 = 15: делится на 3, но не на 9. Это число делится на 3, а на 9 — нет.', '4 + 0 + 0 + 9 = 13 — на 9 не делится.'][i],
+      () => { fx(S.q2[1]._f, { c_stroke: COL.good, 'a_stroke-width': 5 }, 0, .3); fx(S.q2[1], { s: 1.08 }, 0, .2, out); fx(S.q2[1], { s: 1 }, .2, .3); fx(S.q2sum, { o: 1 }, .2, .4); }),
+  }], done) }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'На 3 не смотрят на последнюю цифру');
+    const a = c10Num(p, '13', 300, 320, { size: 140, pitch: 84, fills: i => i ? DEC : COL.chalk, t0: .2 });
+    const b = c10Num(p, '27', 1000, 320, { size: 140, pitch: 84, fills: i => i ? DEC : COL.chalk, t0: .3 });
+    [a[1], b[1]].forEach((d, i) => { tw(d, { s: 1.2 }, 2.2 + i * .3, .25, out); tw(d, { s: 1 }, 2.45 + i * .3, .3); });
+    klText(p, 'оканчивается на 3 —', 420, 300, m('wrong'), { size: 32, fill: COL.dim });
+    klText(p, 'значит, делится на 3?', 420, 346, m('wrong', .8), { size: 32, fill: COL.dim });
+    klStrike(p, 410, 345, 760, 290, m('strike'));
+    klRow(p, [{ m: '13 : 3 = 4 (ост. 1)', fill: COL.bad }], 430, 470, m('strike', .5), { size: 40, msize: 52 });
+    klMark(p, 760, 452, m('strike', .9), false, .8);
+    klText(p, 'оканчивается на 7,', 1120, 300, m('right'), { size: 32, fill: COL.dim });
+    klRow(p, ['но ', { m: '27 = 3 · 9' }], 1120, 346, m('right', 3.2), { size: 32, msize: 44, fill: COL.dim, anchor: 'start' });
+    klMark(p, 1420, 452, m('right', 3.8), true, .8);
+    // The digit sums: 2 + 7 = 9 decides for 27, and 1 + 3 = 4 for 13.
+    c10Sum(p, ['2', '7'], b.xs, 320, 140, 1130, 460, 60, [m('sum', 1.5), m('sum', 2.1)], m('sum', 2.6), 9);
+    c10Sum(p, ['1', '3'], a.xs, 320, 140, 300, 600, 52, [m('sum', 3.4), m('sum', 3.6)], m('sum', 3.9), 4, { fill: COL.dim, resFill: COL.dim });
+    klText(p, 'на 3 не делится', 470, 616, m('sum', 4.3), { size: 28, fill: COL.dim });
+    klText(p, 'на 3 проверяют сумму цифр, а не последнюю цифру', 800, 770, m('sum', 4.6), { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3 = c10Num(p, '1003', 800, 280, { size: 150, pitch: 90, gap: 40, t0: .2, step: .08 });
+    S.q3q = c10M(p, '?', 1100, 330, .5, { size: 110, fill: COL.dim });
+    S.q3sum = G(p, { o: 0 });
+    c10M(S.q3sum, '1 + 0 + 0 + 3 = 4', 800, 480, undefined, { size: 56, fill: DEC });
+    klMark(S.q3sum, 1090, 460, 0, false, .8);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-na3', prompt: 'Делится ли 1 003 на 3?',
+    build: choice(['да', 'нет'], 1, '1 + 0 + 0 + 3 = 4, а 4 на 3 не делится. Значит, и 1 003 на 3 не делится.',
+      ['Последняя цифра 3 — это ловушка. Сложи цифры: 1 + 0 + 0 + 3 = 4.', null],
+      () => { fx(S.q3q, { o: 0 }, 0, .2); fx(S.q3sum, { o: 1 }, .1, .4); }),
+  }], done) }],
+
+  ['six', 'На 6 — два признака сразу', m => {
+    const p = panel(0);
+    klTitle(p, 'На 6 — два признака сразу');
+    klMath(p, ['6 = 2 · 3'], 640, 250, m('six'), { size: 60, fill: RULE });
+    klText(p, 'делится и на 2, и на 3', 800, 240, m('six', 5.6), { size: 34, fill: RULE, weight: 600 });
+    const CX = [700, 1000, 1330];
+    [['на 2', m('six', 6.4)], ['на 3', m('six', 7.4)], ['на 6', m('six', 3.6)]].forEach(([h, t], k) => klText(p, h, CX[k], 340, t, { size: 32, fill: k === 2 ? RULE : COL.dim, weight: 600, anchor: 'middle' }));
+    // A row of the table: the number, then each test as it is said (note first, then its mark).
+    const row = (n, y, tN, [n2, t2], [n3, tn3, t3, ok3], t6) => {
+      const digs = c10Num(p, n, 300, y, { size: 110, pitch: 66, gap: 30, t0: tN, fills: i => i === 3 ? DEC : COL.chalk });
+      klText(p, n2, CX[0], y + 52, t2 - .3, { size: 26, fill: COL.dim, anchor: 'middle' });
+      klMark(p, CX[0], y - 20, t2, true, .8);
+      klText(p, n3, CX[1], y + 52, tn3, { size: 26, fill: COL.dim, anchor: 'middle' });
+      klMark(p, CX[1], y - 20, t3, ok3, .8);
+      klMark(p, CX[2], y - 20, t6, ok3, 1);
+      return digs;
+    };
+    row('1236', 450, .3, ['6 — чётная', m('a2', 1.4)], ['сумма цифр 12', m('a3'), m('a3', 1.9), true], m('ayes', 1.3));
+    row('1234', 650, m('b'), ['4 — чётная', m('b', 1.6)], ['сумма цифр 10', m('bno'), m('bno', 2), false], m('bno', 4.3));
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    c10Dig(p, '7', 680, 290, { size: 150, t0: .2 });
+    const box = mk('rect', { x: 745, y: 220, width: 110, height: 140, rx: 10, fill: 'none', stroke: DEC, 'stroke-width': 4, 'stroke-dasharray': '12 9' }, p);
+    put(box, { o: 0 }); show(box, .3);
+    c10Dig(p, '4', 920, 290, { size: 150, t0: .4 });
+    klText(p, 'на 6 = на 2 и на 3', 800, 470, .5, { size: 30, fill: COL.dim, anchor: 'middle' });
+    S.q4d = c10Dig(p, '1', 800, 290, { size: 150, fill: DEC });
+    put(S.q4d, { x: 800, y: 290, o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-na6', prompt: 'Какую наименьшую цифру поставить в пустую клетку, чтобы число делилось на 6?',
+    build: blanks([{ parts: ['7', { box: '1' }, '4'], why: '714 — чётное, а сумма цифр 7 + 1 + 4 = 12 делится на 3. Значит, 714 делится на 6.',
+      hint: 'Число уже чётное. Подбери самую маленькую цифру, чтобы сумма 7 + ? + 4 делилась на 3.',
+      fx: () => { fx(S.q4d, { o: 1 }, 0, .4); } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'На 2, 5 и 10 — смотрим на последнюю цифру',
+    'На 4 и 25 — на число из двух последних цифр',
+    'На 3 и 9 — на сумму цифр',
+    'На 6 — делится и на 2, и на 3',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-tablica', prompt: 'Отметь всё, на что делится каждое число.',
+    build: grid([
+      { parts: ['270'], ans: ['d2', 'd3', 'd5', 'd9', 'd10'], why: 'Оканчивается нулём (на 2, 5 и 10), сумма цифр 9 (на 3 и 9).' },
+      { parts: ['4 515'], ans: ['d3', 'd5'], why: 'Оканчивается пятёркой (на 5), сумма цифр 15: на 3 делится, на 9 — нет.' },
+      { parts: ['1 116'], ans: ['d2', 'd3', 'd9'], why: 'Чётное (на 2), сумма цифр 9 (на 3 и 9); на 5 и 10 — нет.' },
+      { parts: ['802'], ans: ['d2'], why: 'Чётное, но сумма цифр 10 и в конце двойка: только на 2.' },
+    ], [['d2', 'на 2', null, '1'], ['d3', 'на 3', null, '2'], ['d5', 'на 5', null, '3'], ['d9', 'на 9', null, '4'], ['d10', 'на 10', null, '5']]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-cifra', prompt: 'Поставь в клетку наименьшую цифру, при которой выполнено условие.',
+    build: blanks([
+      { parts: ['4', { box: '1' }, '7', '  делится на 3'], why: '4 + 1 + 7 = 12 делится на 3: 417 = 3 · 139.', hint: 'Сумма 4 + ? + 7 должна делиться на 3.' },
+      { parts: ['6', { box: '2' }, '1', '  делится на 9'], why: '6 + 2 + 1 = 9: 621 = 9 · 69.', hint: 'Сумма 6 + ? + 1 должна делиться на 9.' },
+      { parts: ['13', { box: '2' }, '  делится на 4'], why: '32 делится на 4, а 30 и 31 — нет: 132 = 4 · 33.', hint: 'На 4 проверяют число из двух последних цифр: 3?.' },
+    ]),
+  }, {
+    id: 'p-na6', prompt: 'Делится ли 2 346 на 6?',
+    build: choice(['да', 'нет'], 0, 'Чётное, и сумма цифр 2 + 3 + 4 + 6 = 15 делится на 3. Значит, делится на 6: 2 346 = 6 · 391.',
+      [null, 'Проверь оба признака: число чётное, а сумма его цифр 15 делится на 3.']),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-na9', prompt: 'Делится ли 8 163 на 9?',
+    build: choice(['да', 'нет'], 0, '8 + 1 + 6 + 3 = 18, а 18 делится на 9: 8 163 = 9 · 907.',
+      [null, 'Сложи цифры: 8 + 1 + 6 + 3 = 18.']),
+  }, {
+    id: 'p-na4', prompt: 'Какое из чисел делится на 4?',
+    build: choice(['1 318', '2 516', '3 414'], 1, '16 делится на 4, значит, и 2 516 делится на 4.',
+      ['Две последние цифры — 18, а 18 на 4 не делится.', null, 'Две последние цифры — 14, а 14 на 4 не делится.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

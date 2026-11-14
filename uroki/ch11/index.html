@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Простые множители, НОД и НОК · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 2.3 «Простые множители, НОД и НОК» (5–6 класс). Beat ids match papermorph/content/uroki/ch11/narration.ru.json.
+const CHAPTER = { number: 11, label: '2.3', title: 'Простые множители, НОД и НОК', minutes: 8, language: 'ru', next: '../ch12/' };
+
+// Colours: a prime factor (of the first number) KL.NUM, of the second number KL.TWO, a common factor (НОД) KL.RULE;
+// composites in the prime beat are outlined in KL.DEN.
+const NUM = KL.NUM, TWO = KL.TWO, RULE = KL.RULE, DEN = KL.DEN;
+
+/* ---------- chips and factor trees ---------- */
+// A number on a disc of radius r at (x, y). filled: a prime, the disc filled with col and the number dark on it;
+// otherwise a ring with the number in chalk (a composite still to be split). Returns the group with _disc and _t.
+function c11Chip(p, x, y, label, t0, { col = NUM, r = 40, size = 44, filled = true } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  g._disc = mk('circle', { r, fill: col, 'fill-opacity': filled ? .88 : 0, stroke: col, 'stroke-width': 3.5 }, g);
+  g._t = T(g, String(label), { x: 0, y: size * .35, size, fill: filled ? COL.board : COL.chalk, font: MATH, anchor: 'middle', weight: 600 });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+// Fill a chip with col from t: a ring becomes a prime chip, or a prime chip changes colour. f = fx in answer effects.
+function c11Fill(c, t, col, dur = .35, f = tw) {
+  f(c._disc, { 'a_fill-opacity': .88, c_fill: col, c_stroke: col }, t, dur);
+  f(c._t, { c_fill: COL.board }, t, dur);
+}
+// A factor tree. nodes: [label, x, y, parent index (−1 for the root), t (when the node and its branch appear)].
+// Every node starts as a ring; the leaves are filled later with c11Fill. Returns the chips, each with _x, _y.
+function c11Tree(p, nodes, { r = 44, size = 44 } = {}) {
+  return nodes.map(([label, x, y, par, t]) => {
+    if (par >= 0) {
+      const [, px, py] = nodes[par], dx = x - px, dy = y - py, k = (r + 8) / Math.hypot(dx, dy);
+      draw(path(p, `M${px + dx * k} ${py + dy * k}L${x - dx * k} ${y - dy * k}`, { stroke: COL.dim, 'stroke-width': 3, 'stroke-linecap': 'round' }, { d: 0 }), t, .35);
+    }
+    const c = c11Chip(p, x, y, label, t + (par >= 0 ? .2 : 0), { r, size, filled: false, col: COL.chalk });
+    Object.assign(c, { _x: x, _y: y, _n: label });
+    return c;
+  });
+}
+// Copies of chips (prime, in col) that fly from their places into a row at (xs[i], y) from t, `step` apart.
+function c11Gather(p, from, xs, y, t, col, { r = 46, size = 44, step = .3, dur = .8 } = {}) {
+  return from.map((c, i) => {
+    const k = c11Chip(p, c._x, c._y, c._n, undefined, { col, r, size });
+    put(k, { o: 0 });
+    show(k, t + i * step, .05);
+    tw(k, { x: xs[i], y }, t + i * step, dur, io);
+    return k;
+  });
+}
+// Multiplication dots between neighbouring chips at the x positions xs, on the chips' centre line y.
+function c11Dots(p, xs, y, t0, fill = COL.chalk) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  for (let i = 1; i < xs.length; i++) T(g, '·', { x: (xs[i - 1] + xs[i]) / 2, y: y + 16, size: 48, fill, font: MATH, anchor: 'middle', weight: 700 });
+  if (t0 !== undefined) show(g, t0, .3);
+  return g;
+}
+// A rounded frame w × h at (x, y) drawn on at t0 (dash '' for a solid line).
+function c11Frame(p, x, y, w, h, col, t0, { dash = '12 9', width = 3 } = {}) {
+  const e = path(p, `M${x + 24} ${y}H${x + w - 24}Q${x + w} ${y} ${x + w} ${y + 24}V${y + h - 24}Q${x + w} ${y + h} ${x + w - 24} ${y + h}H${x + 24}Q${x} ${y + h} ${x} ${y + h - 24}V${y + 24}Q${x} ${y} ${x + 24} ${y}`,
+    { stroke: col, 'stroke-width': width, fill: 'none', 'stroke-dasharray': dash }, { d: 0 });
+  draw(e, t0, .6);
+  return e;
+}
+
+/* ---------- 24 and 36 in shared columns ---------- */
+// Column k holds one prime: a factor of 24 (row YA), of 36 (row YB), or of both. Common pairs meet in the middle row YM.
+const CX = [520, 660, 800, 940, 1080], YA = 260, YM = 400, YB = 540, YN = 740;
+const A24 = [2, 2, 2, 3, 0], B36 = [2, 2, 0, 3, 3], COMMON = [0, 1, 3];
+const FRAME_A = [450, 200, 700, 255], FRAME_B = [450, 345, 700, 255];
+// The picture after the merge, at once: 24's own 2 on top, the common 2, 2, 3 in the middle, 36's own 3 below, the two
+// numbers as overlapping frames, and «НОД = 12» beside the middle row. Returns { top, mid, bot, fa } (fa: 24's frame).
+function c11Merged(p) {
+  const top = c11Chip(p, CX[2], YA, 2, undefined, { col: NUM });
+  const mid = {}; COMMON.forEach(k => { mid[k] = c11Chip(p, CX[k], YM, A24[k], undefined, { col: RULE }); });
+  const bot = c11Chip(p, CX[4], YB, 3, undefined, { col: TWO });
+  c11Dots(p, [CX[0], CX[1], CX[3]], YM);
+  const fa = c11Frame(p, ...FRAME_A, NUM, 0, { dash: '' });
+  c11Frame(p, ...FRAME_B, TWO, 0, { dash: '' });
+  klMath(p, ['24'], 400, YA + 18, undefined, { size: 56, fill: NUM, anchor: 'end' });
+  klMath(p, ['36'], 400, YB + 18, undefined, { size: 56, fill: TWO, anchor: 'end' });
+  klText(p, 'НОД', 400, YM + 14, undefined, { size: 40, fill: RULE, weight: 700, anchor: 'end' });
+  klMath(p, ['= 12'], 1175, YM + 18, undefined, { size: 52, fill: RULE, anchor: 'start' });
+  return { top, mid, bot, fa };
+}
+
+/* ---------- the trap: a number line 0 … 40 ---------- */
+const LX = v => 160 + v * 32, LY = 470;
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Простые множители, НОД и НОК', (m, D) => klIntro(m, D, {
+    unit: 'Глава 2 · Делимость · Тема 2.3',
+    title: 'Простые множители, НОД и НОК',
+    sub: 'Раскладываем числа на простые множители и находим НОД и НОК',
+    art: (g, t0) => {
+      const n = c11Tree(g, [[12, 800, 590, -1, t0], [2, 730, 680, 0, t0 + .4], [6, 870, 680, 0, t0 + .4], [2, 810, 770, 2, t0 + .8], [3, 930, 770, 2, t0 + .8]], { r: 30, size: 30 });
+      [1, 3, 4].forEach((k, i) => { c11Fill(n[k], t0 + 1.4 + i * .15, NUM); pulse(n[k], t0 + 5.6 + i * .5, 1.25); });
+    },
+  })],
+
+  ['prime', 'Простые числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Простые и составные числа');
+    const X = n => 128 + (n - 1) * 96, Y = 380;
+    const chips = {};
+    for (let n = 1; n <= 15; n++) chips[n] = c11Chip(p, X(n), Y, n, .2 + n * .04, { r: 38, size: 38, filled: false, col: COL.chalk });
+    // Seven: only 1 and itself.
+    pulse(chips[7], m('seven'), 1.25);
+    klRow(p, ['делится только на ', { m: '1' }, ' и на ', { m: '7' }], X(7), 290, m('seven', .3), { size: 30, fill: NUM });
+    klText(p, 'простое', X(7), 470, m('seven', 4), { size: 26, fill: NUM, weight: 600, anchor: 'middle' });
+    [2, 3, 5, 7, 11, 13].forEach((n, i) => c11Fill(chips[n], n === 7 ? m('seven', .6) : m('list', i * .62), NUM));
+    klText(p, 'простые: ровно два делителя — 1 и само число', 128, 640, m('list', 3.6), { size: 32, fill: NUM, weight: 600 });
+    // Composites are products of primes: their factors appear under them, 4 and 6 grow as they are named.
+    const prod = { 4: '2·2', 6: '2·3', 8: '2·2·2', 9: '3·3', 10: '2·5', 12: '2·2·3', 14: '2·7', 15: '3·5' };
+    Object.keys(prod).forEach((n, i) => {
+      klMath(p, [prod[n]], X(+n), 470, m('bricks', .9 + i * .25), { size: 30, fill: COL.chalk });
+      tw(chips[n]._disc, { c_stroke: DEN }, m('bricks', .9 + i * .25), .3);
+    });
+    pulse(chips[4], m('bricks', 3.5), 1.2);
+    pulse(chips[6], m('bricks', 5.1), 1.2);
+    klText(p, 'составные: произведения простых', 128, 705, m('bricks', 1.2), { size: 32, fill: DEN, weight: 600 });
+    tw(chips[1], { o: .4 }, m('one'), .4);
+    klText(p, 'не простое', X(1), 470, m('one', .2), { size: 26, fill: COL.dim, anchor: 'middle' });
+    klText(p, '1 — ни простое, ни составное: у него один делитель', 128, 770, m('one', 1), { size: 32, fill: COL.dim });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Простое или нет?', 'Подсказка: делимость на 3 видна по сумме цифр');
+    S.q1 = [51, 57, 59].map((n, i) => c11Chip(p, 500 + i * 300, 370, n, .2 + i * .1, { r: 78, size: 64, filled: false, col: COL.chalk }));
+    S.q1lab = ['= 3 · 17', '= 3 · 19'].map((s, i) => { const e = klMath(p, [s], 500 + i * 300, 515, undefined, { size: 40, fill: DEN }); put(e, { o: 0 }); return e; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-prostoe', prompt: 'Какое из чисел простое? Нажми на него.',
+    build: pickEls(S.q1.map((c, i) => ({ el: c, box: [500 + i * 300 - 90, 280, 180, 180], label: String([51, 57, 59][i]) })), 2,
+      '59 не делится ни на 2, ни на 3, ни на 5, ни на 7 — значит, оно простое. А 51 и 57 делятся на 3.',
+      i => i === 0 ? '51 = 3 · 17: сумма цифр 5 + 1 = 6 делится на 3, значит, и само число делится на 3.'
+        : '57 = 3 · 19: сумма цифр 5 + 7 = 12 делится на 3, значит, и само число делится на 3.',
+      () => {
+        c11Fill(S.q1[2], 0, NUM, .4, fx);
+        pulseFx(S.q1[2], 1.15);
+        [0, 1].forEach(i => { fx(S.q1[i], { o: .5 }, .4, .3); fx(S.q1lab[i], { o: 1 }, .5 + i * .2, .4); });
+      }),
+  }], done) }],
+
+  ['tree', 'Дерево множителей', m => {
+    const p = panel(0);
+    klTitle(p, 'Раскладываем 60 на простые множители');
+    const n = c11Tree(p, [
+      [60, 800, 250, -1, .2],
+      [6, 560, 410, 0, m('split')], [10, 1040, 410, 0, m('split', .5)],
+      [2, 440, 570, 1, m('six', .3)], [3, 680, 570, 1, m('six', .9)],
+      [2, 920, 570, 2, m('ten', .3)], [5, 1160, 570, 2, m('ten', .9)],
+    ], { r: 46 });
+    klMath(p, ['·'], 800, 426, m('split', .5), { size: 48 });
+    klMath(p, ['·'], 560, 586, m('six', .6), { size: 48 });
+    klMath(p, ['·'], 1040, 586, m('ten', .6), { size: 48 });
+    [3, 4, 5, 6].forEach((k, i) => { c11Fill(n[k], m('leaves', i * .2), NUM); pulse(n[k], m('leaves', i * .2), 1.2); });
+    klText(p, 'только простые', 1236, 582, m('leaves', 1), { size: 30, fill: NUM, weight: 600 });
+    // The leaves gather into one line, smallest first.
+    const SX = [720, 840, 960, 1080];
+    c11Gather(p, [n[3], n[5], n[4], n[6]], SX, 760, m('row'), NUM);
+    klMath(p, ['60 ='], 650, 778, m('row'), { size: 60, anchor: 'end' });
+    c11Dots(p, SX, 760, m('row', 1.6));
+  }],
+
+  ['same', 'Тот же результат', m => {
+    const p = panel(0);
+    klTitle(p, 'Начнём по-другому');
+    const L = c11Tree(p, [[60, 420, 250, -1, .2], [6, 250, 400, 0, .2], [10, 590, 400, 0, .2], [2, 170, 550, 1, .2], [3, 330, 550, 1, .2], [2, 510, 550, 2, .2], [5, 670, 550, 2, .2]], { r: 40, size: 40 });
+    [3, 4, 5, 6].forEach(k => c11Fill(L[k], .3, NUM, .3));
+    const R = c11Tree(p, [
+      [60, 1180, 250, -1, .2],
+      [4, 1010, 400, 0, m('split')], [15, 1350, 400, 0, m('split', .5)],
+      [2, 930, 550, 1, m('four', .3)], [2, 1090, 550, 1, m('four', .7)],
+      [3, 1270, 550, 2, m('fift', .3)], [5, 1430, 550, 2, m('fift', .7)],
+    ], { r: 40, size: 40 });
+    draw(path(p, 'M800 220V610', { stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), .2, .5);
+    [3, 4, 5, 6].forEach((k, i) => c11Fill(R[k], m('same', i * .15), NUM));
+    // Both sets of leaves gather into lines: the same line twice.
+    const LS = [240, 360, 480, 600], RS = [1000, 1120, 1240, 1360];
+    const g1 = c11Gather(p, [L[3], L[5], L[4], L[6]], LS, 700, m('same', .7), NUM, { r: 40, size: 40, step: .2, dur: .7 });
+    const g2 = c11Gather(p, [R[3], R[4], R[5], R[6]], RS, 700, m('same', .9), NUM, { r: 40, size: 40, step: .2, dur: .7 });
+    [0, 1, 2, 3].forEach(i => { pulse(g1[i], m('rule', 2.5 + i * .25), 1.2); pulse(g2[i], m('rule', 2.5 + i * .25), 1.2); });
+    c11Dots(p, LS, 700, m('same', 1.9)); c11Dots(p, RS, 700, m('same', 1.9));
+    klMath(p, ['='], 800, 718, m('same', 2.4), { size: 72, fill: RULE });
+    klText(p, 'разложение на простые множители — одно-единственное', 800, 830, m('rule', .5), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['column', 'Разложение столбиком', m => {
+    const p = panel(0);
+    klTitle(p, 'Раскладываем 126 столбиком');
+    const LV = [126, 63, 21, 7, 1], PR = [2, 3, 3, 7], RY = k => 270 + k * 100;
+    draw(path(p, `M600 ${RY(0) - 60}V${RY(4) + 30}`, { stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linecap': 'round' }, { d: 0 }), .2, .5);
+    klMath(p, ['126'], 570, RY(0) + 20, .2, { size: 60, anchor: 'end' });
+    const marks = ['d1', 'd2', 'd3', 'd4'];
+    const prs = PR.map((v, k) => {
+      const t = m(marks[k], k === 1 ? 2.6 : .2);
+      const c = c11Chip(p, 680, RY(k), v, t, { col: NUM, r: 36, size: 40 });
+      klMath(p, [String(LV[k + 1])], 570, RY(k + 1) + 20, t + .9, { size: 60, anchor: 'end' });
+      klMath(p, [`${LV[k]} : ${v} = ${LV[k + 1]}`], 900, RY(k) + 16, t + .4, { size: 40, fill: COL.dim, anchor: 'start' });
+      Object.assign(c, { _x: 680, _y: RY(k), _n: v });
+      return c;
+    });
+    // 63 is odd: the try with 2 is crossed out before 3 takes its place.
+    klMath(p, ['63 : 2'], 1260, RY(1) + 16, m('d2', .3), { size: 40, fill: COL.dim, anchor: 'start' });
+    klMark(p, 1420, RY(1) + 2, m('d2', 1.2), false, .7);
+    klText(p, 'простое', 760, RY(3) + 10, m('d4', .3), { size: 28, fill: NUM, weight: 600 });
+    klText(p, 'стоп: получили 1', 900, RY(4) + 12, m('d4', 2), { size: 30, fill: COL.dim });
+    // The right column, read top to bottom, is the answer.
+    const XS = [1050, 1170, 1290, 1410];
+    c11Gather(p, prs, XS, 790, m('res', .6), NUM, { r: 36, size: 40, step: .35 });
+    c11Dots(p, XS, 790, m('res', 2));
+    klMath(p, ['126 ='], 980, 808, m('res', .2), { size: 56, anchor: 'end' });
+    draw(path(p, `M624 ${RY(0) - 40}V${RY(3) + 40}`, { stroke: NUM, 'stroke-width': 6, 'stroke-linecap': 'round', 'stroke-opacity': .5 }, { d: 0 }), m('res'), .5);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Допиши столбик');
+    const LV = [90, 45, 15, 5, 1], RY = k => 190 + k * 92;
+    path(p, `M760 ${RY(0) - 50}V${RY(4) + 25}`, { stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linecap': 'round' });
+    LV.forEach((v, k) => klMath(p, [String(v)], 730, RY(k) + 18, .2 + k * .1, { size: 54, anchor: 'end' }));
+    c11Chip(p, 830, RY(0), 2, .3, { col: NUM, r: 34, size: 38 });
+    S.q2 = [3, 3, 5].map((v, k) => {
+      const q = klMath(p, ['?'], 830, RY(k + 1) + 16, .5 + k * .1, { size: 50, fill: COL.dim });
+      const c = c11Chip(p, 830, RY(k + 1), v, undefined, { col: NUM, r: 34, size: 38 });
+      put(c, { o: 0 });
+      return [q, c];
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-90', prompt: 'Разложи 90 на простые множители: допиши столбик.',
+    build: blanks([{ parts: ['90 = 2 · ', { box: '3' }, ' · ', { box: '3' }, ' · ', { box: '5' }],
+      test: v => v.slice().sort((a, b) => a - b).join() === '3,3,5',
+      why: '45 : 3 = 15, 15 : 3 = 5, 5 : 5 = 1. Значит, 90 = 2 · 3 · 3 · 5.',
+      hint: 'Смотри на левый столбик: 45 = 3 · 15, 15 = 3 · 5. Справа пишут, на что делили.',
+      fx: () => S.q2.forEach(([q, c], k) => { fx(q, { o: 0 }, k * .25, .2); fx(c, { o: 1 }, k * .25, .3); }) }]),
+  }], done) }],
+
+  ['nod', 'Наибольший общий делитель', m => {
+    const p = panel(0);
+    klTitle(p, 'Общие множители двух чисел');
+    const la = klMath(p, ['24'], 400, YA + 18, .2, { size: 56, fill: NUM, anchor: 'end' });
+    const lb = klMath(p, ['36'], 400, YB + 18, .3, { size: 56, fill: TWO, anchor: 'end' });
+    const eqs = [YA, YB].map((y, i) => klMath(p, ['='], 445, y + 18, m('rows', i * 1), { size: 56 }));
+    const a = {}, b = {};
+    CX.forEach((x, k) => {
+      if (A24[k]) a[k] = c11Chip(p, x, YA, A24[k], m('rows', .2 + k * .15), { col: NUM });
+      if (B36[k]) b[k] = c11Chip(p, x, YB, B36[k], m('rows', 1.2 + k * .15), { col: TWO });
+    });
+    const da = c11Dots(p, [CX[0], CX[1], CX[2], CX[3]], YA, m('rows', .9));
+    const db = c11Dots(p, [CX[0], CX[1], CX[3], CX[4]], YB, m('rows', 1.9));
+    // The common primes: a frame round each pair, one after another as they are named.
+    const fr = COMMON.map((k, i) => c11Frame(p, CX[k] - 58, YA - 62, 116, YB - YA + 124, RULE, m('common', 2.6 + i * 1)));
+    // Each pair meets in the middle row and becomes one common factor.
+    [da, db, ...eqs].forEach(e => hide(e, m('merge'), .3));
+    COMMON.forEach((k, i) => {
+      const t = m('merge', .3 + i * .35);
+      tw(a[k], { y: YM }, t, .7, io); tw(b[k], { y: YM }, t, .7, io);
+      c11Fill(a[k], t, RULE, .7); c11Fill(b[k], t, RULE, .7);
+      hide(b[k], t + .7, .05);
+      hide(fr[i], t + .5, .3);
+    });
+    c11Dots(p, [CX[0], CX[1], CX[3]], YM, m('merge', 1.5));
+    c11Frame(p, ...FRAME_A, NUM, m('merge', 1.8), { dash: '' });
+    c11Frame(p, ...FRAME_B, TWO, m('merge', 2.1), { dash: '' });
+    klMath(p, ['= 12'], 1175, YM + 18, m('mul', 1.5), { size: 52, fill: RULE, anchor: 'start' });
+    COMMON.forEach((k, i) => pulse(a[k], m('mul', i * .45), 1.2));
+    const nl = klText(p, 'НОД', 400, YM + 14, m('name', 1.2), { size: 40, fill: RULE, weight: 700, anchor: 'end' });
+    pulse(nl, m('name', 3), 1.3);
+    klText(p, 'наибольший общий делитель', 800, 700, m('name', 1.2), { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+    // What is left over beyond the common part: 24 : 12 and 36 : 12.
+    klMath(p, ['24 : 12 = 2'], 1210, YA + 16, m('why', 1), { size: 44, fill: NUM, anchor: 'start' });
+    klMath(p, ['36 : 12 = 3'], 1210, YB + 16, m('why', 1.6), { size: 44, fill: TWO, anchor: 'start' });
+    klText(p, 'общих множителей больше нет — больше общего делителя нет', 800, 780, m('why', 6), { size: 30, fill: COL.dim, anchor: 'middle' });
+    pulse(a[2], m('why', 6), 1.2); pulse(b[4], m('why', 6.2), 1.2);
+  }],
+
+  ['nok', 'Наименьшее общее кратное', m => {
+    const p = panel(0);
+    klTitle(p, 'Число, которое делится на оба');
+    const { top, mid, bot, fa } = c11Merged(p);
+    tw(fa, { 'a_stroke-width': 7 }, m('take'), .3); tw(fa, { 'a_stroke-width': 3 }, m('take', 3.5), .4);
+    // All of 24's primes drop straight down into the new row; then the missing 3 from 36.
+    const drop = (c, k, col, t) => {
+      const d = c11Chip(p, CX[k], st(c).y, c._t.textContent, undefined, { col });
+      put(d, { o: 0 }); show(d, t, .05); tw(d, { y: YN }, t, .7, io);
+      pulse(d, m('least', 4 + k * .2), 1.2);
+    };
+    drop(mid[0], 0, RULE, m('take', 1)); drop(mid[1], 1, RULE, m('take', 1.5)); drop(top, 2, NUM, m('take', 2)); drop(mid[3], 3, RULE, m('take', 2.6));
+    pulse(bot, m('add', .5), 1.25);
+    drop(bot, 4, TWO, m('add', 2.4));
+    klText(p, 'НОК', 400, YN + 14, 1.2, { size: 40, weight: 700, anchor: 'end' });
+    CX.forEach((x, k) => c11Frame(p, x - 44, YN - 44, 88, 88, COL.dim, 1.6 + k * .1, { width: 2 }));
+    pulse(fa, m('both'), 1.02); tw(fa, { 'a_stroke-width': 6 }, m('both'), .3); tw(fa, { 'a_stroke-width': 3 }, m('both', 1.2), .3);
+    c11Dots(p, CX, YN, m('add', 3.2));
+    klMath(p, ['= 72'], 1175, YN + 18, m('mul', 2.6), { size: 52, anchor: 'start' });
+    klText(p, 'наименьшее общее кратное', 1175, YN + 70, m('mul', 3), { size: 28, fill: COL.dim });
+    klMath(p, ['72 : 24 = 3,     72 : 36 = 2'], 800, 860, m('least', 1.5), { size: 38, fill: COL.dim });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const X = [600, 740, 880, 1020], A = [2, 3, 3, 0], B = [2, 3, 0, 5];
+    klMath(p, ['18 ='], 520, 198, .2, { size: 52, fill: NUM, anchor: 'end' });
+    klMath(p, ['30 ='], 520, 478, .3, { size: 52, fill: TWO, anchor: 'end' });
+    S.q3a = X.map((x, k) => A[k] && c11Chip(p, x, 180, A[k], .3 + k * .1, { col: NUM, r: 38, size: 40 }));
+    S.q3b = X.map((x, k) => B[k] && c11Chip(p, x, 460, B[k], .5 + k * .1, { col: TWO, r: 38, size: 40 }));
+    c11Dots(p, [X[0], X[1], X[2]], 180, .6); c11Dots(p, [X[0], X[1], X[3]], 460, .7);
+    S.q3l = [klMath(p, ['НОД = 6'], 1110, 338, undefined, { size: 44, fill: RULE, anchor: 'start' }), klMath(p, ['НОК = 2 · 3 · 3 · 5 = 90'], 800, 600, undefined, { size: 40, anchor: 'middle' })];
+    S.q3l.forEach(e => put(e, { o: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-nodnok', prompt: 'Найди НОД и НОК чисел 18 и 30.',
+    build: blanks([
+      { parts: ['НОД(18, 30) = ', { box: '6' }], why: 'Общие множители — 2 и 3: НОД = 2 · 3 = 6.', hint: 'Перемножь только те множители, которые есть в обоих разложениях.',
+        fx: () => { [0, 1].forEach(k => { fx(S.q3a[k], { y: 320 }, k * .2, .6, io); fx(S.q3b[k], { y: 320 }, k * .2, .6, io); c11Fill(S.q3a[k], k * .2, RULE, .6, fx); c11Fill(S.q3b[k], k * .2, RULE, .6, fx); }); fx(S.q3l[0], { o: 1 }, .8, .4); } },
+      { parts: ['НОК(18, 30) = ', { box: '90' }], why: 'Все множители 18 (2, 3, 3) и недостающая пятёрка из 30: 2 · 3 · 3 · 5 = 90.', hint: 'Возьми все множители 18 и добавь те множители 30, которых не хватает.',
+        fx: () => fx(S.q3l[1], { o: 1 }, .2, .4) },
+    ]),
+  }], done) }],
+
+  ['check', 'Проверка', m => {
+    const p = panel(0);
+    klTitle(p, 'Проверка: НОД · НОК = a · b');
+    const XS = [400, 520, 640, 760, 880];
+    klText(p, 'НОД', 300, 244, .2, { size: 40, fill: RULE, weight: 700, anchor: 'end' });
+    klText(p, 'НОК', 300, 394, .2, { size: 40, weight: 700, anchor: 'end' });
+    const nod = [2, 2, 3].map((v, i) => c11Chip(p, XS[i], 230, v, .3 + i * .08, { col: RULE }));
+    const nok = [[2, RULE], [2, RULE], [2, NUM], [3, RULE], [3, TWO]].map(([v, col], i) => c11Chip(p, XS[i], 380, v, .4 + i * .08, { col }));
+    const d1 = c11Dots(p, XS.slice(0, 3), 230, .5), d2 = c11Dots(p, XS, 380, .6);
+    const r1 = klMath(p, ['= 12'], 700, 248, .6, { size: 52, fill: RULE, anchor: 'start' });
+    const r2 = klMath(p, ['= 72'], 940, 398, .7, { size: 52, anchor: 'start' });
+    klMath(p, ['12 · 72'], 1290, 320, m('mul', .3), { size: 56, anchor: 'end' });
+    const e1 = klMath(p, ['= 864'], 1310, 320, m('mul', 3), { size: 56, anchor: 'start' });
+    pulse(e1, m('ab', 3.2), 1.15);
+    // Common primes are in both rows; the rest only in НОК.
+    [...nod, nok[0], nok[1], nok[3]].forEach((c, i) => pulse(c, m('why', 1 + i * .1), 1.2));
+    [nok[2], nok[4]].forEach((c, i) => pulse(c, m('why', 4.2 + i * .2), 1.25));
+    // Together they are exactly the primes of 24 and of 36: every chip moves into one of the two rows.
+    const Y24 = 620, Y36 = 770;
+    klMath(p, ['24 ='], 320, Y24 + 18, m('back'), { size: 52, fill: NUM, anchor: 'end' });
+    klMath(p, ['36 ='], 320, Y36 + 18, m('back'), { size: 52, fill: TWO, anchor: 'end' });
+    [d1, d2, r1, r2].forEach(e => tw(e, { o: .2 }, m('back'), .4));
+    const go = (c, x, y, col, t) => { tw(c, { x, y }, t, .8, io); c11Fill(c, t, col, .8); };
+    [0, 1, 2, 3].forEach(i => go(nok[i], XS[i], Y24, NUM, m('back', .2 + i * .12)));
+    [0, 1, 2].forEach(i => go(nod[i], XS[i], Y36, TWO, m('back', .4 + i * .12)));
+    go(nok[4], XS[3], Y36, TWO, m('back', .8));
+    c11Dots(p, XS.slice(0, 4), Y24, m('back', 1.4)); c11Dots(p, XS.slice(0, 4), Y36, m('back', 1.4));
+    klMath(p, ['24 · 36'], 1290, 712, m('ab', .3), { size: 56, anchor: 'end' });
+    const e2 = klMath(p, ['= 864'], 1310, 712, m('ab', 3), { size: 56, anchor: 'start' });
+    pulse(e2, m('ab', 3.2), 1.15);
+    klRow(p, ['НОД · НОК = ', { m: 'a · b' }], 1300, 520, m('why', 6), { size: 40, fill: RULE, weight: 700, msize: 52 });
+  }],
+
+  ['coprime', 'Взаимно простые числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Когда общих множителей нет');
+    klMath(p, ['8 ='], 440, 298, .2, { size: 56, fill: NUM, anchor: 'end' });
+    klMath(p, ['9 ='], 440, 478, .3, { size: 56, fill: TWO, anchor: 'end' });
+    const a = [0, 1, 2].map(k => c11Chip(p, CX[k], 280, 2, m('rows', .3 + k * .25), { col: NUM }));
+    const b = [3, 4].map((k, i) => c11Chip(p, CX[k], 460, 3, m('rows', 2 + i * .25), { col: TWO }));
+    c11Dots(p, CX.slice(0, 3), 280, m('rows', 1)); c11Dots(p, CX.slice(3), 460, m('rows', 2.6));
+    // No column holds a pair: nothing to bring together.
+    CX.forEach((x, k) => draw(path(p, `M${x} 330V410`, { stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '5 7' }, { d: 0 }), m('none', k * .1), .3));
+    klMark(p, 1240, 370, m('none', .3), false, .9);
+    klText(p, 'общих нет', 1300, 382, m('none', .3), { size: 32, fill: COL.dim });
+    klRow(p, ['НОД(8, 9) = ', { m: '1' }], 800, 640, m('nod'), { size: 44, fill: RULE, weight: 700, msize: 56 });
+    klText(p, 'такие числа — взаимно простые', 800, 700, m('nod', 2), { size: 32, fill: COL.dim, anchor: 'middle' });
+    klRow(p, ['НОК(8, 9) = ', { m: '8 · 9' }], 840, 810, m('nok'), { size: 44, weight: 700, msize: 56, anchor: 'end' });
+    klMath(p, ['= 72'], 860, 810, m('nok', 3.2), { size: 56, anchor: 'start' });
+    [...a, ...b].forEach((c, i) => pulse(c, m('nok', 1.5 + i * .15), 1.15));
+  }],
+
+  ['trap', 'Не перепутай', m => {
+    const p = panel(0);
+    klTitle(p, 'Где живут НОД и НОК');
+    draw(path(p, `M${LX(0) - 20} ${LY}H${LX(40) + 30}`, { stroke: COL.chalk, 'stroke-width': 3.5 }, { d: 0 }), .2, .5);
+    for (let v = 0; v <= 40; v += 2) path(p, `M${LX(v)} ${LY - (v % 6 ? 8 : 14)}V${LY + (v % 6 ? 8 : 14)}`, { stroke: COL.chalk, 'stroke-width': 2 });
+    [0, 12, 18].forEach((v, i) => klMath(p, [String(v)], LX(v), LY + 56, i ? 1.6 + i * .6 : .3, { size: 38 }));
+    [12, 18].forEach((v, i) => { const d = mk('circle', { cx: LX(v), cy: LY, r: 12, fill: COL.chalk }, p); put(d, { o: 0 }); show(d, 2.2 + i * .6); pulse(d, 2.2 + i * .6, 1.6); });
+    const W = klRow(p, ['НОД(12, 18) ='], 900, 270, m('wrong', 1), { size: 44, fill: COL.dim, anchor: 'end' });
+    const W2 = klMath(p, ['36'], 920, 270, m('wrong', 3.3), { size: 56, fill: COL.dim, anchor: 'start' });
+    const sk = klStrike(p, 610, 284, 990, 236, m('strike'));
+    const no = klText(p, 'так не бывает!', 1030, 270, m('strike', .3), { size: 30, fill: COL.bad, weight: 700 });
+    // The bands where each can be.
+    const band = (a, b, col, t) => draw(path(p, `M${LX(a)} ${LY}H${LX(b)}`, { stroke: col, 'stroke-width': 12, 'stroke-linecap': 'round' }, { d: 0, o: .6 }), t, .6);
+    band(0, 12, DEN, m('nod', 1));
+    klText(p, 'НОД — не больше 12', LX(6), 610, m('nod', 1.5), { size: 30, fill: DEN, weight: 600, anchor: 'middle' });
+    band(18, 40, RULE, m('nok', 1));
+    klText(p, 'НОК — не меньше 18', LX(29), 610, m('nok', 1.5), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    [W, W2, sk, no].forEach(e => hide(e, m('right', -.2), .3));
+    const dot = (v, col, label, t) => {
+      const d = mk('circle', { cx: LX(v), cy: LY, r: 15, fill: col, stroke: COL.board, 'stroke-width': 3 }, p);
+      put(d, { o: 0 }); show(d, t, .3);
+      klMath(p, [String(v)], LX(v), LY + 56, t, { size: 38, fill: col });
+      klText(p, label, LX(v), LY - 40, t + .2, { size: 30, fill: col, weight: 700, anchor: 'middle' });
+    };
+    dot(6, DEN, 'НОД', m('right', 1.3));
+    dot(36, RULE, 'НОК', m('right', 3));
+    klRow(p, ['НОД(12, 18) = ', { m: '6' }, ',   НОК(12, 18) = ', { m: '36' }], 800, 760, m('right', .2), { size: 40, weight: 600, msize: 52 });
+    klMark(p, 1290, 745, m('right', 4), true, .8);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, '18 роз', 380, 170, .2, { size: 32, fill: NUM, weight: 600, anchor: 'middle' });
+    klText(p, '24 тюльпана', 1150, 170, .2, { size: 32, fill: TWO, weight: 600, anchor: 'middle' });
+    const flower = (x, y, col, t) => { const g = G(p, { x, y, o: 0 }); mk('circle', { r: 17, fill: col, 'fill-opacity': .9 }, g); show(g, t, .3); return g; };
+    S.q4r = Array.from({ length: 18 }, (_, i) => flower(230 + (i % 6) * 60, 230 + Math.floor(i / 6) * 60, NUM, .3 + i * .02));
+    S.q4t = Array.from({ length: 24 }, (_, i) => flower(940 + (i % 8) * 60, 230 + Math.floor(i / 8) * 60, TWO, .4 + i * .02));
+    // Where the flowers go when the answer is right: 6 bouquets of 3 roses and 4 tulips.
+    S.q4b = Array.from({ length: 6 }, (_, k) => { const e = mk('circle', { cx: 275 + k * 210, cy: 520, r: 92, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '9 8' }, p); put(e, { o: 0 }); return e; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-bukety', prompt: 'Из 18 роз и 24 тюльпанов собирают одинаковые букеты и используют все цветы. Какое наибольшее число букетов получится?',
+    build: blanks([{ parts: [{ box: '6' }, ' букетов'], why: 'Число букетов делит и 18, и 24, а наибольшее такое число — НОД(18, 24) = 6. В каждом букете 3 розы и 4 тюльпана.',
+      hint: 'Число букетов должно делить и 18, и 24. Нужен наибольший общий делитель.',
+      fx: () => {
+        S.q4b.forEach((e, k) => fx(e, { o: 1 }, k * .05, .3));
+        S.q4r.forEach((f, i) => { const k = Math.floor(i / 3), j = i % 3; fx(f, { x: 275 + k * 210 - 40 + j * 40, y: 490 }, .2 + i * .03, .7, io); });
+        S.q4t.forEach((f, i) => { const k = Math.floor(i / 4), j = i % 4; fx(f, { x: 275 + k * 210 - 57 + j * 38, y: 548 }, .4 + i * .03, .7, io); });
+      } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Простые числа:  ', { m: '2, 3, 5, 7, 11, 13, …' }, '   (1 — не простое)'],
+    ['Разложение единственно:  ', { m: '60 = 2 · 2 · 3 · 5' }],
+    'НОД — общие множители, НОК — общие и все остальные',
+    'НОД — чтобы сокращать дроби, НОК — для общего знаменателя',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-prostye', prompt: 'Отметь, простое число или составное.',
+    build: grid([
+      { parts: ['29'], ans: ['pr'], why: '29 делится только на 1 и на 29.' },
+      { parts: ['39'], ans: ['so'], why: '39 = 3 · 13.' },
+      { parts: ['2'], ans: ['pr'], why: 'Два — единственное чётное простое число.' },
+      { parts: ['91'], ans: ['so'], why: '91 = 7 · 13 — это легко пропустить.' },
+    ], [['pr', 'простое', null, '1'], ['so', 'составное', null, '2']], { multi: false }),
+  }, {
+    id: 'p-dvoyki', prompt: 'Сколько двоек в разложении числа 84 на простые множители?',
+    build: blanks([{ parts: [{ box: '2' }, ' двойки'], why: '84 = 2 · 2 · 3 · 7: 84 → 42 → 21, а 21 уже нечётное.', hint: 'Дели 84 на 2, пока делится, и считай шаги.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-nodnok', prompt: 'Найди НОД и НОК.',
+    build: blanks([
+      { parts: ['НОД(16, 24) = ', { box: '8' }], why: '16 = 2 · 2 · 2 · 2, 24 = 2 · 2 · 2 · 3: общие — три двойки, 2 · 2 · 2 = 8.', hint: 'Разложи оба числа и перемножь общие множители.' },
+      { parts: ['НОК(6, 8) = ', { box: '24' }], why: '8 = 2 · 2 · 2, а у 6 = 2 · 3 не хватает тройки: 8 · 3 = 24.', hint: 'Возьми все множители 8 и добавь недостающие множители 6.' },
+      { parts: ['НОК(5, 7) = ', { box: '35' }], why: '5 и 7 взаимно простые, поэтому НОК = 5 · 7 = 35.', hint: 'Общих множителей нет — НОК равен произведению.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-oshibka', prompt: 'Маша нашла для чисел 9 и 12: НОД = 36, НОК = 3. Что не так?',
+    build: choice(['Она перепутала НОД и НОК', 'Всё верно', 'НОД должен быть равен 1'], 0,
+      'НОД не больше меньшего числа, а НОК не меньше большего: НОД(9, 12) = 3, НОК(9, 12) = 36.',
+      [null, '36 больше обоих чисел — оно не может быть их общим делителем.', 'У 9 и 12 есть общий множитель 3, значит, НОД не равен 1.']),
+  }, {
+    id: 'p-proizv', prompt: 'НОД двух чисел равен 4, НОК равен 48. Одно из чисел — 12. Найди другое.',
+    build: blanks([{ parts: [{ box: '16' }], why: 'НОД · НОК = a · b: 4 · 48 = 192, 192 : 12 = 16. Проверка: НОД(12, 16) = 4, НОК(12, 16) = 48.', hint: 'Вспомни проверку: НОД · НОК равно произведению чисел.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
