@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Скобки и подобные слагаемые · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 6.4 «Скобки и подобные слагаемые» (6 класс). Beat ids match papermorph/content/uroki/ch27/narration.ru.json.
+const CHAPTER = { number: 27, label: '6.4', title: 'Скобки и подобные слагаемые', minutes: 8, language: 'ru', next: '../ch28/' };
+
+// Colours in this lesson: x and x-tiles KL.DEN (letters, as in 1.6), unit tiles KL.TWO, a second letter b KL.WHOLE,
+// negative tiles dashed COL.bad on the board, rules and results KL.RULE.
+const XC = KL.DEN, ONE = KL.TWO, LB = KL.WHOLE, RULE = KL.RULE;
+const C27U = 46, C27L = 150;           // side of a unit tile, length of an x-tile
+
+/* ---------- algebra tiles that can flip ---------- */
+const c27Dim = kind => kind === 'x' ? [C27U, C27L] : kind === 'xh' ? [C27L, C27U] : [C27U, C27U];
+// A tile centred on (x, y): 'x' (upright strip), 'xh' (lying strip) or 'one' (unit square); neg draws it dashed with a
+// minus. Both faces are kept, so c27Flip can turn it over. Returns the group with neg, kind, w, h.
+function c27Tile(p, kind, x, y, { neg = false, o = 1 } = {}) {
+  const g = G(p, { x, y, o }), inn = mk('g', {}, g), [w, h] = c27Dim(kind), c = kind === 'one' ? ONE : XC;
+  const face = n => {
+    const f = mk('g', {}, inn);
+    mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 6, fill: n ? mix(COL.board, COL.bad, .2) : mix(COL.board, c, .5),
+      stroke: n ? COL.bad : c, 'stroke-width': n ? 3.5 : 2.5, 'stroke-dasharray': n ? '8 5' : 'none' }, f);
+    M(f, [(n ? '−' : '') + (kind === 'one' ? '1' : 'x')], { y: 9, size: kind === 'one' ? 24 : 30, fill: n ? COL.bad : COL.chalk });
+    f.setAttribute('opacity', n === neg ? 1 : 0);
+    return f;
+  };
+  g.faces = [face(false), face(true)]; g._in = inn; g.neg = neg; g.kind = kind; g.w = w; g.h = h;
+  return g;
+}
+// Turn a tile over (a card flip about its upright axis): x becomes −x, −1 becomes 1. run = prog (lesson) or fxp (answer).
+function c27Flip(g, t0, run = prog, dur = .55) {
+  const from = g.neg, [P, N] = g.faces;
+  g.neg = !from;
+  run(q => {
+    g._in.setAttribute('transform', `scale(${Math.max(.03, Math.abs(Math.cos(Math.PI * q)))},1)`);
+    const neg = q < .5 ? from : !from;
+    N.setAttribute('opacity', neg ? 1 : 0); P.setAttribute('opacity', neg ? 0 : 1);
+  }, t0, dur, lin);
+}
+// A row of tiles standing on the line yb: specs are [kind, neg?] or a number (extra gap). anchor 'middle' centres the
+// row on x. Returns the tiles (hidden unless o is 1).
+function c27Tiles(p, specs, x, yb, { gap = 14, o = 0, anchor = 'start' } = {}) {
+  let w = 0;
+  for (const s of specs) w += typeof s === 'number' ? s : c27Dim(s[0])[0] + gap;
+  let cx = anchor === 'middle' ? x - (w - gap) / 2 : x;
+  const out = [];
+  for (const s of specs) {
+    if (typeof s === 'number') { cx += s; continue; }
+    const [tw_, th] = c27Dim(s[0]);
+    out.push(c27Tile(p, s[0], cx + tw_ / 2, yb - th / 2, { neg: !!s[1], o }));
+    cx += tw_ + gap;
+  }
+  return out;
+}
+// Tiles grow in one after another.
+function c27Pop(els, t0, step = .08) { els.forEach(e => put(e, { o: 0, s: .6 })); popIn(els, t0, step); }
+// n copies of a spec, for c27Tiles.
+const c27N = (n, kind, neg = false) => Array.from({ length: n }, () => [kind, neg]);
+// One lying row x + k (or x − k): an x-strip and k unit tiles side by side with no gap, left edge x0, centre y.
+function c27Bar(p, x0, y, k, neg = false) {
+  const ts = [c27Tile(p, 'xh', x0 + C27L / 2, y, { o: 0 })];
+  for (let i = 0; i < k; i++) ts.push(c27Tile(p, 'one', x0 + C27L + C27U / 2 + i * C27U, y, { neg, o: 0 }));
+  return ts;
+}
+
+/* ---------- maths on a line (as 1.2's c02R / c02Seq / c02Eq) ---------- */
+function c27R(p, pieces, x, y, t0, { size = 60, anchor = 'middle', fill = COL.chalk } = {}) {
+  return klRow(p, pieces.map(s => typeof s === 'string' ? { m: s } : s), x, y, t0, { msize: size, anchor, fill });
+}
+function c27Seq(p, segs, x, y, { size = 60, fill } = {}) {
+  let cx = x;
+  const gs = segs.map(([pc, t]) => { const g = c27R(p, [].concat(pc), cx, y, t, { size, anchor: 'start', fill }); cx += g._w; return g; });
+  return { gs, x0: x, x1: cx };
+}
+function c27Eq(p, L, tL, segs, y, xEq, { size = 60, fill } = {}) {
+  const l = L ? c27R(p, L, xEq - size * .5, y, tL, { size, anchor: 'end', fill }) : null;
+  const s = c27Seq(p, segs, xEq - mathW(['='], size) / 2, y, { size, fill });
+  return { l, lx0: xEq - size * .5 - (l ? l._w : 0), ...s };
+}
+// The centre x of the piece `tok` in a line drawn from x0 whose text before it is `before`.
+const c27X = (x0, before, tok, size) => x0 + mathW([before], size) + mathW([tok], size) / 2;
+// A bracket over a stretch as one group (so it can slide), label above.
+function c27Brace(p, x1, x2, y, label, t0, { fill = COL.chalk, size = 40 } = {}) {
+  const g = G(p, { o: 0 });
+  path(g, `M${x1} ${y + 12}V${y}H${x2}V${y + 12}`, { stroke: fill, 'stroke-width': 3 });
+  M(g, [label], { x: (x1 + x2) / 2, y: y - 14, size, fill });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// An oval drawn round a piece of a line.
+function c27Ring(p, cx, cy, rx, ry, col, t0) {
+  const e = path(p, `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`, { stroke: col, 'stroke-width': 4 }, { d: 0 });
+  draw(e, t0, .45);
+  return e;
+}
+// A short underline under x1 … x2.
+function c27Under(p, x1, x2, y, col, t0) { draw(path(p, `M${x1} ${y}H${x2}`, { stroke: col, 'stroke-width': 5, 'stroke-linecap': 'round' }, { d: 0 }), t0, .4); }
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Скобки и подобные слагаемые', (m, D) => klIntro(m, D, {
+    unit: 'Глава 6 · Положительные и отрицательные числа · Тема 6.4',
+    title: 'Скобки и подобные слагаемые',
+    sub: 'Как раскрывать скобки и собирать похожее вместе',
+    art: g => {
+      c27Pop(c27Tiles(g, [...c27N(3, 'x'), 24, ...c27N(2, 'one')], 430, 690), 2.4, .2);
+      klMath(g, ['−(x − 3) = −x + 3'], 1040, 650, 4.2, { size: 46, fill: RULE });
+    },
+  })],
+
+  ['tiles', 'Плитки', m => {
+    const p = panel(0);
+    klTitle(p, 'Плитки вместо букв и чисел');
+    const xT = c27Tile(p, 'x', 230, 420, { o: 0 });
+    show(xT, .2);
+    pulse(xT, m('x', 1), 1.15);
+    const lb = path(p, 'M262 347h10v146h-10', { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 });
+    draw(lb, m('x', 2.2), .5);
+    const q = klText(p, '?', 288, 436, m('x', 2.6), { size: 48, fill: COL.dim });
+    hide(q, m('one', -1.3), .3); hide(lb, m('one', -1.3), .3);
+    klMath(p, ['= x'], 285, 438, m('one', -1.1), { size: 52, fill: XC, anchor: 'start' });
+    const oT = c27Tile(p, 'one', 230, 640, { o: 0 });
+    c27Pop([oT], m('one'));
+    klMath(p, ['= 1'], 275, 658, m('one', .5), { size: 52, fill: ONE, anchor: 'start' });
+    const ex = c27Tiles(p, [...c27N(3, 'x'), 30, ...c27N(2, 'one')], 1000, 470, { anchor: 'middle' });
+    c27Pop(ex, m('expr'), .15);
+    klMath(p, ['3x + 2'], 1000, 560, m('expr', 1.6), { size: 60 });
+    klText(p, 'отрицательные', 520, 300, m('neg'), { size: 28, fill: COL.bad, anchor: 'middle', weight: 600 });
+    const nx = c27Tile(p, 'x', 490, 420, { neg: true, o: 0 }), n1 = c27Tile(p, 'one', 490, 640, { neg: true, o: 0 });
+    c27Pop([nx], m('negx')); klMath(p, ['= −x'], 535, 438, m('negx', .5), { size: 52, anchor: 'start' });
+    c27Pop([n1], m('neg1')); klMath(p, ['= −1'], 535, 658, m('neg1', .5), { size: 52, anchor: 'start' });
+    const a = c27Tile(p, 'x', 900, 735, { o: 0 }), b = c27Tile(p, 'x', 1100, 735, { neg: true, o: 0 });
+    c27Pop([a, b], m('zero'), .3);
+    tw(a, { x: 977 }, m('gone'), .6); tw(b, { x: 1023 }, m('gone'), .6);
+    hide(a, m('gone', .9), .4); hide(b, m('gone', .9), .4);
+    klMath(p, ['x + (−x) = 0'], 1000, 760, m('gone', 1.2), { size: 52 });
+  }],
+
+  ['like', 'Подобные слагаемые', m => {
+    const p = panel(0);
+    klTitle(p, 'Подобные слагаемые');
+    c27Seq(p, [['3x', .2], [' + 2', m('row', 2.1)], [' + 2x', m('row', 2.9)], [' − 5', m('row', 3.9)]], 950 - mathW(['3x + 2 + 2x − 5'], 64), 250, { size: 64 });
+    const ts = c27Tiles(p, [...c27N(3, 'x'), 40, ...c27N(2, 'one'), 40, ...c27N(2, 'x'), 40, ...c27N(5, 'one', true)], 800, 520, { anchor: 'middle' });
+    c27Pop(ts, m('tiles'), .08);
+    const xs = ts.filter(t => t.kind === 'x'), pos = ts.filter(t => t.kind === 'one' && !t.neg), neg = ts.filter(t => t.neg);
+    xs.forEach((t, i) => tw(t, { x: 300 + i * 60, y: 645 }, m('xs', i * .12), .8));
+    pos.forEach((t, i) => tw(t, { x: 1000 + i * 60, y: 627 }, m('ones', i * .1), .8));
+    neg.forEach((t, i) => tw(t, { x: 1000 + i * 60, y: 707 }, m('ones', .2 + i * .1), .8));
+    klCount(p, xs.map((_, i) => [300 + i * 60, 548]), m('count'), { step: .25, size: 32, fill: XC });
+    const l5 = G(p, { x: 420, y: 800 });
+    klMath(l5, ['5x'], 0, 0, m('x5'), { size: 56, fill: XC });
+    const heap = (x, y, w, h, c, t) => show(put(mk('rect', { x, y, width: w, height: h, rx: 14, fill: 'none', stroke: c, 'stroke-width': 3, 'stroke-dasharray': '10 7' }, p), { o: 0 }), t, .4);
+    heap(254, 510, 332, 238, XC, m('name', 1.4)); heap(1094, 666, 172, 82, COL.bad, m('name', 2.2));
+    pulse(l5, m('name', 4.6), 1.3);
+    [0, 1].forEach(i => {
+      const r = put(mk('rect', { x: 1000 + i * 60 - 30, y: 596, width: 60, height: 142, rx: 14, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '8 6' }, p), { o: 0 });
+      show(r, m('pairs', i * .3), .3);
+      for (const e of [r, pos[i], neg[i]]) hide(e, m('pairs', 1.6 + i * .15), .4);
+    });
+    klMath(p, ['−3'], 1180, 800, m('left'), { size: 56, fill: COL.bad });
+    const rr = c27R(p, ['= 5x − 3'], 980, 250, m('res'), { size: 64, anchor: 'start', fill: RULE });
+    const rf = put(mk('rect', { x: 980 + mathW(['= '], 64) - 12, y: 196, width: rr._w - mathW(['= '], 64) + 24, height: 76, rx: 12, fill: 'none', stroke: RULE, 'stroke-width': 3.5 }, p), { o: 0 });
+    show(rf, m('never', 3.4), .4);
+    klText(p, 'подобные слагаемые — с одинаковой буквенной частью', 800, 420, m('name'), { size: 32, fill: RULE, anchor: 'middle', weight: 600 });
+    klMath(p, ['≠'], 800, 690, m('never'), { size: 96, fill: COL.bad });
+    klText(p, 'x и число не складываются', 800, 850, m('never', .5), { size: 30, fill: COL.bad, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klMath(p, ['4x + 7x − 2x'], 800, 210, .2, { size: 60 });
+    S.q1 = c27Tiles(p, [...c27N(4, 'x'), 30, ...c27N(7, 'x'), 30, ...c27N(2, 'x', true)], 800, 470, { gap: 12, anchor: 'middle' });
+    c27Pop(S.q1, .3, .05);
+    const keep = S.q1.slice(0, 9);
+    S.q1n = keep.map((t, i) => T(p, String(i + 1), { x: st(t).x, y: 300, size: 30, fill: XC, font: MATH, anchor: 'middle', weight: 600, o: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-podobnye', prompt: 'Приведи подобные слагаемые.',
+    build: blanks([{ parts: ['4x + 7x − 2x = ', { box: '9' }, 'x'],
+      why: '4 + 7 − 2 = 9: две отрицательные плитки гасят две положительные, остаётся девять иксов.',
+      hint: 'Сложи коэффициенты: 4 + 7 − 2.',
+      fx: () => {
+        const ng = S.q1.slice(11), ps = S.q1.slice(9, 11);
+        ng.forEach((n, i) => { fx(n, { x: st(ps[i]).x }, i * .3, .5); fx(n, { o: 0 }, .7 + i * .3, .3); fx(ps[i], { o: 0 }, .7 + i * .3, .3); });
+        S.q1n.forEach((e, i) => fx(e, { o: 1 }, 1.4 + i * .12, .2));
+      } }]),
+  }], done) }],
+
+  ['coef', 'Коэффициенты', m => {
+    const p = panel(0);
+    klTitle(p, 'Складываем коэффициенты');
+    const SZ = 60, x0 = 470, wEq = mathW(['= '], SZ);
+    const toks = [['5a', XC], [' − 2b', LB], [' + 3a', XC], [' + b', LB]];
+    const w = toks.map(([s]) => mathW([s], SZ));
+    const at = order => { let cx = x0; const r = []; order.forEach(k => { r[k] = cx; cx += w[k]; }); return r; };
+    const X1 = at([0, 1, 2, 3]), X2 = at([0, 2, 1, 3]);
+    toks.forEach(([s, c], k) => c27R(p, [{ m: s, fill: c }], X1[k], 300, k ? m('row', 1.8 + k) : .2, { size: SZ, anchor: 'start' }));
+    toks.forEach(([s, c], k) => {
+      const lead = k === 0 ? 0 : mathW([' '], SZ);
+      c27Under(p, X1[k] + lead + (k === 0 ? 0 : mathW(['− '], SZ)), X1[k] + w[k], 316, c, m('mark', (k % 2 ? 3.6 : 1.8) + (k > 1 ? .3 : 0)));
+    });
+    c27R(p, ['='], x0 - wEq, 420, m('group'), { size: SZ, anchor: 'start' });
+    const cp = toks.map(([s, c], k) => { const g = G(p, { x: X1[k], y: 0, o: 0 }); c27R(g, [{ m: s, fill: c }], 0, 300, undefined, { size: SZ, anchor: 'start' }); return g; });
+    cp.forEach((g, k) => { show(g, m('group'), .2); tw(g, { x: X2[k], y: 120 }, m('group', .2 + k * .15), .8); });
+    c27Seq(p, [[['= (5 + 3)', { m: 'a', fill: XC }], m('ca')], [[' + (−2 + 1)', { m: 'b', fill: LB }], m('cb')]], x0 - wEq, 540, { size: SZ });
+    pulse(cp[3], m('one'), 1.3);
+    klMath(p, ['b = 1 · b'], 1320, 420, m('one', .3), { size: 46, fill: LB });
+    const res = c27R(p, ['= 8', { m: 'a', fill: XC }, ' − ', { m: 'b', fill: LB }], x0 - wEq, 660, m('res'), { size: SZ, anchor: 'start' });
+    klMark(p, x0 - wEq + res._w + 60, 640, m('res', .8), true, .9);
+    klText(p, 'коэффициент', x0 + mathW(['5'], SZ) / 2, 215, m('rule', 1.6), { size: 28, fill: RULE, anchor: 'middle', weight: 600 });
+    draw(path(p, `M${x0 + mathW(['5'], SZ) / 2} 226V250`, { stroke: RULE, 'stroke-width': 3 }, { d: 0 }), m('rule', 1.9), .3);
+    klText(p, 'коэффициенты складываем, буква остаётся той же', 800, 800, m('rule', 3.6), { size: 32, fill: RULE, anchor: 'middle', weight: 600 });
+  }],
+
+  ['distrib', 'Множитель перед скобкой', m => {
+    const p = panel(0);
+    klTitle(p, 'Множитель перед скобкой');
+    const X0 = 200, YS = [360, 406, 452], XE = 1080, SZ = 60;
+    const eq1 = c27Eq(p, ['3(x + 4)'], m('row'), [['= 3x', m('apart')], [' + 12', m('right')]], 330, XE, { size: SZ });
+    const rows = YS.map(y => c27Bar(p, X0, y, 4));
+    const labs = YS.map((y, i) => klMath(p, ['x + 4'], 600, y + 13, m('r' + (i + 1), .3), { size: 34, fill: COL.dim }));
+    rows.forEach((r, i) => c27Pop(r, m('r' + (i + 1)), .06));
+    labs.forEach(l => hide(l, m('rect'), .3));
+    const frame = put(mk('rect', { x: X0, y: 337, width: C27L + 4 * C27U, height: 138, rx: 4, fill: 'none', stroke: COL.chalk, 'stroke-width': 4 }, p), { o: 0 });
+    show(frame, m('rect'), .4);
+    const h3 = G(p, { x: X0 - 30, y: 420 });
+    klText(h3, '3', 0, 0, m('rect', .3), { size: 44, weight: 700, anchor: 'middle' });
+    pulse(h3, m('rect', 1.8), 1.5);
+    rows.forEach((r, i) => pulse(r[0], m('cut', 1.4 + i * .15), 1.12));
+    c27Brace(p, X0, X0 + C27L, 318, 'x', m('rect', .6), { fill: XC });
+    const b4 = c27Brace(p, X0 + C27L, X0 + C27L + 4 * C27U, 318, '4', m('rect', .8), { fill: ONE });
+    const cut = path(p, `M${X0 + C27L} 318V494`, { stroke: XC, 'stroke-width': 6, 'stroke-dasharray': '12 7' }, { d: 0 });
+    draw(cut, m('cut', .3), .6);
+    hide(cut, m('apart'), .3); hide(frame, m('apart'), .3);
+    rows.forEach(r => r.slice(1).forEach(t => tw(t, { x: st(t).x + 80 }, m('apart', .1), .8)));
+    tw(b4, { x: 80 }, m('apart', .1), .8);
+    klMath(p, ['3x'], X0 + C27L / 2, 545, m('apart', .6), { size: 48, fill: XC });
+    klMath(p, ['3 · 4 = 12'], X0 + C27L + 2 * C27U + 80, 545, m('right'), { size: 44, fill: ONE });
+    // Arrows: the factor goes to each addend.
+    const xs1 = eq1.lx0;
+    const a3 = c27X(xs1, '', '3', SZ), ax = c27X(xs1, '3(', 'x', SZ), a4 = c27X(xs1, '3(x + ', '4', SZ);
+    const efr = put(mk('rect', { x: xs1 - 18, y: 274, width: eq1.x1 - xs1 + 36, height: 76, rx: 12, fill: 'none', stroke: RULE, 'stroke-width': 3.5 }, p), { o: 0 });
+    show(efr, m('eq'), .4);
+    klArrow(p, a3, 268, ax, 268, 205, RULE, m('eq', 2.6));
+    klArrow(p, a3, 268, a4, 268, 185, RULE, m('eq', 4));
+    klMath(p, ['a(b + c) = ab + ac'], 1080, 500, m('law', 2.4), { size: 40, fill: RULE });
+    klText(p, 'множитель — на каждое слагаемое', 1080, 440, m('law'), { size: 30, fill: RULE, anchor: 'middle', weight: 600 });
+    const eq2 = c27Eq(p, ['−2(a − 5)'], m('ex2'), [['= −2a', m('a1')], [' + 10', m('a2')]], 640, XE, { size: SZ });
+    const xs2 = eq2.lx0, b2 = c27X(xs2, '', '−2', SZ);
+    klArrow(p, b2, 590, c27X(xs2, '−2(', 'a', SZ), 590, 525, RULE, m('a1', -.3));
+    klArrow(p, b2, 590, c27X(xs2, '−2(a ', '− 5', SZ), 590, 505, RULE, m('a2', -.3));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const X0 = 680, YS = [190, 236, 282, 328, 374];
+    const rows = YS.map(y => c27Bar(p, X0, y, 2));
+    rows.forEach((r, i) => c27Pop(r, .2 + i * .1, .04));
+    klText(p, '5', X0 - 30, 296, .4, { size: 44, weight: 700, anchor: 'middle' });
+    c27Brace(p, X0, X0 + C27L, 150, 'x', .5, { fill: XC });
+    S.q2b = c27Brace(p, X0 + C27L, X0 + C27L + 2 * C27U, 150, '2', .6, { fill: ONE });
+    S.q2u = rows.flatMap(r => r.slice(1));
+    S.q2l = [klMath(p, ['5x'], X0 + C27L / 2, 460, undefined, { size: 48, fill: XC }), klMath(p, ['5 · 2 = 10'], X0 + C27L + C27U + 70, 460, undefined, { size: 44, fill: ONE })];
+    S.q2l.forEach(e => put(e, { o: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-skobki', prompt: 'Раскрой скобки.',
+    build: blanks([{ parts: ['5(x + 2) = ', { box: '5' }, 'x + ', { box: '10' }],
+      why: '5 · x = 5x и 5 · 2 = 10: множитель умножаем на каждое слагаемое.',
+      hint: 'Умножь 5 на каждое слагаемое в скобках: на x и на 2.',
+      fx: () => { S.q2u.forEach(t => fx(t, { x: st(t).x + 70 }, 0, .6)); fx(S.q2b, { x: 70 }, 0, .6); S.q2l.forEach((e, i) => fx(e, { o: 1 }, .6 + i * .3, .4)); } }]),
+  }], done) }],
+
+  ['brackets', 'Знак перед скобкой', m => {
+    const p = panel(0);
+    klTitle(p, 'Знак перед скобкой');
+    draw(path(p, 'M800 230V730', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '8 8' }, { d: 0 }), .2, .5);
+    // Plus: the brackets go, nothing inside changes.
+    klText(p, 'плюс перед скобкой', 430, 250, m('plus'), { size: 32, weight: 600, anchor: 'middle' });
+    const SZ = 64, parts = ['a + ', '(', 'b − c', ')'], w = parts.map(s => mathW([s], SZ));
+    let cx = 430 - w.reduce((a, b) => a + b, 0) / 2;
+    const tk = parts.map((s, i) => { const g = G(p, { x: cx, o: 0 }); c27R(g, [s], 0, 380, undefined, { size: SZ, anchor: 'start' }); cx += w[i]; return g; });
+    tk.forEach((g, i) => show(g, m('plus', .2 + i * .15), .3));
+    hide(tk[1], m('pdrop'), .3); hide(tk[3], m('pdrop'), .3);
+    tw(tk[2], { x: st(tk[2]).x - w[1] + w[1] / 2 }, m('pdrop', .3), .6);
+    tw(tk[0], { x: st(tk[0]).x + w[1] / 2 }, m('pdrop', .3), .6);
+    klText(p, 'знаки не меняются', 430, 480, m('pdrop', 1.6), { size: 30, fill: ONE, anchor: 'middle', weight: 600 });
+    klMath(p, ['+(b − c) = 1 · (b − c)'], 430, 580, m('pdrop', 4.6), { size: 42, fill: COL.dim });
+    // Minus: multiply by −1, every tile turns over.
+    klText(p, 'минус перед скобкой', 1170, 250, m('minus'), { size: 32, weight: 600, anchor: 'middle' });
+    klMath(p, ['−(…) = (−1) · (…)'], 1170, 330, m('minus', .6), { size: 42, fill: COL.dim });
+    const mn = G(p, { x: 925, y: 548 });
+    klMath(mn, ['−'], 0, 0, m('tiles'), { size: 96 });
+    pulse(mn, m('flip'), 1.5);
+    const pr = [path(p, 'M995 430Q962 520 995 610', { stroke: COL.chalk, 'stroke-width': 4 }, { o: 0 }), path(p, 'M1252 430Q1285 520 1252 610', { stroke: COL.chalk, 'stroke-width': 4 }, { o: 0 })];
+    pr.forEach(e => show(e, m('tiles', .2)));
+    const xT = c27Tile(p, 'x', 1035, 520, { o: 0 }), us = [1100, 1158, 1216].map(x => c27Tile(p, 'one', x, 572, { neg: true, o: 0 }));
+    c27Pop([xT], m('tiles', .4)); c27Pop(us, m('tiles', 1.4), .12);
+    c27R(p, ['−(x − 3)'], 1160, 700, m('tiles', 2), { size: 52, anchor: 'end' });
+    c27Flip(xT, m('f1'));
+    us.forEach((u, i) => c27Flip(u, m('f2', i * .3)));
+    hide(mn, m('res'), .4); pr.forEach(e => hide(e, m('res'), .4));
+    c27R(p, ['= −x + 3'], 1170, 700, m('res'), { size: 52, anchor: 'start', fill: RULE });
+    klText(p, 'минус меняет знак каждого слагаемого', 800, 830, m('law'), { size: 32, fill: RULE, anchor: 'middle', weight: 600 });
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const XE = 620, SZ = 58;
+    const l1 = c27Eq(p, ['10 − (3 − x)'], .2, [], 270, XE, { size: SZ });
+    c27Ring(p, c27X(l1.lx0, '10 ', '−', SZ), 270 - SZ * .33, mathW(['−'], SZ) / 2 + 12, SZ * .45, RULE, m('ex', 3));
+    const bad = c27Eq(p, null, 0, [['= 10 − 3 − x', m('bad')], [' = 7 − x', m('bad', 1.4)]], 380, XE, { size: SZ, fill: COL.dim });
+    c27Ring(p, c27X(bad.x0, '= 10 − 3 ', '− x', SZ), 380 - SZ * .33, mathW(['− x'], SZ) / 2 + 14, SZ * .5, COL.bad, m('bad', .8));
+    klStrike(p, bad.x0 - 14, 396, bad.x1 + 14, 348, m('strike'));
+    klText(p, 'ошибка!', bad.x1 + 40, 380, m('strike', .4), { size: 32, fill: COL.bad, weight: 700 });
+    const ok = c27Eq(p, null, 0, [['= 10 − 3', m('r1')], [' + x', m('r2')], [' = 7 + x', m('res')]], 500, XE, { size: SZ });
+    klMark(p, ok.x1 + 50, 480, m('res', .6), true, .9);
+    klRow(p, ['Проверка при ', { m: 'x = 1' }, ':'], 800, 610, m('check'), { size: 32 });
+    klMath(p, ['10 − (3 − 1) = 10 − 2 = 8'], 800, 695, m('c1'), { size: 48 });
+    klMath(p, ['7 + 1 = 8'], 520, 800, m('c2'), { size: 48 });
+    klMark(p, 680, 782, m('c2', .8), true, .8);
+    klMath(p, ['7 − 1 = 6'], 1080, 800, m('c3'), { size: 48, fill: COL.dim });
+    klMark(p, 1240, 784, m('c3', .8), false, .8);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klMath(p, ['6 − (a + 2)'], 800, 230, .2, { size: 76 });
+    S.q3line = klMath(p, ['= 6 − a − 2 = 4 − a'], 800, 320, undefined, { size: 50, fill: RULE });
+    put(S.q3line, { o: 0 });
+    const opts = ['8 − a', '4 − a', '4 + a'], XS = [420, 800, 1180];
+    S.q3 = opts.map((s, i) => {
+      const g = G(p, { x: XS[i], y: 460, o: 0 });
+      mk('rect', { x: -150, y: -60, width: 300, height: 120, rx: 18, fill: mix(COL.board, COL.chalk, .06), stroke: COL.dim, 'stroke-width': 2.5 }, g);
+      M(g, [s], { y: 20, size: 60 });
+      show(g, .4 + i * .15);
+      return g;
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-minus', prompt: 'Чему равно 6 − (a + 2)? Нажми на верный ответ.',
+    build: pickEls(S.q3.map((el, i) => ({ el, box: [[420, 800, 1180][i] - 160, 390, 320, 140], label: ['8 − a', '4 − a', '4 + a'][i] })), 1,
+      '6 − (a + 2) = 6 − a − 2 = 4 − a: минус перед скобкой меняет знак и у a, и у 2.',
+      i => ['Знак двойки тоже меняется: 6 − 2, а не 6 + 2.', null, 'У a знак тоже меняется: было +a, стало −a.'][i],
+      () => { pulseFx(S.q3[1], 1.15); fx(S.q3line, { o: 1 }, .3, .4); }),
+  }], done) }],
+
+  ['together', 'Всё вместе', m => {
+    const p = panel(0);
+    klTitle(p, 'Сначала скобки, потом подобные');
+    const XE = 640, SZ = 56;
+    c27Seq(p, [['4(x + 1)', .2], [' − (x − 2)', m('ex', 3.4)]], XE - SZ * .5 - mathW(['4(x + 1) − (x − 2)'], SZ), 270, { size: SZ });
+    const l2 = c27Eq(p, null, 0, [['= 4x + 4', m('s1a')], [' − x + 2', m('s1b')]], 390, XE, { size: SZ });
+    const x0 = l2.x0, u = (before, tok, col, t) => c27Under(p, x0 + mathW([before], SZ), x0 + mathW([before + tok], SZ), 406, col, t);
+    u('= ', '4x', XC, m('s2')); u('= 4x + 4 ', '− x', XC, m('s2', .3));
+    u('= 4x ', '+ 4', ONE, m('s2', .6)); u('= 4x + 4 − x ', '+ 2', ONE, m('s2', .9));
+    const l3 = c27Eq(p, null, 0, [[['= 3', { m: 'x', fill: XC }], m('x')], [' + 6', m('n')]], 510, XE, { size: SZ });
+    klText(p, '1) раскрываем скобки', 1080, 388, m('s1'), { size: 30, fill: COL.dim });
+    klText(p, '2) собираем подобные', 1080, 508, m('s2'), { size: 30, fill: COL.dim });
+    const fr = put(mk('rect', { x: l3.x1 - mathW(['3x + 6'], SZ) - 6, y: 455, width: mathW(['3x + 6'], SZ) + 20, height: 76, rx: 12, fill: 'none', stroke: RULE, 'stroke-width': 3.5 }, p), { o: 0 });
+    show(fr, m('res'), .4);
+    const ts = c27Tiles(p, [...c27N(3, 'x'), 30, ...c27N(6, 'one')], 800, 790, { anchor: 'middle' });
+    c27Pop(ts, m('res', .3), .07);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const X0 = 420, YS = [220, 266, 312];
+    const rows = YS.map(y => c27Bar(p, X0, y, 2, true));
+    rows.forEach((r, i) => c27Pop(r, .2 + i * .1, .04));
+    S.q4p = YS.map(y => [820, 866].map(x => c27Tile(p, 'one', x, y, { o: 0 })));
+    S.q4p.forEach((r, i) => c27Pop(r, .6 + i * .1, .04));
+    S.q4n = rows.map(r => r.slice(1));
+    S.q4l = [klMath(p, ['3(x − 2)'], X0 + 120, 420, .8, { size: 48 }), klMath(p, ['+ 6'], 843, 420, .9, { size: 48 })];
+    S.q4r = klMath(p, ['= 3x'], 1080, 300, undefined, { size: 60, fill: RULE });
+    put(S.q4r, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-uprosti', prompt: 'Упрости выражение.',
+    build: blanks([{ parts: ['3(x − 2) + 6 = 3x − ', { box: '6' }, ' + 6'],
+      why: '3 · x = 3x, 3 · 2 = 6.',
+      hint: 'Умножь 3 на каждое слагаемое в скобках: на x и на 2.' },
+    { parts: ['3x − 6 + 6 = ', { box: '3' }, 'x'],
+      why: '−6 + 6 = 0: числа гасят друг друга, остаётся 3x.',
+      hint: 'Сложи числа: −6 + 6.',
+      fx: () => {
+        S.q4p.forEach((r, i) => r.forEach((t, j) => { const n = S.q4n[i][j]; fx(t, { x: st(n).x }, i * .25, .5); fx(t, { o: 0 }, .7 + i * .25, .3); fx(n, { o: 0 }, .7 + i * .25, .3); }));
+        fx(S.q4r, { o: 1 }, 1.6, .4);
+      } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Подобные складываем:  ', { m: '3a + 5a − a = 7a' }],
+    ['Множитель — на каждое:  ', { m: '3(x + 4) = 3x + 12' }],
+    ['Плюс перед скобкой:  ', { m: 'a + (b − c) = a + b − c' }],
+    ['Минус перед скобкой:  ', { m: 'a − (b − c) = a − b + c' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-podobnye', prompt: 'Приведи подобные слагаемые.',
+    build: blanks([
+      { parts: ['4x + 7x − 2x = ', { box: '9' }, 'x'], why: '4 + 7 − 2 = 9.', hint: 'Сложи коэффициенты: 4 + 7 − 2.' },
+      { parts: ['6y − y + 4 = ', { box: '5' }, 'y + ', { box: '4' }], why: '6y − 1y = 5y, а число 4 остаётся отдельно.', hint: 'y без числа — это 1y.' },
+      { parts: ['2m + 3 − 5m + 1 = ', { box: '-3' }, 'm + ', { box: '4' }], why: '2 − 5 = −3 у букв, 3 + 1 = 4 у чисел.', hint: 'Отдельно буквы: 2m − 5m; отдельно числа: 3 + 1.' },
+    ]),
+  }, {
+    id: 'p-dve-bukvy', prompt: ['Упрости: ', $m('5a − 2b + 3a + b'), '.'],
+    build: choice([$m('8a − b'), $m('8a − 3b'), $m('6ab'), $m('8a + b')], 0,
+      '(5 + 3)a + (−2 + 1)b = 8a − b.',
+      [null, '−2b + b = −1b, а не −3b: у b коэффициент 1.', 'a и b — разные буквы: такие слагаемые не складываются.', '−2 + 1 = −1, поэтому перед b минус.']),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-skobki', prompt: 'Раскрой скобки и упрости.',
+    build: blanks([
+      { parts: ['3(x − 2) + 6 = ', { box: '3' }, 'x'], why: '3x − 6 + 6 = 3x.', hint: 'Сначала 3x − 6, потом сложи числа.' },
+      { parts: ['7 − (x + 4) = ', { box: '3' }, ' − x'], why: '7 − x − 4 = 3 − x: минус меняет знак и у x, и у 4.', hint: 'Минус перед скобкой: 7 − x − 4.' },
+      { parts: ['−3(b − 4) = ', { box: '-3' }, 'b + ', { box: '12' }], why: '−3 · b = −3b, −3 · (−4) = +12.', hint: 'Минус на минус даёт плюс.' },
+    ]),
+  }, {
+    id: 'p-znachenie', prompt: ['Найди значение ', $m('2(a + 5) − a'), ' при ', $m('a = 3'), '.'],
+    build: blanks([
+      { parts: ['2(a + 5) − a = a + ', { box: '10' }], why: '2a + 10 − a = a + 10.', hint: 'Раскрой скобки: 2a + 10, потом 2a − a.' },
+      { parts: ['при a = 3:  ', { box: '13' }], why: '3 + 10 = 13. Проверка: 2 · 8 − 3 = 13.', hint: 'Подставь 3 в a + 10.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['−(a − 3) = −a + 3'], ans: ['yes'], why: 'Минус меняет знак каждого слагаемого.' },
+      { parts: ['10 − (3 − x) = 7 − x'], ans: ['no'], why: 'Правильно 7 + x: у x знак тоже меняется.' },
+      { parts: ['2(x + 4) = 2x + 4'], ans: ['no'], why: 'Множитель — на каждое слагаемое: 2x + 8.' },
+      { parts: ['5x + 2 = 7x'], ans: ['no'], why: 'x и число не складываются.' },
+      { parts: ['3a − a = 2a'], ans: ['yes'], why: '3 − 1 = 2.' },
+    ], [['yes', 'верно', null, '1'], ['no', 'неверно', null, '2']], { multi: false }),
+  }, {
+    id: 'p-vse', prompt: ['Упрости: ', $m('−(2x − 7) + 3x'), '.'],
+    build: choice([$m('x + 7'), $m('x − 7'), $m('5x + 7'), $m('−5x + 7')], 0,
+      '−2x + 7 + 3x = x + 7.',
+      [null, 'Минус перед скобкой меняет и знак семёрки: −(−7) = +7.', '−2x + 3x = x, а не 5x: знак у 2x поменялся.', '−2x + 3x = 1x: коэффициенты −2 и 3 дают 1.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

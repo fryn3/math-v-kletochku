@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Координатная прямая и модуль · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 6.1 «Координатная прямая и модуль» (6 класс). Beat ids match papermorph/content/uroki/ch24/narration.ru.json.
+const CHAPTER = { number: 24, label: '6.1', title: 'Координатная прямая и модуль', minutes: 7, language: 'ru', next: '../ch25/' };
+
+// Colours of this chapter: positive numbers blue, negative coral (math.js POS / NEG), the modulus (a distance to zero)
+// violet, the rule amber.
+const RULE = KL.RULE, MODC = COL.real, HOT = COL.bad;
+const c24Col = v => v > 0 ? POS : v < 0 ? NEG : COL.chalk;
+
+// A horizontal coordinate line: zero at cx, u pixels per unit, ticks lo…hi, an arrow on the right. labels: true (all),
+// false or a list of values; col: labels in the sign colours (else chalk). Returns { g, X, y, labs: { v: text } }.
+function c24Line(p, { y = 430, u = 85, cx = 800, lo = -8, hi = 8, labels = true, col = true, t0 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), X = v => cx + v * u, labs = {};
+  path(g, `M${X(lo - .5)} ${y}H${X(hi + .6)}`, { stroke: COL.chalk, 'stroke-width': 3 });
+  path(g, `M${X(hi + .6) - 16} ${y - 11}L${X(hi + .6)} ${y}L${X(hi + .6) - 16} ${y + 11}`, { stroke: COL.chalk, 'stroke-width': 3 });
+  for (let v = lo; v <= hi; v++) {
+    const k = v === 0 ? 16 : 10;
+    path(g, `M${X(v)} ${y - k}V${y + k}`, { stroke: v === 0 ? COL.chalk : COL.dim, 'stroke-width': v === 0 ? 3.5 : 2.5 });
+    if (labels === true || (labels && labels.includes(v)))
+      labs[v] = T(g, num(v), { x: X(v), y: y + 48, size: 30, fill: col ? c24Col(v) : COL.chalk, font: MATH, anchor: 'middle' });
+  }
+  if (t0 !== undefined) show(g, t0);
+  return { g, X, y, labs };
+}
+// A dot on the line at v with its label above (a string, shown in the dot's colour); pops in at t (no t: shown).
+function c24Dot(p, L, v, t, { fill = c24Col(v), label, ly = -34, r = 13, size = 34 } = {}) {
+  const g = G(p, { x: L.X(v), y: L.y, o: t === undefined ? 1 : 0, s: t === undefined ? 1 : .4 });
+  mk('circle', { r, fill, stroke: COL.board, 'stroke-width': 3 }, g);
+  if (label) g._lab = T(g, label, { y: ly, size, fill, font: MATH, anchor: 'middle' });
+  if (t !== undefined) tw(g, { o: 1, s: 1 }, t, .45, back);
+  return g;
+}
+// A dot flying from a to b along an arc of height h above the line (h < 0: below).
+function c24Fly(dot, L, a, b, t, dur = .8, h = 120) {
+  const xa = L.X(a), xb = L.X(b);
+  prog(q => put(dot, { x: xa + (xb - xa) * q, y: L.y - Math.sin(Math.PI * q) * h }), t, dur, io);
+}
+// A dashed arc from a to b over the line (peak h above it), drawn on at t.
+function c24Arc(p, L, a, b, t, { col = COL.chalk, h = 120, dur = .8, dash = '8 8', w = 2.5 } = {}) {
+  const xa = L.X(a), xb = L.X(b), cy = L.y - 2 * h;
+  return draw(path(p, `M${xa} ${L.y - 14}Q${(xa + xb) / 2} ${cy} ${xb} ${L.y - 14}`, { stroke: col, 'stroke-width': w, 'stroke-dasharray': dash }, { d: 0, o: .85 }), t, dur);
+}
+// Unit hops a → b (one arc per step) with the counts 1, 2, 3 … over them, from t, `step` apart.
+function c24Hops(p, L, a, b, t, { col = MODC, step = .45, h = 32, count = true } = {}) {
+  const d = Math.sign(b - a), n = Math.abs(b - a);
+  for (let k = 0; k < n; k++) {
+    const xa = L.X(a + k * d), xb = L.X(a + (k + 1) * d);
+    draw(path(p, `M${xa} ${L.y - 10}Q${(xa + xb) / 2} ${L.y - 10 - 2 * h} ${xb} ${L.y - 10}`, { stroke: col, 'stroke-width': 3.5 }, { d: 0 }), t + k * step, step * .8, lin);
+    if (count) klText(p, String(k + 1), (xa + xb) / 2, L.y - h - 24, t + k * step + step * .5, { size: 28, fill: col, weight: 700, anchor: 'middle' });
+  }
+}
+// A measuring bar from 0 to v at height yy (the modulus as a distance), drawn out from zero, with its length written
+// beside its middle. Returns { e, lab }.
+function c24Bar(p, L, v, yy, t, { col = MODC, label = String(Math.abs(v)), ly = 40, dur = .6 } = {}) {
+  const x0 = L.X(0), x1 = L.X(v);
+  [x0, x1].forEach((x, i) => draw(path(p, `M${x} ${yy - 12}V${yy + 12}`, { stroke: col, 'stroke-width': 4 }, { d: 0 }), t + i * dur, .2));
+  const e = draw(path(p, `M${x0} ${yy}H${x1}`, { stroke: col, 'stroke-width': 5 }, { d: 0 }), t, dur, lin);
+  const lab = label ? klText(p, label, (x0 + x1) / 2, yy + ly, t + dur, { size: 32, fill: col, weight: 700, anchor: 'middle' }) : null;
+  return { e, lab };
+}
+// A ring round (cx, cy), radius rx × ry, drawn on at t.
+function c24Ring(p, cx, cy, rx, ry, t, col = RULE) {
+  return draw(path(p, `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`, { stroke: col, 'stroke-width': 4 }, { d: 0 }), t, .5);
+}
+
+// The thermometer of the opening: a tube with its liquid (drawn from the bulb up to a level) and, beside it, a scale
+// −5 … 5 whose group sits on the zero tick, so the scale alone can be laid on its side. Returns { tube, scale, labs,
+// liquid, Y, f }: f(v) is the liquid's drawn fraction for the level v.
+const TH = { cx: 380, zy: 500, u: 56, sx: 460 };
+function c24Thermo(p, level, t0 = .2) {
+  const { cx, zy, u, sx } = TH, Y = v => zy - v * u, top = Y(5.8), bulb = Y(-5) + 62;
+  const tube = G(p, { o: 0 });
+  mk('rect', { x: cx - 17, y: top - 12, width: 34, height: bulb - top + 12, rx: 17, fill: COL.chalk, 'fill-opacity': .06, stroke: COL.chalk, 'stroke-width': 3 }, tube);
+  const f = v => (bulb - Y(v)) / (bulb - top);
+  const liquid = path(tube, `M${cx} ${bulb}V${top}`, { stroke: HOT, 'stroke-width': 16, 'stroke-linecap': 'butt' }, { d: f(level) });
+  mk('circle', { cx, cy: bulb, r: 34, fill: HOT, stroke: COL.chalk, 'stroke-width': 3 }, tube);
+  const scale = G(p, { x: sx, y: zy, o: 0 }), labs = {};
+  path(scale, `M0 ${5.5 * u}V${-5.5 * u}`, { stroke: COL.chalk, 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
+  for (let v = -5; v <= 5; v++) {
+    path(scale, `M-12 ${-v * u}H12`, { stroke: v === 0 ? COL.chalk : COL.dim, 'stroke-width': v === 0 ? 3.5 : 2.5, 'vector-effect': 'non-scaling-stroke' });
+    const lg = G(scale, { x: 26, y: -v * u });
+    labs[v] = T(lg, num(v), { y: 11, size: 30, fill: v < 0 && v >= level ? NEG : COL.chalk, font: MATH });
+    labs[v]._g = lg;
+  }
+  show(tube, t0); show(scale, t0 + .1);
+  return { tube, scale, labs, liquid, Y, f };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Координатная прямая и модуль', (m, D) => klIntro(m, D, {
+    unit: 'Глава 6 · Положительные и отрицательные числа · Тема 6.1',
+    title: 'Координатная прямая и модуль',
+    sub: 'Где стоят числа меньше нуля и как измерить их расстояние до нуля',
+    art: (g, t0) => {
+      const L = c24Line(g, { y: 620, u: 60, lo: -4, hi: 4, labels: [-3, 0, 3], t0 });
+      c24Dot(g, L, -3, t0 + .5); c24Dot(g, L, 3, t0 + .6);
+      c24Bar(g, L, -3, 680, t0 + .9, { label: '' }); c24Bar(g, L, 3, 680, t0 + .9, { label: '' });
+    },
+  })],
+
+  ['cold', 'Ниже нуля', m => {
+    const p = panel(0);
+    klTitle(p, 'Термометр: тепло и мороз');
+    const th = c24Thermo(p, 3, .2);
+    const AX = 640;
+    klText(p, '3° тепла', AX, th.Y(3) + 12, m('warm'), { size: 36, fill: POS, weight: 600 });
+    tw(th.liquid, { d: th.f(0) }, m('drop', .3), m('zero') - m('drop', .3), lin);
+    klText(p, '0°', AX, th.Y(0) + 12, m('zero'), { size: 36, weight: 600 });
+    tw(th.liquid, { d: th.f(-4) }, m('below', .3), 2.6, lin);
+    for (let v = -1; v >= -4; v--) tw(th.labs[v], { c_fill: NEG }, m('below', .3 + (-v - .5) * .65), .3);
+    const big = G(p, { x: AX + 60, y: th.Y(-4) + 24 });
+    klMath(big, ['−4°'], 0, 0, m('minus'), { size: 110, fill: NEG, anchor: 'start' });
+    pulse(big, m('minus', .6), 1.2);
+    klText(p, 'минус четыре градуса', AX, th.Y(-4) + 90, m('minus', 1), { size: 30, fill: COL.dim });
+    klRow(p, [{ m: '−4 < 0', fill: NEG }, '   число меньше нуля'], 1250, th.Y(-4) + 24, m('minus', 5.1), { size: 30, msize: 46, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['line', 'Координатная прямая', m => {
+    const p = panel(0);
+    klTitle(p, 'Координатная прямая');
+    const th = c24Thermo(p, -4, .1);
+    // The scale turns a quarter clockwise round its zero tick and grows from 60 to 85 px a unit; each label turns
+    // back and shrinks, so it stays upright and the same size. Then the full line −8…8 takes over at the same place.
+    const k = 85 / TH.u, t = m('lay', .2);
+    hide(th.tube, m('lay'), .5);
+    tw(th.scale, { x: 800, y: 430, r: 90, s: k }, t, 1.6, io);
+    for (const v in th.labs) tw(th.labs[v]._g, { r: -90, s: 1 / k }, t, 1.6, io);
+    const L = c24Line(p, { y: 430, col: false });
+    put(L.g, { o: 0 });
+    for (let v = -4; v <= -1; v++) L.labs[v].setAttribute('fill', NEG);   // as on the thermometer
+    show(L.g, t + 3, .5); hide(th.scale, t + 3, .5);   // on «Получилась координатная прямая»
+    // Positive to the right, negative to the left, zero between.
+    draw(path(p, `M${L.X(.2)} ${L.y}H${L.X(8.4)}`, { stroke: POS, 'stroke-width': 12 }, { d: 0, o: .45 }), m('pos'), .8, lin);
+    for (let v = 1; v <= 8; v++) tw(L.labs[v], { c_fill: POS }, m('pos', .9 + v * .35), .3);
+    klText(p, 'положительные', L.X(4.2), 330, m('pos', .3), { size: 32, fill: POS, weight: 600, anchor: 'middle' });
+    const steps = G(p);
+    c24Hops(steps, L, 0, 3, m('pos', 1.6), { col: POS, step: .6, h: 26, count: false });
+    draw(path(p, `M${L.X(-.2)} ${L.y}H${L.X(-8.4)}`, { stroke: NEG, 'stroke-width': 12 }, { d: 0, o: .45 }), m('neg'), .8, lin);
+    for (let v = -1; v >= -4; v--) { tw(L.labs[v], { c_fill: COL.chalk }, m('neg', 1 + (-v - 1) * .5), .12); tw(L.labs[v], { c_fill: NEG }, m('neg', 1.15 + (-v - 1) * .5), .3); }
+    for (let v = -5; v >= -8; v--) tw(L.labs[v], { c_fill: NEG }, m('neg', 1.15 + (-v - 1) * .5), .3);
+    klText(p, 'отрицательные', L.X(-4.2), 330, m('neg', .3), { size: 32, fill: NEG, weight: 600, anchor: 'middle' });
+    c24Hops(steps, L, 0, -3, m('neg', 1.6), { col: NEG, step: .7, h: 26, count: false });
+    hide(steps, m('zero'), .4);
+    c24Ring(p, L.X(0), L.y + 37, 30, 30, m('zero'));
+    klRow(p, [{ m: '0' }, '  — ни положительное, ни отрицательное'], 800, 560, m('zero', .4), { size: 30, msize: 40 });
+    // Each step to the right adds one.
+    c24Hops(p, L, -2, 2, m('grow'), { col: RULE, step: .5, h: 34, count: false });
+    for (let k2 = 0; k2 < 4; k2++) klText(p, '+1', L.X(-1.5 + k2), L.y - 62, m('grow', .3 + k2 * .5), { size: 26, fill: RULE, weight: 700, anchor: 'middle' });
+    klText(p, 'числа растут слева направо  →', 800, 250, m('grow', .2), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+    const A = c24Dot(p, L, 6, m('dot'), { fill: COL.chalk });
+    prog(q => put(A, { x: L.X(6 - 11 * q) }), m('dot', .5), 3.2, io);
+    tw(A.firstChild, { c_fill: NEG }, m('dot', 3.7), .3);
+    klText(p, 'A(−5)', L.X(-5), L.y - 36, m('dot', 3.8), { size: 34, fill: NEG, font: MATH, anchor: 'middle' });
+    klRow(p, ['координата точки A — число ', { m: '−5', fill: NEG }], L.X(-5) + 60, 680, m('dot', 4.6), { size: 30, msize: 40 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Где стоит число −4?');
+    const L = c24Line(p, { y: 380, labels: [0, 1], col: false, t0: .2 });
+    S.q1L = L; S.q1p = p;
+    S.q1v = [-6, -4, 2, 4];
+    S.q1d = S.q1v.map((v, i) => c24Dot(p, L, v, .5 + i * .12, { fill: COL.chalk, label: 'ABCD'[i], size: 30 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-tochka', prompt: 'Какая точка стоит на месте числа −4? Нажми на неё.',
+    build: pickEls(S.q1d.map((g, i) => ({ el: g, box: [S.q1L.X(S.q1v[i]) - 40, S.q1L.y - 80, 80, 110], label: 'точка ' + 'ABCD'[i] })), 1,
+      'Минус четыре — четыре шага влево от нуля: это точка B.',
+      i => S.q1v[i] > 0 ? 'Эта точка справа от нуля: её координата положительная. Минус четыре — слева от нуля.'
+        : 'Посчитай шаги от нуля влево: эта точка дальше, чем на четыре шага.',
+      () => {
+        const L = S.q1L, q = qlayer();
+        for (let k = 0; k < 4; k++) {
+          const xa = L.X(-k), xb = L.X(-k - 1);
+          fx(path(q, `M${xa} ${L.y + 14}Q${(xa + xb) / 2} ${L.y + 70} ${xb} ${L.y + 14}`, { stroke: NEG, 'stroke-width': 3.5 }, { d: 0 }), { d: 1 }, k * .3, .3, lin);
+        }
+        const lab = T(q, '−4', { x: L.X(-4), y: L.y + 100, size: 34, fill: NEG, font: MATH, anchor: 'middle', o: 0 });
+        fx(lab, { o: 1 }, 1.2, .3);
+        fx(S.q1d[1], { s: 1.4 }, 1.2, .2, out); fx(S.q1d[1], { s: 1 }, 1.45, .3);
+      }),
+  }], done) }],
+
+  ['opp', 'Противоположные числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Противоположные числа');
+    const L = c24Line(p, { y: 430, t0: .1 });
+    const three = c24Dot(p, L, 3, m('three'), { label: '3' });
+    // The mirror: a dashed line through zero; a copy of 3 flies over it and lands on −3.
+    draw(path(p, `M${L.X(0)} 205V${L.y - 24}`, { stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '9 8' }, { d: 0 }), m('mirror'), .5);
+    const fly = c24Dot(p, L, 3, m('mirror', .3), { fill: NEG });
+    c24Arc(p, L, 3, -3, m('mirror', .7), { h: 105, dur: 1.2, col: COL.dim });
+    c24Fly(fly, L, 3, -3, m('mirror', .7), 1.2, 105);
+    klText(p, '−3', L.X(-3), L.y - 34, m('minus3'), { size: 34, fill: NEG, anchor: 'middle' });
+    // Equal distances, on both sides.
+    const same = G(p);
+    draw(path(same, `M${L.X(0)} ${L.y + 90}H${L.X(3)}`, { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), m('minus3', 1.2), 1.2);
+    draw(path(same, `M${L.X(0)} ${L.y + 90}H${L.X(-3)}`, { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), m('minus3', 1.2), 1.2);
+    klText(same, 'одинаковое расстояние', 800, L.y + 130, m('minus3', 2.2), { size: 26, fill: COL.dim, anchor: 'middle' });
+    hide(same, m('back'), .4);   // the way back runs under the line
+    pulse(three, m('minus3', 4.2), 1.5); pulse(fly, m('minus3', 4.6), 1.5);
+    klRow(p, [{ m: '3', fill: POS }, '  и  ', { m: '−3', fill: NEG }, '  — противоположные числа'], 520, 690, m('name'), { size: 34, msize: 48, weight: 600 });
+    c24Dot(p, L, 5, m('pair'), { label: '5' }); c24Dot(p, L, -5, m('pair', .3), { label: '−5' });
+    c24Arc(p, L, 5, -5, m('pair', .5), { h: 150, dur: 1, col: COL.dim });
+    klRow(p, [{ m: '5', fill: POS }, '  и  ', { m: '−5', fill: NEG }], 520, 770, m('pair', .6), { size: 34, msize: 48, weight: 600 });
+    // «−» means «take the opposite»: −3 flies back to 3.
+    const minus = G(p, { x: 1040, y: 735 });
+    klMath(minus, ['−'], 0, 0, m('back'), { size: 120, fill: RULE });
+    pulse(minus, m('back', .5), 1.4);
+    pulse(three, m('back', 2.4), 1.5); pulse(fly, m('back', 3), 1.5);
+    klText(p, 'возьми противоположное', 1100, 712, m('back', .3), { size: 30, fill: RULE, weight: 600 });
+    hide(minus, m('eq', -.6), .4);
+    const back = c24Dot(p, L, -3, m('again', -.3), { fill: NEG });
+    c24Fly(back, L, -3, 3, m('again', .2), 1.1, -95);
+    tw(back.firstChild, { c_fill: POS }, m('again', 1), .3);
+    draw(path(p, `M${L.X(-3)} ${L.y + 14}Q${L.X(0)} ${L.y + 190} ${L.X(3)} ${L.y + 14}`, { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '8 8' }, { d: 0 }), m('again', .2), 1.1);
+    tw(back, { o: 0 }, m('again', 1.4), .3);
+    klRow(p, [{ m: '−', fill: RULE }, { m: '(−3)', fill: NEG }, { m: ' = ' }, { m: '3', fill: POS }], 1260, 790, m('eq'), { size: 40, msize: 72 });
+  }],
+
+  ['abs', 'Модуль числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Модуль — расстояние до нуля');
+    const L = c24Line(p, { y: 400, t0: .1 });
+    c24Dot(p, L, 3, .3); c24Dot(p, L, -3, .4);
+    c24Hops(p, L, 0, 3, m('count', -.2), { step: .5 });
+    c24Hops(p, L, 0, -3, m('left', .5), { step: .4 });
+    c24Bar(p, L, -3, 500, m('dist'), { ly: 42 });
+    c24Bar(p, L, 3, 500, m('dist'), { ly: 42 });
+    klText(p, 'модуль числа — расстояние от него до нуля', 800, 620, m('dist', .8), { size: 34, fill: MODC, weight: 600, anchor: 'middle' });
+    const r1 = ['|', { m: '−3', fill: NEG }, '| = ', { m: '3', fill: MODC }], r2 = ['|', { m: '3', fill: POS }, '| = ', { m: '3', fill: MODC }];
+    const asRow = a => a.map(x => typeof x === 'string' ? { m: x } : x);
+    const w1 = mathW(['|−3|'], 72), w2 = mathW([' = 3'], 72);
+    klRow(p, asRow(r1.slice(0, 3)).map((x, i) => i === 2 ? { m: '|' } : x), 400 - w2 / 2, 730, m('bars', .3), { msize: 72 });
+    klRow(p, [{ m: ' = ' }, { m: '3', fill: MODC }], 400 + w1 / 2, 730, m('bars', 3.2), { msize: 72 });
+    klRow(p, asRow(r2), 1200, 730, m('same'), { msize: 72 });
+    klRow(p, [{ m: '|0| = 0' }], 800, 730, m('zero'), { msize: 60 });
+    klText(p, 'модуль не бывает отрицательным', 800, 830, m('never'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Модуль — расстояние до нуля');
+    S.q2L = c24Line(p, { y: 400, t0: .2 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-modul', prompt: 'Найди модули.',
+    build: blanks([
+      { parts: ['|−8| = ', { box: '8' }], why: 'От минус восьми до нуля восемь шагов: |−8| = 8.', hint: 'Модуль — расстояние до нуля, оно не бывает отрицательным.',
+        fx: () => { const L = S.q2L, q = qlayer(); fx(path(q, `M${L.X(0)} 300H${L.X(-8)}`, { stroke: MODC, 'stroke-width': 5 }, { d: 0 }), { d: 1 }, 0, .7, lin); floatText('8', L.X(-4), 280, MODC); } },
+      { parts: ['|−6| + |4| = ', { box: '10' }], why: '|−6| = 6, |4| = 4, а 6 + 4 = 10.', hint: 'Сначала найди каждый модуль, потом сложи.',
+        fx: () => { const L = S.q2L, q = qlayer(); fx(path(q, `M${L.X(0)} 330H${L.X(-6)}`, { stroke: MODC, 'stroke-width': 5 }, { d: 0 }), { d: 1 }, 0, .6, lin); fx(path(q, `M${L.X(0)} 330H${L.X(4)}`, { stroke: MODC, 'stroke-width': 5 }, { d: 0 }), { d: 1 }, .3, .5, lin); floatText('6 + 4 = 10', L.X(-1), 245, MODC); } },
+    ]),
+  }], done) }],
+
+  ['compare', 'Сравнение', m => {
+    const p = panel(0);
+    klTitle(p, 'Какое число больше?');
+    const L = c24Line(p, { y: 400, t0: .1 });
+    c24Dot(p, L, -5, 1.7, { label: '−5' }); const dm2 = c24Dot(p, L, -2, 2.9, { label: '−2' });   // on «минус пять или минус два»
+    klMath(p, ['−5°'], 885, 250, m('cold', 1.5), { size: 46, fill: NEG, anchor: 'end' });
+    klText(p, 'холоднее, чем', 1010, 248, m('cold', 3), { size: 32, anchor: 'middle' });
+    klMath(p, ['−2°'], 1135, 250, m('cold', 3.8), { size: 46, fill: NEG, anchor: 'start' });
+    klArrow(p, L.X(-5) + 10, L.y - 70, L.X(-2) - 10, L.y - 70, L.y - 170, RULE, m('right'), .7);
+    pulse(dm2, m('right', 1.2), 1.6);
+    klText(p, 'правее — больше', L.X(-3.5), 222, m('right', 3.4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, [{ m: '−2 > −5', fill: COL.chalk }], 400, 680, m('ans'), { msize: 76 });
+    klMark(p, 640, 655, m('ans', 2.2));
+    klText(p, 'частая ошибка:', 1115, 610, m('trap', .2), { size: 28, fill: COL.dim, anchor: 'middle' });
+    const trap = G(p);
+    klRow(trap, [{ m: '5 > 2' }, ',  значит, '], 1000, 680, m('trap', 1.8), { size: 32, msize: 60, fill: COL.dim, anchor: 'end' });
+    klMath(trap, ['−5 > −2'], 1000, 680, m('so', .3), { size: 60, fill: COL.dim, anchor: 'start' });
+    klStrike(p, 990, 700, 1240, 635, m('cross'));
+    klText(p, 'ошибка!', 1115, 740, m('cross', .2), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    tw(trap, { o: .45 }, m('mod'), .4);
+    c24Bar(p, L, -2, 495, m('mod', .2), { label: '2', ly: 38 });
+    c24Bar(p, L, -5, 565, m('mod', .6), { label: '5', ly: 38 });
+    klRow(p, ['модуль меньше — число больше:   ', { m: '|−2| < |−5|', fill: MODC }], 800, 795, m('mod', 1.2), { size: 30, msize: 48 });
+    pulse(dm2, m('mod', 4.4), 1.6);
+    const C1 = ['−5 < −2'], C2 = [' < 0'], C3 = [' < 3'], cw = [C1, C2, C3].map(c => mathW(c, 56)), cx0 = 800 - (cw[0] + cw[1] + cw[2]) / 2;
+    klMath(p, C1, cx0, 860, m('chain'), { size: 56, fill: NEG, anchor: 'start' });
+    klMath(p, C2, cx0 + cw[0], 860, m('chain', 1), { size: 56, anchor: 'start' });
+    klMath(p, C3, cx0 + cw[0] + cw[1], 860, m('chain', 3), { size: 56, fill: POS, anchor: 'start' });
+    c24Dot(p, L, 3, m('chain', 3.2), { label: '3' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3L = c24Line(p, { y: 420, t0: .2 });
+    klMath(p, ['−9'], 640, 250, .3, { size: 110, fill: NEG });
+    S.q3q = klText(p, '?', 800, 250, .4, { size: 96, fill: COL.dim, anchor: 'middle', weight: 600 });
+    S.q3lt = klMath(p, ['<'], 800, 250, undefined, { size: 110, fill: RULE });
+    put(S.q3lt, { o: 0 });
+    klMath(p, ['−4'], 960, 250, .3, { size: 110, fill: NEG });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sravni', prompt: ['Сравни числа: ', $m('−9'), ' … ', $m('−4')],
+    build: choice(['<', '>', '='], 0,
+      ['Минус девять стоит левее минус четырёх, значит, ', $m('−9 < −4'), '. Холоднее — значит, меньше.'],
+      ['Девять больше четырёх, но у отрицательных чисел наоборот: больше то, что ближе к нулю.', null, 'Это разные числа: они стоят в разных точках прямой.'],
+      () => {
+        const L = S.q3L, q = qlayer();
+        fx(S.q3q, { o: 0 }, 0, .2); fx(S.q3lt, { o: 1 }, .1, .3);
+        [-9, -4].forEach((v, i) => { const g = c24Dot(q, L, v, undefined, { label: num(v) }); put(g, { o: 0, s: .4 }); fx(g, { o: 1, s: 1 }, .3 + i * .2, .4, back); });
+      }),
+  }], done) }],
+
+  ['inside', 'Сначала — внутри модуля', m => {
+    const p = panel(0);
+    klTitle(p, 'Сначала — то, что внутри модуля');
+    const L = c24Line(p, { y: 560, t0: .1 });
+    const S1 = ['|3 − 8|'], W1 = mathW(S1, 80), x0 = 180;
+    klMath(p, S1, x0, 300, m('expr'), { size: 80, anchor: 'start' });
+    const bad = klMath(p, [' = 3 + 8 = 11'], x0 + W1, 300, m('wrong'), { size: 80, anchor: 'start', fill: COL.dim });
+    const wb = mathW([' = 3 + 8 = 11'], 80);
+    const strike = klStrike(p, x0 + W1 + 60, 320, x0 + W1 + wb, 250, m('cross'));
+    hide(strike, m('first', .6), .4);
+    const err = klText(p, 'ошибка!', x0 + W1 + wb + 30, 300, m('cross', .2), { size: 30, fill: COL.bad, weight: 700 });
+    hide(bad, m('first', .6), .4); hide(err, m('first', .6), .4);
+    c24Ring(p, x0 + W1 / 2, 274, W1 / 2 + 8, 62, m('first'));
+    // From 3, eight steps to the left: −5.
+    const dot = c24Dot(p, L, 3, m('hop', -.4), { fill: POS });
+    for (let k = 0; k < 8; k++) {
+      const xa = L.X(3 - k), xb = L.X(2 - k);
+      draw(path(p, `M${xa} ${L.y - 12}Q${(xa + xb) / 2} ${L.y - 70} ${xb} ${L.y - 12}`, { stroke: NEG, 'stroke-width': 3 }, { d: 0 }), m('hop', .2 + k * .3), .3, lin);
+    }
+    prog(q => put(dot, { x: L.X(3) - q * 8 * 85 }), m('hop', .2), 2.4, lin);
+    klText(p, '8 шагов влево', L.X(-1), L.y - 90, m('hop', .8), { size: 30, fill: NEG, weight: 600, anchor: 'middle' });
+    tw(dot.firstChild, { c_fill: NEG }, m('hop', 2.6), .3);
+    klMath(p, [' = |−5|'], x0 + W1, 300, m('hop', 2.8), { size: 80, anchor: 'start' });
+    c24Bar(p, L, -5, 660, m('then'), { label: '5' });
+    klMath(p, [' = 5'], x0 + W1 + mathW([' = |−5|'], 80), 300, m('then', .6), { size: 80, anchor: 'start', fill: MODC });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Сначала — то, что внутри модуля');
+    S.q4L = c24Line(p, { y: 420, t0: .2 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-vnutri', prompt: 'Вычисли.',
+    build: blanks([{ parts: ['|2 − 9| = ', { box: '7' }], why: 'Внутри: 2 − 9 = −7 (от двух семь шагов влево). |−7| = 7.', hint: 'Не складывай 2 и 9: сначала найди разность 2 − 9, потом её модуль.',
+      fx: () => {
+        const L = S.q4L, q = qlayer();
+        fx(path(q, `M${L.X(2)} ${L.y - 60}H${L.X(-7)}`, { stroke: NEG, 'stroke-width': 4 }, { d: 0 }), { d: 1 }, 0, .8, lin);
+        floatText('2 − 9 = −7', L.X(-2.5), L.y - 90, NEG);
+        fx(path(q, `M${L.X(0)} ${L.y + 90}H${L.X(-7)}`, { stroke: MODC, 'stroke-width': 5 }, { d: 0 }), { d: 1 }, .9, .6, lin);
+      } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Отрицательные числа — слева от нуля:  ', { m: '−3 < 0 < 3' }],
+    ['Противоположные числа:  ', { m: '5 и −5,   −(−3) = 3' }],
+    ['Модуль — расстояние до нуля:  ', { m: '|−3| = |3| = 3' }],
+    ['Больше то, что правее:  ', { m: '−2 > −5' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: [$m('−3 > −1')], ans: ['f'], why: 'Минус три левее минус одного, значит, −3 < −1.' },
+      { parts: [$m('|−4| = 4')], ans: ['t'], why: 'От минус четырёх до нуля четыре шага.' },
+      { parts: [$m('−(−6) = 6')], ans: ['t'], why: 'Противоположное к минус шести — шесть.' },
+      { parts: [$m('0 > −10')], ans: ['t'], why: 'Любое отрицательное число меньше нуля.' },
+      { parts: ['Модуль числа может быть отрицательным.'], ans: ['f'], why: 'Модуль — расстояние, оно не бывает отрицательным.' },
+    ], TF, { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-schet', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['|−9| − |−4| = ', { box: '5' }], why: '|−9| = 9, |−4| = 4, 9 − 4 = 5.', hint: 'Сначала найди каждый модуль.' },
+      { parts: ['−(−12) = ', { box: '12' }], why: 'Противоположное к минус двенадцати — двенадцать.', hint: 'Минус перед скобкой: возьми число, противоположное −12.' },
+    ]),
+  }, {
+    id: 'p-mezhdu', prompt: 'Сколько целых чисел лежит строго между −3 и 2?',
+    build: blanks([{ parts: [{ box: '4' }, ' числа'], why: 'Это −2, −1, 0 и 1: четыре числа.', hint: 'Выпиши по порядку целые числа после −3 и до 2, сами −3 и 2 не считай.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-bolshe', prompt: 'Какое число больше?',
+    build: choice([$m('−7'), $m('−3')], 1, 'Минус три правее минус семи (ближе к нулю), значит, оно больше.',
+      ['Семь больше трёх, но у отрицательных чисел наоборот: больше то, у которого модуль меньше.', null]),
+  }, {
+    id: 'p-menshe', prompt: 'Какое из чисел самое маленькое?',
+    build: choice([$m('−1'), $m('−8'), $m('0'), $m('2')], 1, 'Минус восемь стоит левее всех остальных.',
+      ['Минус один ближе к нулю, чем минус восемь, значит, больше.', null, 'Ноль больше любого отрицательного числа.', 'Два — положительное число, оно больше нуля.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

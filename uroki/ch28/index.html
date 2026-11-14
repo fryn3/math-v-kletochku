@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Уравнения · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 6.5 «Уравнения» (6 класс). Beat ids match papermorph/content/uroki/ch28/narration.ru.json.
+const CHAPTER = { number: 28, label: '6.5', title: 'Уравнения', minutes: 7, language: 'ru', next: '../ch29/' };
+
+// Meanings in this lesson (as in 1.7): the unknown x and the x-terms in LET, answers in VAL, a term about to move
+// across «=» in OP, the action done to both sides and a moved term with its new sign in RULE.
+const LET = KL.DEN, VAL = KL.NUM, OP = KL.TWO, RULE = KL.RULE;
+
+// A closed box of width w centred on (x, y) with «x» on it (as c07Box); open(val, t0) lifts the lid on the number.
+function c28Box(p, x, y, w = 64, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { x: -w / 2, y: -w / 2, width: w, height: w, rx: 6, fill: mix(COL.board, LET, .16), stroke: LET, 'stroke-width': 3.5 }, g);
+  const lid = G(g, { x: -w / 2 - 5, y: -w / 2 });
+  path(lid, `M0 0H${w + 10}`, { stroke: LET, 'stroke-width': 7, 'stroke-linecap': 'round' });
+  const lab = M(g, ['x'], { y: w * .2, size: w * .66, fill: LET });
+  g.open = (v, t0) => {
+    const num = M(g, [String(v)], { y: w * .2, size: w * (String(v).length > 1 ? .5 : .66), fill: VAL, o: 0 });
+    tw(lid, { r: -38, y: -w / 2 - 6 }, t0, .5, back); hide(lab, t0, .3); show(num, t0 + .3, .3);
+  };
+  return g;
+}
+// One equation line as separate tokens around its «=» at xEq: L and R are token lists (strings or { t, fill, at }).
+// Every token fades in at its own `at`, else at t0 (t0 undefined: shown at once; null: hidden for fx). Returns { L, eq, R }.
+function c28Eq(p, L, R, xEq, y, t0, { size = 68 } = {}) {
+  const o = t0 === undefined ? 1 : 0, gap = size * .55;
+  const spec = it => typeof it === 'object' ? { t: it.t, fill: it.fill } : it;
+  const l = tokens(p, L.map(spec), { x: xEq - gap, y, size, anchor: 'end', o });
+  const eq = M(p, ['='], { x: xEq, y, size, o });
+  const r = tokens(p, R.map(spec), { x: xEq + gap, y, size, anchor: 'start', o });
+  if (t0 !== undefined && t0 !== null) {
+    show(eq, t0, .35);
+    [[L, l], [R, r]].forEach(([its, els]) => els.forEach((e, k) => show(e, (typeof its[k] === 'object' && its[k].at) || t0, .35)));
+  }
+  return { L: l, eq, R: r };
+}
+// A row of tokens where some fly in on an arc from tokens already on the board (it.from) and the rest fade in after
+// them (at it.at, else t0 + fade). A flying token with `old` starts as that text in oldFill (default chalk) and turns
+// into its own text half-way, as it crosses «=». lift > 0 bends the arc above both lines, lift < 0 below them.
+// eqAt: [index, xEq] shifts the row so its token `index` sits at xEq. s0: the source's size / this row's size.
+function c28Fly(p, items, x, y, t0, { size = 68, anchor = 'middle', fade = .7, lift = 110, dur = 1.2, eqAt, s0 = 1 } = {}) {
+  const row = tokens(p, items.map(it => typeof it === 'object' ? { t: it.t, fill: it.fill } : it), { x, y, size, anchor, o: 0 });
+  if (eqAt) { const dx = eqAt[1] - row[eqAt[0]]._px; row.forEach(e => { e._px += dx; put(e, { x: e._px }); }); }
+  row.forEach((e, k) => {
+    const it = items[k];
+    if (it && it.from) {
+      const { x: sx, y: sy } = st(it.from), ex = e._px, lf = it.lift ?? lift, d = it.dur ?? dur, at = it.at ?? t0;
+      const cy = lf >= 0 ? Math.min(sy, y) - lf : Math.max(sy, y) - lf;
+      const ghost = it.old !== undefined ? M(p, [it.old], { size, fill: it.oldFill || COL.chalk, o: 0 }) : null;
+      const pos = q => { const u = 1 - q; return { x: u * u * sx + u * q * (sx + ex) + q * q * ex, y: u * u * sy + 2 * u * q * cy + q * q * y, s: s0 + (1 - s0) * q }; };
+      put(e, pos(0)); if (ghost) put(ghost, pos(0));
+      prog(q => { const c = pos(q); put(e, c); if (ghost) put(ghost, c); }, at, d);
+      if (ghost) { show(ghost, at, .15); hide(ghost, at + d * .38, d * .24); show(e, at + d * .38, d * .24); }
+      else show(e, at, .15);
+    } else show(e, (typeof it === 'object' && it.at) || t0 + fade, .3);
+  });
+  return row;
+}
+// A framed card w × h centred on (x, y) holding a line of maths: a target for pickEls. Returns the group with box.
+function c28Card(p, x, y, w, h, parts, size = 54) {
+  const g = G(p);
+  g.frame = mk('rect', { x: x - w / 2, y: y - h / 2, width: w, height: h, rx: 14, fill: mix(COL.board, COL.chalk, .05), stroke: COL.chalk, 'stroke-opacity': .5, 'stroke-width': 3 }, g);
+  M(g, parts, { x, y: y + size * .34, size });
+  g.box = [x - w / 2, y - h / 2, w, h];
+  return g;
+}
+const X_ = { t: 'x', fill: LET };
+const v_ = s => ({ t: s, fill: VAL });
+const r_ = s => ({ t: s, fill: RULE });
+const xm = { m: 'x', fill: LET };
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Уравнения', (m, D) => klIntro(m, D, {
+    unit: 'Глава 6 · Положительные и отрицательные числа · Тема 6.5',
+    title: 'Уравнения',
+    sub: 'Один общий способ: одно и то же с обеими частями, перенос со сменой знака',
+    art: (g, t0) => {
+      const b = c28Box(g, 640, 620, 76, 0); show(b, t0);
+      klRow(g, [{ m: '+ 9 = 4' }], 702, 646, t0 + .3, { anchor: 'start', msize: 68 });
+    },
+  })],
+
+  ['scales', 'Одно и то же с обеими частями', m => {
+    const p = panel(0);
+    klTitle(p, 'Одно и то же с обеими частями');
+    const B = balance(p, { x: 470, y: 300, L: 230 });
+    show(B.g, .2);
+    // the pans: x + 9 against 4; the chips «− 9» wait above and drop in on [[sub9]]
+    const lt = tokens(B.L, [X_, ' + 9', r_(' − 9')], { x: 0, y: 96, size: 46, anchor: 'middle', o: 0 });
+    const rt = tokens(B.R, ['4', r_(' − 9')], { x: 0, y: 96, size: 46, anchor: 'middle', o: 0 });
+    const shiftL = lt[2]._w / 2, shiftR = rt[1]._w / 2;
+    [lt[0], lt[1]].forEach(e => { put(e, { x: e._px + shiftL }); show(e, m('pans'), .4); });
+    put(rt[0], { x: rt[0]._px + shiftR }); show(rt[0], m('pans', 1.2), .4);
+    put(lt[2], { y: -20 }); put(rt[1], { y: -20 });
+    [lt[2], rt[1]].forEach(e => { show(e, m('sub9'), .3); tw(e, { y: 96 }, m('sub9', .5), .6, out); });
+    [lt[0], lt[1]].forEach(e => tw(e, { x: e._px }, m('sub9', .5), .6));
+    tw(rt[0], { x: rt[0]._px }, m('sub9', .5), .6);
+    // left: + 9 and − 9 make zero; x is left alone
+    pulse(lt[1], m('left', .2), 1.4); pulse(lt[2], m('left', .2), 1.4);
+    const zero = klMath(B.L, ['0'], (lt[1]._px + lt[2]._px) / 2, 96, undefined, { size: 46, fill: COL.dim });
+    put(zero, { o: 0 }); show(zero, m('left', 1.2), .3); hide(zero, m('left', 2.6), .3);
+    hide(lt[1], m('left', 1.1), .3); hide(lt[2], m('left', 1.1), .3);
+    tw(lt[0], { x: 0 }, m('left', 2.6), .5);
+    // right: 4 − 9 = −5
+    pulse(rt[0], m('right', .3), 1.3); pulse(rt[1], m('right', .3), 1.3);
+    hide(rt[0], m('right', 1.6), .3); hide(rt[1], m('right', 1.6), .3);
+    const five = klMath(B.R, ['−5'], 0, 96, undefined, { size: 46, fill: VAL });
+    put(five, { o: 0 }); show(five, m('right', 1.8), .4);
+    // cubes cannot hold a negative answer: a crossed cube
+    const cube = G(p, { x: 250, y: 770, o: 0 });
+    mk('rect', { x: -22, y: -22, width: 44, height: 44, rx: 4, fill: mix(COL.board, VAL, .45), stroke: VAL, 'stroke-width': 2.5 }, cube);
+    show(cube, m('cubes', .2));
+    klStrike(p, 215, 805, 285, 735, m('cubes', 2));
+    klText(p, 'меньше нуля кубиков не бывает', 300, 781, m('cubes', 2.2), { size: 28, fill: COL.dim });
+    const level = path(p, 'M200 300H740', { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '12 10' }, { d: 0 });
+    draw(level, m('always', .3), .6);
+    klText(p, 'ровно', 752, 291, m('level', .2), { size: 28, fill: RULE, weight: 600 });
+    // the rule and the written column
+    klText(p, 'С обеими частями — одно и то же:', 900, 250, m('rule'), { size: 32, weight: 600 });
+    klRow(p, [{ m: '+ a', fill: RULE }, ' или ', { m: '− a', fill: RULE }, ','], 900, 312, m('add'), { size: 30, msize: 44, anchor: 'start' });
+    klRow(p, [{ m: '· a', fill: RULE }, ' или ', { m: ': a', fill: RULE }], 1130, 312, m('mul'), { size: 30, msize: 44, anchor: 'start' });
+    klText(p, '(a ≠ 0)', 1330, 312, m('zero'), { size: 30, fill: RULE, weight: 600 });
+    const XQ = 1180;
+    c28Eq(p, [X_, ' + 9'], ['4'], XQ, 440, m('pans', 1.6), { size: 56 });
+    c28Eq(p, [X_, ' + 9', r_(' − 9')], ['4', r_(' − 9')], XQ, 530, m('sub9', 1), { size: 56 });
+    c28Eq(p, [X_], [v_('−5')], XQ, 620, m('right', 2), { size: 56 });
+    klRow(p, [{ m: '−5', fill: VAL }, { m: ' + 9 = 4' }], 1150, 760, m('check', .2), { msize: 56 });
+    klMark(p, 1350, 742, m('check', 3), true, 1);
+  }],
+
+  ['move', 'Перенос со сменой знака', m => {
+    const p = panel(0);
+    klTitle(p, 'Перенос со сменой знака');
+    path(p, 'M800 250V660', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    const XA = 330, XB = 1050;
+    const A = c28Eq(p, [X_, ' + 9'], ['4'], XA, 330, .3);
+    pulse(A.L[1], m('eq', .1), 1.3);
+    const rowB = c28Fly(p, [{ from: A.L[0], t: 'x', fill: LET }, ' = ', { from: A.R[0], t: '4' },
+      { from: A.L[1], t: ' − 9', fill: RULE, old: ' + 9', lift: 120, at: m('fly', .9), dur: 1.6 },
+      { t: ' = ', at: m('rule', 6) }, { t: '−5', fill: VAL, at: m('rule', 6.2) }], 0, 490, m('fly'), { eqAt: [1, XA], dur: .8 });
+    pulse(rowB[3], m('rule', .5), 1.3);
+    klRow(p, [{ m: 'x + 9 − 9 = 4 − 9' }], XA, 590, m('rule', 4.6), { msize: 44, fill: COL.dim });
+    klText(p, 'Слагаемое переносят в другую часть с противоположным знаком', 800, 800, m('rule', .3), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+    const C = c28Eq(p, [X_, ' − 6'], ['−10'], XB, 330, m('ex2'));
+    const rowD = c28Fly(p, [{ from: C.L[0], t: 'x', fill: LET }, ' = ', { from: C.R[0], t: '−10' },
+      { from: C.L[1], t: ' + 6', fill: RULE, old: ' − 6', lift: 120, at: m('fly2', .5), dur: 1.6 },
+      { t: ' = ', at: m('ans2', 2.6) }, { t: '−4', fill: VAL, at: m('ans2', 2.8) }], 0, 490, m('fly2'), { eqAt: [1, XB], dur: .6 });
+    pulse(rowD[2], m('ans2', .1), 1.3); pulse(rowD[3], m('ans2', 1.2), 1.3);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    c28Eq(p, [X_, ' + 12'], ['5'], 800, 220, undefined, { size: 80 });
+    S.q1 = [['x = 5 + 12'], ['x = 12 − 5'], ['x = 5 − 12']].map((parts, i) => c28Card(p, 320 + i * 480, 390, 380, 120, parts));
+    S.q1ans = put(klMath(p, ['= −7'], 800 + 480, 520, undefined, { size: 56, fill: VAL }), { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-perenos', prompt: ['Какая запись верна для ', $m('x + 12 = 5'), '? Нажми на неё.'],
+    build: pickEls(S.q1.map((c, i) => ({ el: c, box: c.box, label: ['x = 5 + 12', 'x = 12 − 5', 'x = 5 − 12'][i] })), 2,
+      'Плюс двенадцать переходит направо и становится минус двенадцатью.',
+      i => i === 0 ? 'Двенадцать перешло направо, а знак остался прежним. При переносе знак меняется.'
+        : 'Числа поменялись местами. Справа стоит пять: из него и вычитают двенадцать.',
+      () => fx(S.q1[2].frame, { c_stroke: COL.good }, 0, .4)),
+  }, {
+    id: 'c-perenos2', prompt: ['Реши уравнение ', $m('x + 12 = 5'), '.'],
+    build: blanks([{ parts: ['x = 5 − 12 = ', { box: '-7' }], why: ['Проверка: ', $m('−7 + 12 = 5'), ' — верно.'],
+      hint: 'Из пяти вычесть двенадцать: ответ отрицательный.', fx: () => fx(S.q1ans, { o: 1 }, 0, .4) }]),
+  }], done) }],
+
+  ['coef', 'Деление на коэффициент', m => {
+    const p = panel(0);
+    klTitle(p, 'Деление на коэффициент');
+    path(p, 'M830 230V700', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    const XA = 420, XB = 1210;
+    const A = c28Eq(p, ['4', X_, ' − 3'], ['25'], XA, 300, .3);
+    const A2 = c28Fly(p, [{ from: A.L[0], t: '4' }, { from: A.L[1], t: 'x', fill: LET }, ' = ', { from: A.R[0], t: '25' },
+      { from: A.L[2], t: ' + 3', fill: RULE, old: ' − 3', lift: 110, at: m('move', 1), dur: 1.5 },
+      { t: ' = ', at: m('sum') }, { t: '28', fill: VAL, at: m('sum', .2) }], 0, 410, m('move', .2), { eqAt: [2, XA], dur: .7 });
+    A.L.forEach((e, k) => pulse(e, m('eq', .2 + k * .5), 1.25));
+    pulse(A2[0], m('name', .3), 1.6);
+    klText(p, 'коэффициент  →', A2[0]._px - 30, 400, m('name', .3), { size: 28, fill: COL.dim, anchor: 'end' });
+    c28Eq(p, ['4', X_, r_(' : 4')], ['28', r_(' : 4')], XA, 560, m('div'));
+    c28Eq(p, [X_], [v_('7')], XA, 670, m('ans', .2));
+    const N = c28Eq(p, ['−3', X_], [{ t: '12', at: m('neg', 3.4) }], XB, 300, m('neg', 1.2));
+    pulse(N.L[0], m('neg', 1.8), 1.4);
+    c28Eq(p, ['−3', X_, r_(' : (−3)')], ['12', r_(' : (−3)')], XB, 410, m('div2'));
+    c28Eq(p, [X_], [v_('−4')], XB, 520, m('ans2', .3));
+    klText(p, 'делим обе части на одно число', 800, 800, m('div', .4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['bothx', 'x в обеих частях', m => {
+    const p = panel(0);
+    klTitle(p, 'x в обеих частях');
+    const XQ = 800;
+    const A = c28Eq(p, [{ t: '5x', fill: LET }, ' − 4'], [{ t: '2x', fill: LET }, ' + 11'], XQ, 340, .3, { size: 80 });
+    klRow(p, ['←  ', { m: 'x', fill: LET }, '  иксы — слева'], 420, 222, m('plan'), { size: 30, msize: 42, weight: 600 });
+    klRow(p, ['числа — справа  →'], 1180, 222, m('plan', 1), { size: 30, weight: 600, fill: VAL });
+    [A.L[0], A.R[0]].forEach((e, k) => draw(path(p, `M${e._px - e._w / 2 + 6} 362H${e._px + e._w / 2 - 6}`, { stroke: LET, 'stroke-width': 4, 'stroke-linecap': 'round' }, { d: 0 }), 1.6 + k * .6, .4));
+    pulse(A.L[0], m('eq', .3), 1.25); pulse(A.R[0], m('eq', 2.2), 1.25);
+    pulse(A.R[0], m('fly', .1), 1.3);
+    pulse(A.L[1], m('fly2', .1), 1.3);
+    c28Fly(p, [{ from: A.L[0], t: '5x', fill: LET }, { from: A.R[0], t: ' − 2x', fill: RULE, old: '2x', oldFill: LET, lift: 130, at: m('fly', .6), dur: 1.6 }, ' = ',
+      { from: A.R[1], t: '11' }, { from: A.L[1], t: ' + 4', fill: RULE, old: ' − 4', lift: -170, at: m('fly2', .6), dur: 1.6 }],
+      0, 510, m('fly', .3), { eqAt: [2, XQ], s0: 80 / 68, dur: .8 });
+    c28Eq(p, [{ t: '3x', fill: LET }], [{ t: '15', fill: VAL, at: m('sum', 4.6) }], XQ, 640, m('sum', 1));
+    c28Eq(p, [X_], ['15 : 3 = ', v_('5')], XQ, 760, m('ans', .3));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const A = c28Eq(p, [{ t: '7x', fill: LET }, ' + 2'], [{ t: '3x', fill: LET }, ' + 18'], 800, 250, undefined, { size: 80 });
+    klArrow(p, A.R[0]._px, 180, 520, 180, 90, OP, 0, .01);
+    klArrow(p, A.L[1]._px, 285, 1160, 285, 360, OP, 0, .01);
+    S.q2r1 = c28Eq(p, [{ t: '4x', fill: LET }], ['18 − 2 = ', v_('16')], 800, 430, null);
+    S.q2r2 = c28Eq(p, [X_], ['16 : 4 = ', v_('4')], 800, 520, null);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-oba', prompt: ['Реши уравнение ', $m('7x + 2 = 3x + 18'), '.'],
+    build: blanks([
+      { parts: ['7x − 3x = 18 − 2,   4x = ', { box: '16' }], why: ['Иксы слева: ', $m('7x − 3x = 4x'), '; числа справа: ', $m('18 − 2 = 16'), '.'],
+        hint: '3x переходит налево с минусом, 2 — направо с минусом.', fx: () => [S.q2r1.eq, ...S.q2r1.L, ...S.q2r1.R].forEach(e => fx(e, { o: 1 }, 0, .4)) },
+      { parts: ['x = ', { box: '4' }], why: ['Делим на коэффициент: ', $m('16 : 4 = 4'), '. Проверка: ', $m('7 · 4 + 2 = 30'), ', ', $m('3 · 4 + 18 = 30'), '.'],
+        hint: 'Раздели обе части на 4.', fx: () => [S.q2r2.eq, ...S.q2r2.L, ...S.q2r2.R].forEach(e => fx(e, { o: 1 }, 0, .4)) },
+    ]),
+  }], done) }],
+
+  ['brackets', 'Сначала скобки', m => {
+    const p = panel(0);
+    klTitle(p, 'Сначала скобки');
+    path(p, 'M960 230V700', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    const XQ = 560;
+    const A = c28Eq(p, ['2', '(', X_, ' − 3', ')'], ['8'], XQ, 300, .3, { size: 76 });
+    pulse(A.L[0], m('eq', .4), 1.4);
+    draw(path(p, `M${A.L[1]._px - 14} 326H${A.L[4]._px + 14}`, { stroke: OP, 'stroke-width': 4, 'stroke-linecap': 'round' }, { d: 0 }), m('eq', .5), .5);
+    klArrow(p, A.L[0]._px, 230, A.L[2]._px, 230, 170, OP, m('open'), .5);
+    klArrow(p, A.L[0]._px, 230, A.L[3]._px + 10, 230, 140, OP, m('open', .9), .6);
+    const B = c28Eq(p, [{ t: '2x', fill: LET, at: m('open', 1) }, { t: ' − 6', at: m('open', 2) }], ['8'], XQ, 420, m('open', 2.4));
+    c28Fly(p, [{ from: B.L[0], t: '2x', fill: LET }, ' = ', { from: B.R[0], t: '8' },
+      { from: B.L[1], t: ' + 6', fill: RULE, old: ' − 6', lift: 100, at: m('move', 1.6), dur: 1.5 },
+      { t: ' = ', at: m('sum') }, { t: '14', fill: VAL, at: m('sum', .2) }], 0, 540, m('move', 1), { eqAt: [1, XQ], dur: .7 });
+    const D = c28Eq(p, [X_], ['14 : 2 = ', v_('7')], XQ, 660, m('ans', .2));
+    klText(p, 'проверка', 1250, 250, m('check'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    c28Fly(p, ['2(', { from: D.R[1], t: '7', fill: VAL, lift: 80 }, ' − 3) = 8'], 1250, 360, m('check', .3), { fade: 0, dur: 1.2 });
+    klRow(p, [{ m: '2 · 4 = 8' }], 1250, 470, m('check2'), { msize: 68 });
+    klMark(p, 1250, 560, m('check2', 1.6), true, 1);
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const top = tokens(p, [X_, ' + 9', ' = ', '4'], { x: 800, y: 250, size: 90, anchor: 'middle', o: 0 });
+    top.forEach(e => show(e, .3));
+    path(p, 'M800 330V760', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    // the mistake: 9 moved, its sign kept
+    c28Fly(p, [{ from: top[0], t: 'x', fill: LET }, ' = ', { from: top[3], t: '4' }, { from: top[1], t: ' + 9', lift: 60 }, { t: ' = 13', at: m('wrong', 5.5) }],
+      410, 440, m('wrong', .3), { s0: 90 / 68 });
+    klStrike(p, 180, 470, 640, 390, m('strike'));
+    klText(p, 'ошибка!', 410, 515, m('strike', .3), { size: 32, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klRow(p, [{ m: '13 + 9 = 22' }], 410, 640, m('test', .4), { msize: 60, fill: COL.dim });
+    klMark(p, 410, 720, m('test', 3), false, 1);
+    // the right way: − 9
+    c28Fly(p, [{ from: top[0], t: 'x', fill: LET }, ' = ', { from: top[3], t: '4' }, { from: top[1], t: ' − 9', fill: RULE, old: ' + 9', lift: 60, dur: 1.5 },
+      { t: ' = ', at: m('ans') }, { t: '−5', fill: VAL, at: m('ans', .2) }], 1190, 440, m('right', .2), { s0: 90 / 68 });
+    klRow(p, [{ m: '−5', fill: VAL }, { m: ' + 9 = 4' }], 1190, 640, m('ok', .2), { msize: 60 });
+    klMark(p, 1190, 720, m('ok', 2.4), true, 1);
+    klText(p, 'Подставь ответ — проверка поймает ошибку', 800, 830, m('ok', 4.6), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const A = c28Eq(p, ['3', '(', X_, ' + 4', ')'], ['6'], 800, 250, undefined, { size: 80 });
+    klArrow(p, A.L[0]._px, 175, A.L[2]._px, 175, 115, OP, 0, .01);
+    klArrow(p, A.L[0]._px, 175, A.L[3]._px + 10, 175, 85, OP, 0, .01);
+    S.q3r1 = c28Eq(p, [{ t: '3x', fill: LET }, ' + 12'], ['6'], 800, 380, null, { size: 60 });
+    S.q3r2 = c28Eq(p, [{ t: '3x', fill: LET }], ['6 − 12 = ', v_('−6')], 800, 460, null, { size: 60 });
+    S.q3r3 = c28Eq(p, [X_], ['−6 : 3 = ', v_('−2')], 800, 540, null, { size: 60 });
+  }, { ask: done => {
+    const on = r => [r.eq, ...r.L, ...r.R].forEach(e => fx(e, { o: 1 }, 0, .4));
+    quiz(BAND, [{
+      id: 'c-skobki', prompt: ['Реши уравнение ', $m('3(x + 4) = 6'), '.'],
+      build: blanks([
+        { parts: ['3x + 12 = 6,   3x = ', { box: '-6' }], why: ['Скобки раскрыты: ', $m('3x + 12 = 6'), '; двенадцать направо с минусом: ', $m('3x = −6'), '.'],
+          hint: 'Двенадцать переходит направо с минусом: 6 − 12.', fx: () => { on(S.q3r1); on(S.q3r2); } },
+        { parts: ['x = ', { box: '-2' }], why: ['Проверка: ', $m('3 · (−2 + 4) = 3 · 2 = 6'), ' — верно.'],
+          hint: 'Раздели −6 на 3: минус на плюс даёт минус.', fx: () => on(S.q3r3) },
+      ]),
+    }], done);
+  } }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'С обеими частями — одно и то же (делить — не на ноль)',
+    ['Перенос через «=» меняет знак:  ', { m: 'x + 9 = 4,   x = 4 − 9' }],
+    'Иксы — слева, числа — справа, потом делим на коэффициент',
+    ['Скобки раскрывают первыми:  ', { m: '2(x − 3) = 2x − 6' }],
+    'Проверка: подставь ответ в исходное уравнение',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['Из ', $m('x − 5 = 2'), ' следует ', $m('x = 2 + 5')], ans: ['yes'], why: 'Минус пять переходит направо с плюсом.' },
+      { parts: ['Из ', $m('x + 3 = −1'), ' следует ', $m('x = −1 + 3')], ans: ['no'], why: 'Знак при переносе меняется: x = −1 − 3 = −4.' },
+      { parts: ['Из ', $m('6x = −18'), ' следует ', $m('x = −3')], ans: ['yes'], why: 'Делим обе части на 6: −18 : 6 = −3.' },
+      { parts: ['Из ', $m('2x + 1 = x + 7'), ' следует ', $m('x = 6')], ans: ['yes'], why: 'Иксы слева, числа справа: 2x − x = 7 − 1, x = 6.' },
+      { parts: ['Число 2 — корень уравнения ', $m('3x − 1 = x + 5')], ans: ['no'], why: 'Проверка: 3 · 2 − 1 = 5, а 2 + 5 = 7. Корень — 3.' },
+    ], [['yes', 'верно', null, '1'], ['no', 'неверно', null, '2']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-reshi', prompt: 'Реши уравнения.',
+    build: blanks([
+      { parts: ['x + 15 = 6,   x = ', { box: '-9' }], why: 'x = 6 − 15 = −9. Проверка: −9 + 15 = 6.', hint: 'Пятнадцать переходит направо с минусом.' },
+      { parts: ['5x + 8 = −12,   x = ', { box: '-4' }], why: '5x = −12 − 8 = −20, x = −20 : 5 = −4.', hint: 'Сначала перенеси 8, потом раздели на 5.' },
+      { parts: ['3x − 7 = 5x + 3,   x = ', { box: '-5' }], why: '3x − 5x = 3 + 7, −2x = 10, x = 10 : (−2) = −5. Проверка: −22 = −22.', hint: 'Иксы слева, числа справа; коэффициент выйдет отрицательным.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-skobki', prompt: ['Реши уравнение ', $m('−2(x − 5) = 16'), '.'],
+    build: blanks([{ parts: ['x = ', { box: '-3' }], why: ['Скобки: ', $m('−2x + 10 = 16'), ', ', $m('−2x = 6'), ', ', $m('x = −3'), '. Проверка: ', $m('−2 · (−3 − 5) = −2 · (−8) = 16'), '.'],
+      hint: 'Минус два умножь и на x, и на −5: получится −2x + 10.' }]),
+  }, {
+    id: 'p-koren', prompt: ['Какое число — корень уравнения ', $m('4x + 1 = 2x − 7'), '?'],
+    build: choice([$m('4'), $m('−4'), $m('−3')], 1, ['Проверка: ', $m('4 · (−4) + 1 = −15'), ' и ', $m('2 · (−4) − 7 = −15'), ' — верно.'],
+      ['Проверь: 4 · 4 + 1 = 17, а 2 · 4 − 7 = 1. Не равны.', null, 'Проверь: 4 · (−3) + 1 = −11, а 2 · (−3) − 7 = −13. Не равны.']),
+  }, {
+    id: 'p-zadumali', prompt: 'Задумали число. Утроили его и прибавили 10 — получилось столько же, сколько если из числа вычесть 4. Какое число задумали?',
+    build: blanks([{ parts: ['3x + 10 = x − 4,   x = ', { box: '-7' }], why: ['Иксы слева, числа справа: ', $m('2x = −14'), ', ', $m('x = −7'), '. Проверка: ', $m('3 · (−7) + 10 = −11'), ', ', $m('−7 − 4 = −11'), '.'],
+      hint: 'x переходит налево с минусом, 10 — направо с минусом.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

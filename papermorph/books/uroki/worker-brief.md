@@ -41,6 +41,7 @@ You make ONE lesson of the Papermorph lesson book «Математика в кл
 - Shoot the intro at `intro:sub+1`: at `intro:end` it has already faded out. Re-shoot the sheet after your last layout fix.
 - `check.py` in Chromium may print one console warning, «Did not find element expected to be parsed from: <link rel=expect href="#bar">»: it comes from the engine's head (approved ch13 has it too) and is not yours to fix.
 - math.js `pointRow` draws a decimal point, but this book writes a decimal comma: use ch17's `c17Table` / `c17Col` (comma at a fixed x) instead.
+- math.js `numberLine` draws into `S.line`, which is not cleared between beats: set `S.line = G(p)` right before each `numberLine(...)` call so the line leaves with the beat (ch25 `c25Line`). In an answer effect `move` takes the start time before the run function: `move(p, a, b, y, 0, fx)`.
 - Finished lessons hold helpers worth copying under your own prefix (list in `chapters.md`, «Кандидаты в общую библиотеку»): read the one you need, not the whole page.
 
 ## Check before you report

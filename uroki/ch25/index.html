@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сложение и вычитание · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 6.2 «Сложение и вычитание» (6 класс). Beat ids match papermorph/content/uroki/ch25/narration.ru.json.
+const CHAPTER = { number: 25, label: '6.2', title: 'Сложение и вычитание', minutes: 7, language: 'ru', next: '../ch26/' };
+
+const RULE = KL.RULE;
+AXIS.u = 100;                                   // the number line runs from −7 to 7
+const VALS = Array.from({ length: 15 }, (_, i) => i - 7);
+
+// A line of maths written piece by piece: items [[parts, t0, fill?]] laid left to right from x (anchor 'start')
+// or centred on x. Each piece is a klMath group with _x (its left edge) and _w (its width).
+function c25Seq(p, items, x, y, { size = 60, anchor = 'middle' } = {}) {
+  const ws = items.map(([parts]) => mathW([].concat(parts), size));
+  let cx = anchor === 'middle' ? x - ws.reduce((a, b) => a + b, 0) / 2 : x;
+  return items.map(([parts, t, fill], i) => {
+    const e = klMath(p, parts, cx, y, t, { size, anchor: 'start', fill: fill || COL.chalk });
+    e._x = cx; e._w = ws[i]; cx += ws[i];
+    return e;
+  });
+}
+// The number line −7 … 7 drawn inside the panel (S.line is the engine's line layer), so it leaves with the panel.
+function c25Line(p, t0 = .1) {
+  S.line = G(p);
+  numberLine(t0, -7, 7);
+}
+// A row of n plus (sign 1) or minus (sign −1) tiles from x0, `gap` apart, popping in from t0 (no t0: hidden, for answers).
+function c25Row(p, n, sign, x0, y, t0, gap = 80, step = .08) {
+  const row = tiles(p, n, sign, x0, y, gap);
+  if (t0 !== undefined) popAll(row, t0, step);
+  return row;
+}
+// A dashed ring round a plus tile and the minus tile under it (a zero pair), shown at t0 (no t0: hidden).
+function c25Ring(p, a, b, t0, run = tw) {
+  const x = st(a).x, y1 = st(a).y, y2 = st(b).y;
+  const ring = mk('rect', { x: x - 38, y: y1 - 38, width: 76, height: y2 - y1 + 76, rx: 18, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '8 6' }, p);
+  put(ring, { o: 0 });
+  if (t0 !== undefined) run(ring, { o: 1 }, t0, .3);
+  return ring;
+}
+// Zero pairs vanish: each pair is ringed, then tiles and ring fade together. run = tw (lesson) or fx (answer).
+function c25Pairs(p, tops, bots, t0, { step = .25, wait = .9, run = tw } = {}) {
+  tops.forEach((a, i) => {
+    const b = bots[i], t = t0 + i * step, ring = c25Ring(p, a, b, t, run);
+    for (const e of [a, b]) run(e, { o: 0, s: .5 }, t + wait, .4);
+    run(ring, { o: 0 }, t + wait, .4);
+  });
+}
+// A small bounce of tiles one after another (the ones a sentence is about).
+function c25Bounce(row, t0, step = .1) {
+  row.forEach((e, i) => { tw(e, { s: 1.2 }, t0 + i * step, .2, out); tw(e, { s: 1 }, t0 + .2 + i * step, .3); });
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Сложение и вычитание', (m, D) => klIntro(m, D, {
+    unit: 'Глава 6 · Положительные и отрицательные числа · Тема 6.2',
+    title: 'Сложение и вычитание',
+    sub: 'Как складывать и вычитать числа со знаком — шагами по прямой и фишками',
+    art: (g, t0) => {
+      const a = tile(g, 1, 700, 600, 1), b = tile(g, -1, 770, 600, 1);
+      const ring = mk('rect', { x: 657, y: 557, width: 156, height: 86, rx: 20, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '8 6' }, g);
+      put(ring, { o: 0 }); show(ring, t0 + .4);
+      klMath(g, ['= 0'], 840, 618, t0 + .7, { size: 52, anchor: 'start', fill: RULE });
+      [a, b].forEach(e => { put(e, { o: 0, s: .6 }); tw(e, { o: 1, s: 1 }, t0, .4, back); });
+    },
+  })],
+
+  ['line', 'Шаги по прямой', m => {
+    const p = panel(0);
+    klTitle(p, 'Сложение на координатной прямой', 'прибавить число — значит сделать шаги по прямой');
+    c25Line(p);
+    // −2 + 5: five steps to the right.
+    const g1 = G(p);
+    landDot(g1, -2, m('start'));
+    move(g1, -2, 3, 520, m('plus'));
+    landDot(g1, 3, m('land'), RULE);
+    c25Seq(p, [['−2', m('start')], [' + 5', m('plus'), POS], [' = 3', m('land'), RULE]], 420, 320);
+    tw(g1, { o: .3 }, m('neg'), .5);
+    // 2 + (−6): six steps to the left.
+    const g2 = G(p);
+    landDot(g2, 2, m('start2'));
+    move(g2, 2, -4, 440, m('left'));
+    landDot(g2, -4, m('land2'), RULE);
+    c25Seq(p, [['2', m('start2')], [' + (−6)', m('left'), NEG], [' = −4', m('land2'), RULE]], 1180, 320);
+    tw(g1, { o: 1 }, m('rule'), .5);
+    klText(p, 'плюс положительное — вправо  →', 420, 790, m('rule'), { size: 32, fill: POS, weight: 600, anchor: 'middle' });
+    klText(p, '←  плюс отрицательное — влево', 1180, 790, m('rule', 1.2), { size: 32, fill: NEG, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    c25Line(p);
+    S.q1 = G(p);
+    landDot(S.q1, 1, .4);
+    klMath(p, ['1 + (−4) = ?'], 800, 330, .3, { size: 72 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-pryamaya', prompt: ['Отметь на прямой, чему равно ', $m('1 + (−4)'), '.'],
+    build: tap(VALS, -3, ['От единицы четыре шага влево: ', $m('1 + (−4) = −3'), '.'],
+      v => v === 5 ? 'Прибавляем отрицательное число — значит, шагаем влево, а не вправо.' : 'Начни с единицы и сделай четыре шага влево.',
+      () => { move(S.q1, 1, -3, 520, 0, fx); landDot(S.q1, -3, .8, RULE, fx); }),
+  }], done) }],
+
+  ['same', 'Одинаковые знаки', m => {
+    const p = panel(0);
+    klTitle(p, 'Фишки: плюс один и минус один', 'складываем числа с одинаковыми знаками');
+    popAll([tile(p, 1, 190, 300)], m('pos'));
+    klMath(p, ['= +1'], 240, 317, m('pos'), { size: 48, anchor: 'start', fill: POS });
+    popAll([tile(p, -1, 190, 400)], m('neg'));
+    klMath(p, ['= −1'], 240, 417, m('neg'), { size: 48, anchor: 'start', fill: NEG });
+    const A = c25Row(p, 3, -1, 600, 340, m('a'));
+    const B = c25Row(p, 5, -1, 1000, 340, m('b'));
+    const capA = klMath(p, ['−3'], 680, 270, m('a'), { size: 52, fill: NEG });
+    const capB = klMath(p, ['−5'], 1160, 270, m('b'), { size: 52, fill: NEG });
+    const plus = klMath(p, ['+'], 880, 358, m('b'), { size: 60 });
+    [capA, capB, plus].forEach(e => hide(e, m('join'), .3));
+    B.forEach((e, i) => tw(e, { x: 840 + i * 80 }, m('join', .1 + i * .06), .7, io));
+    klCount(p, Array.from({ length: 8 }, (_, i) => [600 + i * 80, 292]), m('count'), { step: .15, size: 30 });
+    klBrace(p, 572, 1188, 390, '−8', m('count', 1.4), { up: false, fill: NEG, size: 48 });
+    c25Bounce([...A, ...B], m('count', 3.2), .06);
+    c25Seq(p, [['−3', m('a')], [' + (−5)', m('b')], [' = −8', m('count', 1.4), RULE]], 880, 590, { size: 64 });
+    klText(p, 'знаки одинаковые — модули складываем, знак оставляем общий', 880, 700, m('rule'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klMath(p, ['|−3| + |−5| = 8'], 880, 790, m('rule', 1.2), { size: 50, fill: COL.dim });
+    c25Bounce([...A, ...B], m('rule', 3.4), .06);
+  }],
+
+  ['diff', 'Разные знаки', m => {
+    const p = panel(0);
+    klTitle(p, 'Разные знаки: плюс и минус вместе — ноль', 'складываем минус семь и плюс четыре');
+    const top = c25Row(p, 7, -1, 560, 290, m('a'), 90);
+    const bot = c25Row(p, 4, 1, 560, 390, m('b'), 90);
+    klMath(p, ['−7'], 470, 308, m('a'), { size: 52, fill: NEG, anchor: 'end' });
+    klMath(p, ['+4'], 470, 408, m('b'), { size: 52, fill: POS, anchor: 'end' });
+    c25Pairs(p, top.slice(0, 1), bot.slice(0, 1), m('pair'), { wait: 1.4 });
+    c25Pairs(p, top.slice(1, 4), bot.slice(1, 4), m('gone', -.6), { step: .25, wait: .8 });
+    c25Bounce(top.slice(4), m('left'));
+    klBrace(p, 902, 1138, 340, '−3', m('left', .4), { up: false, fill: NEG, size: 48 });
+    c25Seq(p, [['−7', m('a')], [' + 4', m('b')], [' = −3', m('left', .4), RULE]], 800, 570, { size: 64 });
+    const r1 = 'из большего модуля вычитаем меньший:', r2 = 'знак — у числа с большим модулем:', mx = 230 + klW(r1, 34, 600) + 36;
+    klText(p, r1, 230, 690, m('rule'), { size: 34, fill: RULE, weight: 600 });
+    klMath(p, ['7 − 4 = 3'], mx, 692, m('rule', 2.4), { size: 50, anchor: 'start' });
+    klText(p, r2, 230, 790, m('sign'), { size: 34, fill: RULE, weight: 600 });
+    klMath(p, ['−'], mx, 792, m('sign', 2.2), { size: 56, anchor: 'start', fill: NEG });
+    klText(p, '(минусов больше)', mx + 50, 790, m('sign', 3), { size: 30, fill: COL.dim });
+    c25Bounce(top.slice(4), m('sign', 3.4));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q2p = p;
+    S.q2a = c25Row(p, 9, -1, 440, 250, .2, 90);
+    S.q2b = c25Row(p, 5, 1, 440, 350, .6, 90);
+    klMath(p, ['−9'], 380, 268, .2, { size: 48, fill: NEG, anchor: 'end' });
+    klMath(p, ['+5'], 380, 368, .6, { size: 48, fill: POS, anchor: 'end' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-slozhi', prompt: 'Сложи.',
+    build: blanks([
+      { parts: ['−9 + 5 = ', { box: '-4' }], why: 'Знаки разные: 9 − 5 = 4, минусов больше — ответ −4.',
+        hint: 'Каждая пара плюс-минус даёт ноль. Сколько минусов останется?',
+        fx: () => c25Pairs(S.q2p, S.q2a.slice(0, 5), S.q2b, 0, { step: .15, wait: .6, run: fx }) },
+      { parts: ['−2 + (−6) = ', { box: '-8' }], why: 'Знаки одинаковые: 2 + 6 = 8, знак общий — ответ −8.',
+        hint: 'Знаки одинаковые: сложи модули и оставь минус.' },
+    ]),
+  }], done) }],
+
+  ['sub', 'Вычитание', m => {
+    const p = panel(0);
+    klTitle(p, 'Убрать плюсы или добавить минусы');
+    const P5 = c25Row(p, 5, 1, 300, 300, .2);
+    c25Seq(p, [['5 − 3', m('five')], [' = 2', m('take', .9), RULE]], 960, 320, { anchor: 'start' });
+    P5.slice(2).forEach((e, i) => { tw(e, { y: 210, o: 0 }, m('take', i * .12), .6); tw(e, { y: 300, o: 1 }, m('add', i * .1), .5); });
+    const N3 = c25Row(p, 3, -1, 460, 400, m('add', .6));
+    c25Seq(p, [['5 + (−3)', m('add', .6)], [' = 2', m('pairs', 1.4), RULE]], 960, 440, { anchor: 'start' });
+    c25Pairs(p, P5.slice(2), N3, m('pairs'), { step: .2, wait: .9 });
+    c25Seq(p, [['5 − 3', m('same')], [' = 5 + (−3)', m('same', 2.2)]], 800, 580, { size: 60 });
+    klText(p, 'вычесть число — значит прибавить противоположное', 800, 668, m('rule'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klMath(p, ['a − b = a + (−b)'], 800, 740, m('rule', 2.4), { size: 52, fill: RULE });
+    c25Seq(p, [['3 − 8', m('ex')], [' = 3 + (−8)', m('ex', 1.3)], [' = −5', m('ex', 3), RULE]], 800, 836, { size: 56 });
+  }],
+
+  ['subneg', 'Вычитаем отрицательное', m => {
+    const p = panel(0);
+    klTitle(p, 'Вычитаем отрицательное число');
+    const P5 = c25Row(p, 5, 1, 520, 300, .2);
+    c25Seq(p, [['5 − (−3)', m('five')], [' = 5 + 3', m('line', 1.8)], [' = 8', m('line', 5.6), RULE]], 800, 620, { size: 72 });
+    const none = klText(p, 'минусов нет — убирать нечего', 680, 420, m('none'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    hide(none, m('zero'), .3);
+    const ZP = c25Row(p, 3, 1, 920, 300, m('zero'), 80, .15), ZN = c25Row(p, 3, -1, 920, 400, m('zero', .1), 80, .15);
+    const rings = ZP.map((a, i) => c25Ring(p, a, ZN[i], m('zero', .8 + i * .15)));
+    const zt = klText(p, 'три нулевые пары:  + 0', 1000, 490, m('zero', 1.4), { size: 30, fill: COL.dim, anchor: 'middle' });
+    c25Bounce([...ZP, ...ZN], m('zero', 3), .06);
+    c25Bounce(P5, m('zero', 5));
+    ZN.forEach((e, i) => tw(e, { y: 480, o: 0 }, m('take', i * .12), .6));
+    [...rings, zt].forEach(e => hide(e, m('take'), .4));
+    klCount(p, Array.from({ length: 8 }, (_, i) => [520 + i * 80, 252]), m('left'), { step: .12, size: 30 });
+    klBrace(p, 492, 1108, 350, '+8', m('left', 1.1), { up: false, fill: POS, size: 48 });
+    c25Seq(p, [['−4 − (−6)', m('ex')], [' = −4 + 6', m('ex', 1.8)], [' = 2', m('ex', 3.3), RULE]], 800, 770, { size: 60 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klMath(p, ['2 − (−5) = ?'], 800, 220, .2, { size: 64 });
+    c25Row(p, 2, 1, 560, 340, .4);
+    S.q3add = c25Row(p, 5, 1, 720, 340);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-zamena', prompt: 'Замени вычитание сложением и посчитай.',
+    build: blanks([
+      { parts: ['2 − (−5) = 2 + ', { box: '5' }, ' = ', { box: '7' }], why: 'Вычесть −5 — значит прибавить 5: 2 + 5 = 7.',
+        hint: 'Противоположное к −5 число — это 5.',
+        fx: () => S.q3add.forEach((e, i) => fx(e, { o: 1, s: 1 }, i * .1, .35, back)) },
+      { parts: ['−3 − 2 = −3 + (', { box: '-2' }, ') = ', { box: '-5' }], why: 'Вычесть 2 — значит прибавить −2. Знаки одинаковые: ответ −5.',
+        hint: 'Противоположное к 2 число — это −2. Потом сложи числа с одинаковыми знаками.' },
+    ]),
+  }], done) }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const w = c25Seq(p, [['−4 − 6', .3], [' = −2', m('wrong'), COL.dim]], 800, 280, { size: 72 });
+    draw(path(p, `M${w[0]._x} 304H${w[0]._x + w[0]._w}`, { stroke: RULE, 'stroke-width': 4, 'stroke-linecap': 'round' }, { d: 0 }), m('expr'), .6);
+    const x1 = w[1]._x + 50, x2 = w[1]._x + w[1]._w + 8;
+    klStrike(p, x1, 296, x2, 236, m('cross'));
+    klText(p, 'неверно', x2 + 26, 278, m('cross', .3), { size: 30, fill: COL.bad, weight: 700 });
+    c25Seq(p, [['−4 − 6', m('right')], [' = −4 + (−6)', m('right', .9)], [' = −10', m('ans', 1.4), RULE]], 800, 420, { size: 64 });
+    c25Row(p, 4, -1, 440, 560, m('tiles'));
+    const N6 = tiles(p, 6, -1, 760, 560);
+    N6.forEach((e, i) => { put(e, { x: 960 + i * 80, o: 0, s: 1 }); tw(e, { x: 760 + i * 80, o: 1 }, m('tiles', 1.3 + i * .08), .6, out); });
+    klCount(p, Array.from({ length: 10 }, (_, i) => [440 + i * 80, 512]), m('ans'), { step: .12, size: 30 });
+    klBrace(p, 412, 1188, 610, '−10', m('ans', 1.4), { up: false, fill: NEG, size: 48 });
+  }],
+
+  ['change', 'Изменение величины', m => {
+    const p = panel(0);
+    klTitle(p, 'На сколько изменилась температура');
+    c25Line(p);
+    const g1 = G(p), g2 = G(p);
+    const d1 = landDot(g1, -3, m('was'));
+    klText(g1, 'было', X(-3), 712, m('was'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    const d2 = landDot(g1, 5, m('now'), RULE);
+    klText(g1, 'стало', X(5), 712, m('now'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    const ask = klText(p, 'На сколько потеплело?', 800, 330, m('ask'), { size: 38, anchor: 'middle' });
+    hide(ask, m('calc', -.3), .3);
+    klText(p, 'изменение = новое значение − старое', 800, 240, m('rule'), { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+    pulse(d2, m('rule', 1.4)); pulse(d1, m('rule', 2.6));
+    c25Seq(g1, [['5 − (−3)', m('calc')], [' = 5 + 3', m('calc', 1.4)], [' = 8', m('calc', 2.5), RULE]], 500, 330, { size: 52 });
+    klText(g1, 'потеплело на 8°', 1180, 328, m('calc', 2.8), { size: 34, fill: POS, weight: 600, anchor: 'middle' });
+    move(g1, -3, 5, 540, m('steps'));
+    klCount(g1, Array.from({ length: 8 }, (_, i) => [X(-2.5 + i), 590]), m('steps', .8), { step: .15, size: 24, fill: POS });
+    klRow(g1, ['расстояние между точками:   ', { m: '|5 − (−3)| = 8' }], 800, 800, m('steps', 3.2), { size: 30, fill: COL.dim });
+    tw(g1, { o: .3 }, m('cold'), .5);
+    landDot(g2, 4, m('cold', .8));
+    klText(g2, 'было', X(4), 712, m('cold', .8), { size: 28, fill: COL.dim, anchor: 'middle' });
+    landDot(g2, -6, m('cold', 2), RULE);
+    klText(g2, 'стало', X(-6), 712, m('cold', 2), { size: 28, fill: COL.dim, anchor: 'middle' });
+    c25Seq(g2, [['−6 − 4', m('calc2')], [' = −10', m('calc2', 1.5), RULE]], 500, 410, { size: 52 });
+    move(g2, 4, -6, 470, m('calc2'));
+    klText(g2, 'похолодало на 10°', 1180, 408, m('sign'), { size: 34, fill: NEG, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    c25Line(p);
+    S.q4 = G(p);
+    landDot(S.q4, 2, .3);
+    landDot(S.q4, -5, .5, RULE);
+    klText(p, 'изменение = новое значение − старое', 800, 300, .4, { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-temperatura', prompt: 'Было 2°, стало −5°. Найди изменение температуры.',
+    build: blanks([{ parts: ['−5 − 2 = ', { box: '-7' }], why: '−5 − 2 = −5 + (−2) = −7: похолодало на 7°.',
+      hint: 'Новое значение минус старое. Похолодало — значит, ответ отрицательный.',
+      fx: () => move(S.q4, 2, -5, 500, 0, fx) }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Плюс положительное — шаг вправо, плюс отрицательное — влево',
+    ['Знаки одинаковые: модули складываем, знак общий:  ', { m: '−3 + (−5) = −8' }],
+    ['Знаки разные: больший модуль минус меньший:  ', { m: '−7 + 4 = −3' }],
+    ['Вычесть — значит прибавить противоположное:  ', { m: '5 − (−3) = 5 + 3' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-poschitai', prompt: 'Посчитай.',
+    build: blanks([
+      { parts: ['−8 + 3 = ', { box: '-5' }], why: 'Знаки разные: 8 − 3 = 5, знак у восьми — минус.', hint: 'Из большего модуля вычти меньший, знак возьми у числа с большим модулем.' },
+      { parts: ['5 − 12 = ', { box: '-7' }], why: '5 − 12 = 5 + (−12) = −7.', hint: 'Замени вычитание сложением: 5 + (−12).' },
+      { parts: ['−6 − (−9) = ', { box: '3' }], why: '−6 − (−9) = −6 + 9 = 3.', hint: 'Вычесть −9 — значит прибавить 9.' },
+      { parts: ['−2 + (−7) = ', { box: '-9' }], why: 'Знаки одинаковые: 2 + 7 = 9, знак общий — минус.', hint: 'Сложи модули и оставь общий знак.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['−4 − 6 = −2'], ans: ['f'], why: '−4 − 6 = −4 + (−6) = −10.' },
+      { parts: ['3 − 8 = −5'], ans: ['t'], why: '3 − 8 = 3 + (−8) = −5.' },
+      { parts: ['−5 + 5 = 0'], ans: ['t'], why: 'Противоположные числа в сумме дают ноль.' },
+      { parts: ['7 − (−2) = 5'], ans: ['f'], why: '7 − (−2) = 7 + 2 = 9.' },
+    ], [['t', 'верно', null, '1'], ['f', 'неверно', null, '2']], { multi: false }),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-poteplelo', prompt: 'Ночью было −7°, к полудню стало 2°. На сколько градусов потеплело?',
+    build: blanks([{ parts: [{ box: '9' }, ' градусов'], why: '2 − (−7) = 2 + 7 = 9.', hint: 'Изменение = новое значение − старое: 2 − (−7).' }]),
+  }, {
+    id: 'p-rasstoyanie', prompt: 'Найди расстояние между точками −5 и 3 на координатной прямой.',
+    build: blanks([{ parts: ['|3 − (−5)| = ', { box: '8' }], why: '3 − (−5) = 3 + 5 = 8: от −5 до 3 восемь шагов.', hint: 'Вычесть −5 — значит прибавить 5.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

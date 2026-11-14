@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Умножение и деление · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 6.3 «Умножение и деление» (6 класс). Beat ids match papermorph/content/uroki/ch26/narration.ru.json.
+const CHAPTER = { number: 26, label: '6.3', title: 'Умножение и деление', minutes: 7, language: 'ru', next: '../ch27/' };
+
+const RULE = KL.RULE;   // plus is math.js POS (blue), minus is NEG (coral), as on the signed tiles
+
+// The colour of a signed value: blue above zero, coral below, chalk for zero.
+const c26Col = v => v > 0 ? POS : v < 0 ? NEG : COL.chalk;
+// A factor as the screen writes it: a negative one in brackets.
+const c26F = v => v < 0 ? `(−${-v})` : String(v);
+// The stage number line used by this lesson: 0 at x 1250, 105 px a unit, −9 … 2.
+function c26Axis() { AXIS.o = 1250; AXIS.u = 105; }
+// The stage number line (math.js numberLine's look) drawn into the beat's panel, so it leaves with the panel.
+function c26Line(p, t0, lo = -9, hi = 2) {
+  draw(path(p, `M${X(lo - .7)} ${Y0}H${X(hi + .7)}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), t0, .8);
+  for (const [x, d] of [[X(hi + .7), 1], [X(lo - .7), -1]]) show(path(p, arrow(x, d), { stroke: COL.chalk, 'stroke-width': 3, fill: 'none' }, { o: 0 }), t0 + .7, .3);
+  for (let v = lo; v <= hi; v++) {
+    const g = G(p, { o: 0 });
+    path(g, `M${X(v)} ${Y0 - 11}V${Y0 + 11}`, { stroke: COL.dim, 'stroke-width': 2.5 });
+    T(g, num(v), { x: X(v), y: Y0 + 50, size: 30, fill: COL.dim, font: MATH, anchor: 'middle' });
+    show(g, t0 + .2 + Math.abs(v) * .04, .4);
+  }
+}
+// An upright number line at x from lo to hi, u px a unit, 0 at y0; returns Y(v).
+function c26VLine(p, { x, y0, u, lo, hi, t0 }) {
+  const Y = v => y0 - u * v;
+  draw(path(p, `M${x} ${Y(lo - .6)}V${Y(hi + .6)}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), t0, .7);
+  show(path(p, `M${x - 10} ${Y(hi + .6) + 15}L${x} ${Y(hi + .6)}L${x + 10} ${Y(hi + .6) + 15}`, { stroke: COL.chalk, 'stroke-width': 3, fill: 'none' }, { o: 0 }), t0 + .6, .3);
+  for (let v = lo; v <= hi; v++) {
+    const g = G(p, { o: 0 });
+    path(g, `M${x - 9} ${Y(v)}H${x + 9}`, { stroke: COL.dim, 'stroke-width': 2.5 });
+    T(g, num(v), { x: x + 24, y: Y(v) + 9, size: 24, fill: COL.dim, font: MATH });
+    show(g, t0 + .2 + Math.abs(v) * .03, .3);
+  }
+  return Y;
+}
+// A product written as separate tokens so each factor can be counted and paired: returns [{ e, x, w }] per factor and
+// the x after the last token. size: math size; gap: the « · » between factors.
+function c26Factors(p, vals, x0, y, t0, { size = 64, step = .12 } = {}) {
+  const dotW = mathW([' · '], size), out = [];
+  let x = x0;
+  vals.forEach((v, i) => {
+    if (i) { klMath(p, [' · '], x + dotW / 2, y, t0 + i * step, { size }); x += dotW; }
+    const w = mathW([c26F(v)], size);
+    out.push({ e: klMath(p, [c26F(v)], x, y, t0 + i * step, { size, anchor: 'start', fill: v < 0 ? NEG : COL.chalk }), x: x + w / 2, w });
+    x += w;
+  });
+  return { f: out, end: x };
+}
+// A pair of minuses joined by an arc under them, labelled «+» (two minuses make a plus).
+function c26Pair(p, a, b, y, t0) {
+  draw(path(p, `M${a.x} ${y}Q${(a.x + b.x) / 2} ${y + 60} ${b.x} ${y}`, { stroke: POS, 'stroke-width': 3.5, fill: 'none' }, { d: 0 }), t0, .5);
+  return klMath(p, ['+'], (a.x + b.x) / 2, y + 68, t0 + .4, { size: 44, fill: POS });
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Умножение и деление', (m, D) => klIntro(m, D, {
+    unit: 'Глава 6 · Положительные и отрицательные числа · Тема 6.3',
+    title: 'Умножение и деление',
+    sub: 'Какой знак у произведения и частного — и почему',
+    art: (g, t0) => {
+      const ts = [tile(g, -1, 620, 575), tile(g, -1, 690, 575)];
+      popAll(ts, t0);
+      klMath(g, ['(−3) · (−2) = 6'], 960, 592, t0 + .4, { size: 54 });
+    },
+  })],
+
+  ['groups', 'Три раза по минус два', m => {
+    c26Axis();
+    const p = panel(0);
+    klTitle(p, 'Три раза по минус два');
+    klText(p, 'умножение — сложение одинаковых слагаемых', 100, 162, 2, { size: 27, fill: COL.dim });
+    c26Line(p, .2);
+    // Each group of two minus tiles sits over its own jump of −2.
+    const boxes = ['g1', 'g2', 'g3'].map((mk_, k) => {
+      const c = X(-2 * k - 1), t = m(mk_);
+      const box = mk('rect', { x: c - 80, y: 380, width: 160, height: 80, rx: 16, fill: 'none', stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '7 6' }, p);
+      put(box, { o: 0 }); show(box, t, .3);
+      popAll(tiles(p, 2, -1, c - 35, 420), t + .1, .12);
+      move(p, -2 * k, -2 * k - 2, 520, t + (k ? .9 : 1.8));
+      return box;
+    });
+    const dotG = landDot(p, -6, m('land'), NEG);
+    pulse(dotG, m('land', .6), 1.5);
+    // «3 · (−2)» is on the board from the start; the sum and the result follow on the words.
+    const A = ['3 · (−2)'], C = ['  =  −6'], S0 = 56;
+    const B0 = ['  =  (−2)'], Bk = ['  +  (−2)'], w0 = mathW(B0, S0), wk = mathW(Bk, S0);
+    const wA = mathW(A, S0), wB = w0 + 2 * wk, x0 = 800 - (wA + wB + mathW(C, S0)) / 2;
+    const aG = G(p, { x: x0 + wA / 2, y: 760 });
+    klMath(aG, A, 0, 0, .4, { size: S0 });
+    pulse(aG, m('say', .8), 1.25);
+    // The sum is written term by term, each group's frame lighting up as its term appears.
+    [B0, Bk, Bk].forEach((part, k) => {
+      const t = m('sum', 1.2 + k * .8);
+      klMath(p, part, x0 + wA + (k ? w0 + (k - 1) * wk : 0), 760, t, { size: S0, anchor: 'start' });
+      tw(boxes[k], { c_stroke: NEG, 'a_stroke-width': 4 }, t, .25); tw(boxes[k], { c_stroke: COL.dim, 'a_stroke-width': 2 }, t + .6, .4);
+    });
+    klText(p, 'три раза по (−2)', x0 + wA / 2, 815, m('say', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    klMath(p, C, x0 + wA + wB, 760, m('ans'), { size: S0, anchor: 'start', fill: NEG });
+    klRow(p, ['модули:  ', { m: '3 · 2 = 6', fill: RULE }], 960, 845, m('mod'), { size: 32, fill: COL.dim, anchor: 'end' });
+    klText(p, ',   знак — минус', 960, 845, m('mod', 3.6), { size: 32, fill: NEG });
+    klMath(p, ['(−2) · 3'], 1340, 300, m('swap', 3.4), { size: 52, anchor: 'end' });
+    klMath(p, [' = −6'], 1340, 300, m('swap', 5.6), { size: 52, anchor: 'start' });
+    klText(p, 'от перестановки — то же', 1340, 345, m('swap', .5), { size: 26, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    c26Axis();
+    const p = panel(0);
+    c26Line(p, .2);
+    klMath(p, ['2 · (−3) = ?'], 800, 330, .3, { size: 80 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-pryamaya', prompt: ['Отметь на прямой точку ', $m('2 · (−3)'), '.'],
+    build: tap([-9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2], -6, ['Два раза по минус три: ', $m('(−3) + (−3) = −6'), '.'],
+      v => v === -3 ? 'Это только один раз по минус три, а нужно два.' : v > 0 ? 'Складываем отрицательные числа — результат меньше нуля.' : 'Сделай от нуля два шага по три влево.',
+      () => { const L = qlayer(); move(L, 0, -3, 520, 0, fx); move(L, -3, -6, 520, .7, fx); }),
+  }], done) }],
+
+  ['pattern', 'Минус на минус', m => {
+    const p = panel(0);
+    klTitle(p, 'Минус на минус');
+    klText(p, 'первый множитель уменьшаем на 1', 100, 162, m('col', 3.6), { size: 27, fill: COL.dim });
+    const Y = c26VLine(p, { x: 1180, y0: 450, u: 42, lo: -7, hi: 7, t0: .2 });
+    const ry = i => 225 + i * 76, marks = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'];
+    const pt = i => i === 4 ? m('p5') : m(marks[i], i < 4 ? 1.6 : 1.4);   // when row i's product appears
+    const dotG = G(p, { x: 1180, y: Y(-6), o: 0 });
+    mk('circle', { r: 13, fill: NEG, stroke: COL.board, 'stroke-width': 3 }, dotG);
+    show(dotG, pt(0), .3);
+    const arcs = [];
+    for (let i = 0; i < 7; i++) {
+      const a = 3 - i, v = -2 * a, y = ry(i);
+      const tl = i === 0 ? m('col') : i === 4 ? m('r5', 1.6) : m(marks[i]);
+      klMath(p, [c26F(a) + ' · (−2)'], 480, y, tl, { size: 50, anchor: 'end', fill: a < 0 ? NEG : COL.chalk });
+      klMath(p, ['='], 520, y, tl, { size: 50 });
+      if (i === 4) { const q = klMath(p, ['?'], 560, y, m('r5', 1.9), { size: 50, anchor: 'start', fill: RULE }); hide(q, m('p5', -.1), .2); }
+      klMath(p, [num(v)], 560, y, pt(i), { size: 50, anchor: 'start', fill: c26Col(v) });
+      if (i) {
+        // «+2» from the row above, and the dot climbs two units on the upright line.
+        const ta = i < 4 ? m('step', (i - 1) * .5) : pt(i) - .2;
+        const arc = path(p, `M670 ${ry(i - 1) - 16}Q725 ${(ry(i - 1) + y) / 2 - 16} 670 ${y - 16}`, { stroke: RULE, 'stroke-width': 3, fill: 'none' }, { d: 0 });
+        draw(arc, ta, .4); arcs.push(arc);
+        klMath(p, ['+2'], 735, (ry(i - 1) + y) / 2 - 4, ta + .2, { size: 30, fill: RULE, anchor: 'start' });
+        const y1 = Y(v + 2), y2 = Y(v), tt = pt(i);
+        prog(q => put(dotG, { y: y1 + (y2 - y1) * q, x: 1180 - Math.sin(Math.PI * q) * 30 }), tt, .45, io);
+        tw(dotG.firstChild, { c_fill: c26Col(v) }, tt + .3, .2);
+      }
+    }
+    // The rows past zero: minus times minus came out positive.
+    const box = mk('rect', { x: 150, y: ry(4) - 52, width: 700, height: ry(6) - ry(4) + 76, rx: 16, fill: 'none', stroke: POS, 'stroke-width': 3 }, p);
+    put(box, { o: 0 }); show(box, m('rule'), .4);
+    // «the pattern would break»: the +2 steps light up once more, top to bottom.
+    arcs.forEach((e, i) => { tw(e, { 'a_stroke-width': 6 }, m('rule', 3.8 + i * .2), .2); tw(e, { 'a_stroke-width': 3 }, m('rule', 4.2 + i * .2), .3); });
+    // «the dot climbs»: the three steps are drawn along the upright line.
+    [-6, -4, -2].forEach((v, k) => draw(path(p, `M1170 ${Y(v) - 4}Q1135 ${Y(v + 1)} 1170 ${Y(v + 2) + 4}`, { stroke: RULE, 'stroke-width': 3, fill: 'none' }, { d: 0 }), m('step', 2.6 + k * .4), .4));
+    klRow(p, [{ m: '(−) · (−) = (+)', fill: POS }, '   минус на минус даёт плюс'], 500, 800, m('rule', .3), { size: 34, fill: RULE, weight: 600 });
+  }],
+
+  ['table', 'Таблица знаков', m => {
+    const p = panel(0);
+    klTitle(p, 'Таблица знаков');
+    c26Table(p, .2);
+    const EX = [[3, 2], [3, -2], [-3, 2], [-3, -2]], marks = ['pp', 'pm', 'mp', 'mm'];
+    S.c26cells.forEach((c, i) => { tw(c, { o: 1, s: 1 }, m(marks[i]), .4, back); });
+    EX.forEach(([a, b], i) => {
+      const y = 320 + i * 95, v = a * b;
+      klMath(p, [c26F(a) + ' · ' + c26F(b)], 1180, y, m(marks[i], .3), { size: 54, anchor: 'end' });
+      klMath(p, ['='], 1220, y, m(marks[i], .3), { size: 54 });
+      klMath(p, [num(v)], 1260, y, m(marks[i], .3), { size: 54, anchor: 'start', fill: c26Col(v) });
+    });
+    const ring = (i, j, col, t) => { const e = mk('rect', { x: 384 + j * 220, y: 274 + i * 170, width: 212, height: 162, rx: 14, fill: 'none', stroke: col, 'stroke-width': 5 }, p); put(e, { o: 0 }); show(e, t, .3); };
+    ring(0, 0, POS, m('same')); ring(1, 1, POS, m('same', .2));
+    klText(p, 'знаки одинаковые → плюс', 1180, 720, m('same', .3), { size: 34, fill: POS, weight: 600, anchor: 'middle' });
+    ring(0, 1, NEG, m('diff')); ring(1, 0, NEG, m('diff', .2));
+    klText(p, 'знаки разные → минус', 1180, 775, m('diff', .3), { size: 34, fill: NEG, weight: 600, anchor: 'middle' });
+    klRow(p, ['а число — произведение модулей:  ', { m: '3 · 2 = 6' }], 800, 860, m('mod'), { size: 30, fill: RULE, weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    c26Table(p, .2, true);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-proizv', prompt: 'Найди произведения.',
+    build: blanks([
+      { parts: ['(−5) · (−8) = ', { box: '40' }], why: 'Знаки одинаковые — плюс; модули: 5 · 8 = 40.', hint: 'Минус на минус даёт плюс.' },
+      { parts: ['9 · (−4) = ', { box: '-36' }], why: 'Знаки разные — минус; модули: 9 · 4 = 36.', hint: 'Плюс на минус даёт минус.' },
+    ]),
+  }], done) }],
+
+  ['divide', 'Деление', m => {
+    const p = panel(0);
+    klTitle(p, 'Деление проверяют умножением');
+    klText(p, 'делим', 420, 240, .3, { size: 28, fill: COL.dim, anchor: 'middle' });
+    klText(p, 'проверяем умножением', 1100, 240, .3, { size: 28, fill: COL.dim, anchor: 'middle' });
+    klGuide(p, 790, 200, 680, .3, COL.dim);
+    const row = (a, b, q, y, tL, tA, tR) => {
+      klMath(p, [num(a) + ' : ' + c26F(b)], 520, y, tL, { size: 60, anchor: 'end' });
+      klMath(p, ['='], 560, y, tL, { size: 60 });
+      klMath(p, [c26F(q)], 1000, y, tR, { size: 60, anchor: 'end', fill: c26Col(q) });
+      klMath(p, [' · ' + c26F(b) + ' = ' + num(a)], 1000, y, tR, { size: 60, anchor: 'start' });
+      klMath(p, [num(q)], 600, y, tA, { size: 60, anchor: 'start', fill: c26Col(q) });
+    };
+    // Row 1: the unknown «?» on both sides; the check finds 6, and 6 moves into the answer.
+    klMath(p, ['−18'], 520 - mathW([' : (−3)'], 60), 350, m('ask'), { size: 60, anchor: 'end' });
+    klMath(p, [' : (−3)'], 520, 350, m('ask', 1.8), { size: 60, anchor: 'end' });
+    klMath(p, ['='], 560, 350, m('ask', 3.2), { size: 60 });
+    const q1 = klMath(p, ['?'], 600, 350, m('ask', 3.4), { size: 60, anchor: 'start', fill: RULE });
+    const q2 = klMath(p, ['?'], 1000, 350, m('think', .2), { size: 60, anchor: 'end', fill: RULE });
+    klMath(p, [' · (−3)'], 1000, 350, m('think', 2.4), { size: 60, anchor: 'start' });
+    klMath(p, [' = −18'], 1000 + mathW([' · (−3)'], 60), 350, m('think', 3.8), { size: 60, anchor: 'start' });
+    hide(q2, m('try'), .2);
+    const six = G(p, { x: 0, y: 0 });
+    klMath(six, ['6'], 1000, 350, m('try', .1), { size: 60, anchor: 'end', fill: POS });
+    hide(q1, m('ans'), .2);
+    tw(six, { x: 600 + mathW(['6'], 60) - 1000 }, m('ans', .1), .8, io);
+    klMath(p, ['6'], 1000, 350, m('ans', .9), { size: 60, anchor: 'end', fill: POS });
+    row(-18, 3, -6, 490, m('ex2'), m('ex2', 2.6), m('ex2', 4));
+    row(18, -3, -6, 630, m('ex3'), m('ex3', 2.5), m('ex3', 3.2));
+    const oval = (x, y, col, t, rx = 54) => { const e = mk('ellipse', { cx: x, cy: y - 20, rx, ry: 40, fill: 'none', stroke: col, 'stroke-width': 4 }, p); put(e, { o: 0 }); show(e, t, .3); };
+    oval(617, 350, POS, m('rule', 3.4), 32);
+    oval(634, 490, NEG, m('rule', 5.2), 42); oval(634, 630, NEG, m('rule', 5.4), 42);
+    klRow(p, ['знак частного — по тому же правилу:  одинаковые → ', { m: '+', fill: POS }, ',  разные → ', { m: '−', fill: NEG }], 800, 780, m('rule'), { size: 32, fill: RULE, weight: 600 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Деление проверяют умножением');
+    S.q3 = [[35, -7, -5, 300], [-36, -4, 9, 450]].map(([a, b, q, y]) => {
+      klMath(p, [num(a) + ' : ' + c26F(b) + ' ='], 760, y, .2, { size: 64, anchor: 'end' });
+      const qm = klMath(p, ['?'], 800, y, .3, { size: 64, anchor: 'start', fill: RULE });
+      const ans = klMath(p, [num(q)], 800, y, undefined, { size: 64, anchor: 'start', fill: c26Col(q) });
+      put(ans, { o: 0 });
+      klRow(p, ['проверка:  ', { m: '? · ' + c26F(b) + ' = ' + num(a) }], 1180, y, .5, { size: 26, fill: COL.dim });
+      return [qm, ans];
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-chastnoe', prompt: 'Найди частные.',
+    build: blanks([
+      { parts: ['35 : (−7) = ', { box: '-5' }], why: 'Знаки разные — минус: −5 · (−7) = 35.', hint: 'Какое число при умножении на −7 даёт 35?' },
+      { parts: ['−36 : (−4) = ', { box: '9' }], why: 'Знаки одинаковые — плюс: 9 · (−4) = −36.', hint: 'Какое число при умножении на −4 даёт −36?' },
+    ]),
+  }], done) }],
+
+  ['many', 'Много множителей', m => {
+    const p = panel(0);
+    klTitle(p, 'Много множителей: считаем минусы');
+    // (−1) · (−1) · (−1): one pair makes a plus, one minus is left over.
+    const A = c26Factors(p, [-1, -1, -1], 200, 320, m('r1'));
+    klMath(p, ['='], A.end + 40, 320, m('left', .6), { size: 64 });
+    klMath(p, ['−1'], A.end + 80, 320, m('left', 1), { size: 64, anchor: 'start', fill: NEG });
+    klCount(p, A.f.map(f => [f.x, 240]), m('r1', .9), { step: .3, size: 32, fill: NEG });
+    c26Pair(p, A.f[0], A.f[1], 350, m('pair'));
+    [A.f[0], A.f[1]].forEach(f => tw(f.e, { o: .35 }, m('pair', 1), .5));
+    const ring = mk('circle', { cx: A.f[2].x, cy: 300, r: 58, fill: 'none', stroke: NEG, 'stroke-width': 4 }, p);
+    put(ring, { o: 0 }); show(ring, m('left'), .3);
+    klText(p, '3 минуса — нечётное: минус', 1050, 320, m('left', 1.4), { size: 30, fill: NEG, weight: 600 });
+    // (−2) · (−5) · (−1) · (−3): two pairs, nothing left over.
+    const B = c26Factors(p, [-2, -5, -1, -3], 200, 590, m('r2', .3), { step: .9 });
+    klCount(p, B.f.map(f => [f.x, 510]), m('pairs', -.6), { step: .15, size: 32, fill: NEG });
+    c26Pair(p, B.f[0], B.f[1], 620, m('pairs'));
+    c26Pair(p, B.f[2], B.f[3], 620, m('pairs', .6));
+    klMath(p, ['='], B.end + 40, 590, m('ans2'), { size: 64 });
+    klMath(p, ['30'], B.end + 80, 590, m('ans2', .3), { size: 64, anchor: 'start', fill: POS });
+    klText(p, '4 минуса — чётное: плюс', 1050, 590, m('ans2', .8), { size: 30, fill: POS, weight: 600 });
+    klRow(p, ['чётное число минусов → ', { m: '+', fill: POS }], 560, 820, m('rule', 1.8), { size: 34, fill: RULE, weight: 600 });
+    klRow(p, ['нечётное → ', { m: '−', fill: NEG }], 1120, 820, m('rule', 4.4), { size: 34, fill: RULE, weight: 600 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q4 = [[[-1, -2, -3, -4], 24, 210], [[-2, 3, -4], 24, 350], [[-1, 2, -3, -5], -30, 490]].map(([vals, v, y]) => {
+      const w = mathW([vals.map(c26F).join(' · ')], 60), x0 = 760 - w / 2;
+      const F = c26Factors(p, vals, x0, y, .2, { size: 60, step: .05 });
+      const ans = klMath(p, [' = ' + num(v)], F.end, y, undefined, { size: 60, anchor: 'start', fill: c26Col(v) });
+      put(ans, { o: 0 });
+      return { el: F.f[0].e, box: [x0 - 20, y - 60, F.end - x0 + 40, 84], ans, n: vals.filter(a => a < 0).length };
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-znak', prompt: 'Нажми на произведение, которое меньше нуля.',
+    build: pickEls(S.q4.map((r, i) => ({ el: r.el, box: r.box, label: 'произведение ' + (i + 1) })), 2,
+      'Здесь три минуса — нечётное число, значит, произведение отрицательное: −30.',
+      i => `Здесь ${S.q4[i].n} минуса — чётное число, произведение положительное. Считай минусы.`,
+      () => S.q4.forEach((r, i) => fx(r.ans, { o: 1 }, i * .2, .4))),
+  }], done) }],
+
+  ['trap', 'Сложение — не умножение', m => {
+    c26Axis();
+    const p = panel(0);
+    klTitle(p, 'Сложение — не умножение');
+    klMath(p, ['−3 + (−5)'], 520, 270, .3, { size: 60, fill: COL.dim, anchor: 'end' });
+    klMath(p, [' = 8'], 520, 270, m('wrong', .3), { size: 60, fill: COL.dim, anchor: 'start' });
+    klStrike(p, 240, 285, 650, 225, m('wrong', 1.6));
+    klText(p, 'ошибка!', 445, 330, m('wrong', 1.8), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    c26Line(p, 2.4);
+    move(p, 0, -3, 530, m('m1', 1.2));
+    move(p, -3, -8, 470, m('m2'));
+    landDot(p, -8, m('land'), NEG);
+    klMath(p, ['−3 + (−5) = −8'], 1170, 270, m('land', .4), { size: 60 });
+    klMark(p, 1420, 255, m('land', .8), true, .8);
+    klText(p, '«минус на минус даёт плюс» —', 800, 760, m('cmp', .3), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'только для умножения и деления', 800, 815, m('cmp', 3), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, ['а  ', { m: '(−3) · (−5) = 15' }], 1170, 370, m('mul'), { size: 30, msize: 52, fill: COL.dim });
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Модули перемножаем или делим:  ', { m: '(−4) · 5' }, '  →  ', { m: '4 · 5 = 20' }],
+    ['Знаки одинаковые — плюс, разные — минус:  ', { m: '(−4) · 5 = −20' }],
+    ['Деление проверяем умножением:  ', { m: '−18 : (−3) = 6' }],
+    'Чётное число минусов — плюс, нечётное — минус',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-znak', prompt: 'Какой знак у результата?',
+    build: grid([
+      { parts: ['−7 · 6'], ans: ['m'], why: 'Знаки разные: результат отрицательный.' },
+      { parts: ['−48 : (−8)'], ans: ['p'], why: 'Знаки одинаковые: результат положительный.' },
+      { parts: ['(−2) · (−3) · (−5)'], ans: ['m'], why: 'Три минуса — нечётное число.' },
+      { parts: ['(−1) · (−2) · (−3) · (−4)'], ans: ['p'], why: 'Четыре минуса — чётное число.' },
+    ], [['p', 'плюс', POS, '1'], ['m', 'минус', NEG, '2']], { multi: false }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-vychisli', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['−7 · 6 = ', { box: '-42' }], why: 'Знаки разные — минус; 7 · 6 = 42.', hint: 'Минус на плюс даёт минус.' },
+      { parts: ['−48 : (−8) = ', { box: '6' }], why: 'Знаки одинаковые — плюс; проверка: 6 · (−8) = −48.', hint: 'Минус на минус даёт плюс.' },
+      { parts: ['(−2) · (−3) · (−5) = ', { box: '-30' }], why: 'Три минуса — минус; 2 · 3 · 5 = 30.', hint: 'Сосчитай минусы, потом перемножь модули.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-slozhenie', prompt: ['Сколько будет ', $m('−6 + (−4)'), '?'],
+    build: choice([$m('−10'), $m('10'), $m('24')], 0, 'Это сложение: от −6 ещё четыре шага влево, −10.',
+      ['Правило знаков — для умножения и деления. При сложении двух отрицательных чисел получается отрицательное.', 'Здесь сложение, а не умножение.']),
+  }, {
+    id: 'p-mnogo', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['(−1) · (−1) · (−1) · (−1) · (−1) · (−1) = ', { box: '1' }], why: 'Шесть минусов — чётное число, результат 1.', hint: 'Сосчитай минусы.' },
+      { parts: ['56 : (−7) = ', { box: '-8' }], why: 'Знаки разные — минус; проверка: −8 · (−7) = 56.', hint: 'Какое число при умножении на −7 даёт 56?' },
+    ]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+// The 2 × 2 table of signs: rows are the first factor's sign, columns the second's. The four result signs are kept in
+// S.c26cells (hidden, popped in by the beat), or drawn at once when filled is true.
+function c26Table(p, t0, filled = false) {
+  const X0 = 380, Y0t = 270, W = 220, H = 170;
+  const frame = G(p, { o: 0 });
+  mk('rect', { x: X0, y: Y0t, width: 2 * W, height: 2 * H, rx: 12, fill: COL.chalk, 'fill-opacity': .03, stroke: COL.chalk, 'stroke-width': 2.5 }, frame);
+  path(frame, `M${X0 + W} ${Y0t}V${Y0t + 2 * H}M${X0} ${Y0t + H}H${X0 + 2 * W}`, { stroke: COL.chalk, 'stroke-width': 2 });
+  [['+', POS], ['−', NEG]].forEach(([s, c], k) => {
+    M(frame, [s], { x: X0 + W * (k + .5), y: Y0t - 22, size: 56, fill: c });
+    M(frame, [s], { x: X0 - 50, y: Y0t + H * (k + .5) + 18, size: 56, fill: c });
+  });
+  M(frame, ['·'], { x: X0 - 50, y: Y0t - 22, size: 56, fill: COL.dim });
+  T(frame, 'слева — первый множитель, сверху — второй', { x: X0 + W, y: Y0t + 2 * H + 50, size: 24, fill: COL.dim, anchor: 'middle' });
+  show(frame, t0);
+  S.c26cells = [[0, 0], [0, 1], [1, 0], [1, 1]].map(([i, j]) => {
+    const pos = i === j, g = G(p, { x: X0 + W * (j + .5), y: Y0t + H * (i + .5), o: filled ? 0 : 0, s: filled ? 1 : .5 });
+    M(g, [pos ? '+' : '−'], { y: 32, size: 110, fill: pos ? POS : NEG });
+    if (filled) show(g, t0 + .3);
+    return g;
+  });
+}
+
+boot();
+</script>
