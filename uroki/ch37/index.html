@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Логические задачи · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 8.3 «Логические задачи» (5–6 класс). Beat ids match papermorph/content/uroki/ch37/narration.ru.json.
+const CHAPTER = { number: 37, label: '8.3', title: 'Логические задачи', minutes: 7, language: 'ru', next: '../ch38/' };
+
+// Meanings in this lesson: the first group KL.DEN, the second KL.TWO, what both share and the rule KL.RULE,
+// «да» in the table a green tick, «нет» a dim cross (not red: red is a mistake in this book).
+const ONE = KL.DEN, TWO = KL.TWO, RULE = KL.RULE, NO = COL.dim, YES = COL.good, LIAR = KL.NUM;
+
+/* ---------- the logic table ---------- */
+// Rows: the children; columns: the ice creams. Cells CW × RH from (TXC, TYR); the names column starts at TX0.
+const KIDS = ['Аня', 'Боря', 'Вика'];
+const ICES = [['шоколадное', '#8b5a3c'], ['ванильное', '#f1e3b0'], ['клубничное', '#ef8fae']];
+const TX0 = 130, TXC = 310, CW = 160, TY0 = 190, TYR = 310, RH = 110;
+const cellX = j => TXC + CW * (j + .5), cellY = i => TYR + RH * (i + .5);
+
+// An ice-cream cone centred on (x, y): a waffle cone and a scoop of colour col.
+function c37Cone(p, x, y, col) {
+  const g = G(p, { x, y });
+  path(g, 'M-17 -2L0 34L17 -2Z', { fill: '#c9975b', stroke: '#8a6236', 'stroke-width': 2 });
+  path(g, 'M-9 4L5 4M-6 12L6 12', { stroke: '#8a6236', 'stroke-width': 1.5 });
+  mk('circle', { cx: 0, cy: -12, r: 21, fill: col, stroke: COL.board, 'stroke-width': 2 }, g);
+  return g;
+}
+// The table: names (shown at t0), the cones and their names (one after another from tCols), the grid lines (drawn on
+// at tGrid). Leave a time undefined to show that part at once. Returns the cones (groups centred on each cone).
+function c37Table(p, { t0, tCols, tGrid } = {}) {
+  KIDS.forEach((k, i) => klText(p, k, TX0 + (TXC - TX0) / 2, cellY(i) + 12, t0 === undefined ? undefined : t0 + i * .1, { size: 34, anchor: 'middle', weight: 600 }));
+  const cones = ICES.map(([name, col], j) => {
+    const g = G(p, { o: tCols === undefined ? 1 : 0 });
+    const cone = c37Cone(g, cellX(j), 228, col);
+    T(g, name, { x: cellX(j), y: 292, size: 23, fill: COL.dim, anchor: 'middle' });
+    if (tCols !== undefined) show(g, tCols + j * 1.1, .4);
+    return cone;
+  });
+  let d = `M${TXC} ${TY0}H${TXC + 3 * CW}`;
+  for (let i = 0; i <= 3; i++) d += `M${TX0} ${TYR + i * RH}H${TXC + 3 * CW}`;
+  d += `M${TX0} ${TYR}V${TYR + 3 * RH}`;
+  for (let j = 0; j <= 3; j++) d += `M${TXC + j * CW} ${TY0}V${TYR + 3 * RH}`;
+  const grid = path(p, d, { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-opacity': .8 }, tGrid === undefined ? {} : { d: 0 });
+  if (tGrid !== undefined) draw(grid, tGrid, 1.1);
+  return cones;
+}
+// «Да»: a green tick in cell (i, j), drawn on at t0 (undefined: at once; hidden: o 0, for an answer effect).
+function c37Yes(p, i, j, t0, hidden) {
+  const g = G(p, { x: cellX(j), y: cellY(i), o: hidden ? 0 : 1 });
+  const e = path(g, 'M-26 2L-8 20L28 -22', { stroke: YES, 'stroke-width': 9 }, t0 === undefined ? {} : { d: 0 });
+  if (t0 !== undefined) draw(e, t0, .4);
+  return g;
+}
+// «Нет»: a dim cross in cell (i, j), the same way.
+function c37No(p, i, j, t0, hidden) {
+  const g = G(p, { x: cellX(j), y: cellY(i), o: hidden ? 0 : 1 });
+  const e = path(g, 'M-17 -17L17 17M17 -17L-17 17', { stroke: NO, 'stroke-width': 6 }, t0 === undefined ? {} : { d: 0 });
+  if (t0 !== undefined) draw(e, t0, .35);
+  return g;
+}
+// An outline round row i (names included) or column j (cone included), shown at t0 and hidden at t1.
+function c37Band(p, kind, k, t0, t1) {
+  const r = kind === 'row' ? { x: TX0 + 5, y: TYR + k * RH + 5, width: TXC + 3 * CW - TX0 - 10, height: RH - 10 }
+    : { x: TXC + k * CW + 5, y: TY0 + 5, width: CW - 10, height: TYR + 3 * RH - TY0 - 10 };
+  const e = mk('rect', { ...r, rx: 12, fill: RULE, 'fill-opacity': .08, stroke: RULE, 'stroke-width': 4 }, p);
+  put(e, { o: 0 }); show(e, t0, .35);
+  if (t1 !== undefined) hide(e, t1, .4);
+  return e;
+}
+// A line of words in their own colours: pieces [[str, fill?, weight?]], each in a group of its own (to move it).
+// Returns { g, parts: [{ e, x, w }], w }.
+function c37Words(p, pieces, x, y, t0, size = 36) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  let cx = 0;
+  const parts = pieces.map(([s, fill = COL.chalk, weight = 600]) => {
+    const e = G(g, { x: cx });
+    T(e, s, { size, fill, weight });
+    const w = klW(s, size, weight), part = { e, x: cx, w };
+    cx += w;
+    return part;
+  });
+  if (t0 !== undefined) show(g, t0);
+  return { g, parts, w: cx };
+}
+
+/* ---------- Euler circles: a class of 20, sport 14, music 11 ---------- */
+const ES = [560, 560, 220], EM = [860, 560, 200];
+// The two circles cross at x = 724, y = 560 ∓ 146.6; the lens between them is where the children in both groups stand.
+const LENS = 'M724 413.4A220 220 0 0 1 724 706.6A200 200 0 0 1 724 413.4Z';
+const SPOT_S = [450, 505, 560].flatMap(x => [505, 560, 615].map(y => [x, y]));    // 9: sport only
+const SPOT_L = [470, 515, 560, 605, 650].map(y => [724, y]);                        // 5: both
+const SPOT_M = [905, 960].flatMap(x => [505, 560, 615].map(y => [x, y]));          // 6: music only
+const SPOTS = [...SPOT_S, ...SPOT_L, ...SPOT_M];                                     // 20 = 9 + 5 + 6
+
+// A circle (cx, cy, r) as an outline drawn on at t0 over a faint fill of its colour (undefined: at once).
+function c37Ring(p, [cx, cy, r], col, t0) {
+  const fill = mk('circle', { cx, cy, r, fill: col, 'fill-opacity': .09 }, p);
+  put(fill, { o: t0 === undefined ? 1 : 0 });
+  const e = path(p, `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`, { stroke: col, 'stroke-width': 4 }, t0 === undefined ? {} : { d: 0 });
+  if (t0 !== undefined) { draw(e, t0, .8); show(fill, t0 + .3, .6); }
+  return e;
+}
+// A child: a chalk dot in a group at (x, y), so it can move and take coloured rings.
+function c37Kid(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('circle', { r: 13, fill: COL.chalk }, g);
+  return g;
+}
+// The class frame with its label: the set of all children.
+function c37Class(p, t0) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x: 290, y: 200, width: 800, height: 630, rx: 22, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '12 10' }, g);
+  const label = G(g, { x: 290, y: 182 });
+  T(label, 'класс: 20 учеников', { size: 30, fill: COL.dim, weight: 600 });
+  if (t0 !== undefined) show(g, t0);
+  return label;
+}
+
+/* ---------- people on the island ---------- */
+// A paper figure standing at (x, y) (its feet): body and head in chalk. tint(col) adds a coloured copy (o 0) to fade in.
+function c37Person(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  const draw1 = (q, col, op) => {
+    path(q, 'M-58 0C-58 -78 -40 -100 0 -100C40 -100 58 -78 58 0Z', { fill: col, 'fill-opacity': op, stroke: col, 'stroke-width': 3 });
+    mk('circle', { cx: 0, cy: -146, r: 36, fill: col, 'fill-opacity': op, stroke: col, 'stroke-width': 3 }, q);
+  };
+  draw1(g, COL.chalk, .12);
+  g.tint = col => { const q = G(g, { o: 0 }); draw1(q, col, .5); return q; };
+  return g;
+}
+// A speech bubble centred on (cx, cy), w × h, its tail pointing at (tx, ty); pops in at t0.
+function c37Bubble(p, cx, cy, w, h, tx, ty, text, t0, size = 40) {
+  const g = G(p, { x: cx, y: cy, s: .6, o: 0 });
+  const r = 22, a = Math.max(-w / 2 + r + 4, Math.min(w / 2 - r - 34, tx - cx - 14));
+  const d = `M${-w / 2 + r} ${-h / 2}H${w / 2 - r}Q${w / 2} ${-h / 2} ${w / 2} ${-h / 2 + r}V${h / 2 - r}Q${w / 2} ${h / 2} ${w / 2 - r} ${h / 2}`
+    + `H${a + 30}L${tx - cx} ${ty - cy}L${a} ${h / 2}H${-w / 2 + r}Q${-w / 2} ${h / 2} ${-w / 2} ${h / 2 - r}V${-h / 2 + r}Q${-w / 2} ${-h / 2} ${-w / 2 + r} ${-h / 2}Z`;
+  path(g, d, { fill: COL.board, stroke: COL.chalk, 'stroke-width': 3 });
+  T(g, text, { x: 0, y: size * .35, size, weight: 600, anchor: 'middle' });
+  pop(g, t0);
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Логические задачи', (m, D) => klIntro(m, D, {
+    unit: 'Глава 8 · Текстовые задачи · Тема 8.3',
+    title: 'Логические задачи',
+    sub: 'Почти без счёта: рассуждаем с таблицей и кругами',
+    art: (g, t0) => {
+      const x0 = 590, y0 = 540, c = 46;
+      let d = '';
+      for (let k = 0; k <= 3; k++) d += `M${x0} ${y0 + k * c}H${x0 + 3 * c}M${x0 + k * c} ${y0}V${y0 + 3 * c}`;
+      const grid = path(g, d, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .7 }, { o: 0 });
+      show(grid, t0);
+      [[0, 1], [1, 2], [2, 0]].forEach(([i, j], k) => {
+        const e = path(g, `M${x0 + j * c + 12} ${y0 + i * c + 24}l8 9l15 -18`, { stroke: YES, 'stroke-width': 5 }, { d: 0 });
+        draw(e, t0 + .4 + k * .25, .3);
+      });
+      [[0, 0], [1, 1], [2, 2]].forEach(([i, j], k) => {
+        const e = path(g, `M${x0 + j * c + 15} ${y0 + i * c + 15}l16 16m0 -16l-16 16`, { stroke: NO, 'stroke-width': 4 }, { d: 0 });
+        draw(e, t0 + .5 + k * .25, .3);
+      });
+      [[930, ONE], [1010, TWO]].forEach(([x, col], k) => {
+        const e = mk('circle', { cx: x, cy: 609, r: 62, fill: col, 'fill-opacity': .12, stroke: col, 'stroke-width': 3.5 }, g);
+        put(e, { o: 0 }); show(e, t0 + .3 + k * .3);
+      });
+    },
+  })],
+
+  ['table', 'Таблица', m => {
+    const p = panel(0);
+    klTitle(p, 'Таблица: кто какое мороженое купил');
+    const cones = c37Table(p, { t0: .3, tCols: m('cols'), tGrid: m('grid') });
+    klText(p, 'строки — ребята, столбцы — мороженое', 880, 262, m('grid', 1.4), { size: 28, fill: COL.dim });
+    // «Все купили разное»: the three different cones hop one after another.
+    cones.forEach((c, j) => pulse(c, m('one', .2 + j * .35), 1.3));
+    c37Band(p, 'row', 0, m('row'), m('ex', 1.8));
+    c37Band(p, 'col', 0, m('column'), m('ex', 1.8));
+    klText(p, 'в каждой строке', 880, 352, m('row'), { size: 32, fill: RULE, weight: 600 });
+    klText(p, 'и в каждом столбце', 880, 396, m('column'), { size: 32, fill: RULE, weight: 600 });
+    klText(p, 'ровно одна галочка', 880, 440, m('ex'), { size: 32, fill: RULE, weight: 600 });
+    klText(p, 'Аня — не шоколадное', 880, 560, m('f1'), { size: 32 });
+    c37No(p, 0, 0, m('f1', 2.0));
+    const w = klW('Боря — не шоколадное, ', 32);
+    klText(p, 'Боря — не шоколадное, ', 880, 620, m('f2'), { size: 32 });
+    c37No(p, 1, 0, m('f2', .9));
+    klText(p, 'не ванильное', 880 + w, 620, m('f3'), { size: 32 });
+    c37No(p, 1, 1, m('f3', .7));
+  }],
+
+  ['last', 'Последняя клетка', m => {
+    const p = panel(0);
+    klTitle(p, 'Последняя свободная клетка');
+    c37Table(p);
+    const out = [[1, 0], [1, 1]].map(([i, j]) => c37No(p, i, j));
+    c37No(p, 0, 0);
+    klText(p, 'Аня — не шоколадное', 880, 262, undefined, { size: 26, fill: COL.dim });
+    klText(p, 'Боря — не шоколадное, не ванильное', 880, 300, undefined, { size: 26, fill: COL.dim });
+    c37Band(p, 'row', 1, m('last'), m('tick', .8));
+    const free = G(p, { x: cellX(2), y: cellY(1), o: 0 });
+    mk('rect', { x: -66, y: -42, width: 132, height: 84, rx: 10, fill: RULE, 'fill-opacity': .3 }, free);
+    show(free, m('free'), .3);
+    pulse(free, m('free', .6), 1.15);
+    hide(free, m('tick', .3), .3);
+    klText(p, 'одна свободная клетка —', 880, 400, m('free'), { size: 32, fill: RULE, weight: 600 });
+    klText(p, 'в ней галочка', 880, 444, m('tick'), { size: 32, fill: RULE, weight: 600 });
+    c37Yes(p, 1, 2, m('tick', .3));
+    c37Band(p, 'col', 2, m('col'), m('rule'));
+    klText(p, 'клубничное было одно:', 880, 540, m('col', .3), { size: 30 });
+    klText(p, 'у Ани и Вики — нет', 880, 582, m('cross'), { size: 30 });
+    out.push(c37No(p, 0, 2, m('cross', .2)), c37No(p, 2, 2, m('cross', .8)));
+    // The rule: the tick's row and column light up together.
+    c37Band(p, 'row', 1, m('rule', .3));
+    c37Band(p, 'col', 2, m('rule', .3));
+    klText(p, 'галочка вычёркивает', 880, 690, m('rule'), { size: 32, fill: RULE, weight: 600 });
+    klText(p, 'свою строку и свой столбец', 880, 734, m('rule', .8), { size: 32, fill: RULE, weight: 600 });
+    // Every cross in the tick's row and column nods in turn: these are the cells it crossed out.
+    out.forEach((g, k) => pulse(g, m('rule', 2.6 + k * .4), 1.35));
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Кто какое мороженое купил');
+    c37Table(p);
+    const crosses = [[0, 0], [1, 0], [1, 1], [0, 2], [2, 2]].map(([i, j]) => c37No(p, i, j));
+    c37Yes(p, 1, 2);
+    const ask = (i, j) => { const g = G(p, { x: cellX(j), y: cellY(i) }); T(g, '?', { y: 16, size: 46, fill: COL.dim, anchor: 'middle', weight: 600 }); return g; };
+    const hidden = (f, i, j) => { const g = f(p, i, j, undefined, true); put(g, { s: .5 }); return g; };
+    S.q1 = {
+      qA: ask(0, 1), qV0: ask(2, 0), qV1: ask(2, 1), noV2: crosses[4],
+      yesA: hidden(c37Yes, 0, 1), noV1: hidden(c37No, 2, 1), yesV0: hidden(c37Yes, 2, 0),
+    };
+  }, { ask: done => quiz({ x: 820, y: 220, w: 700, cls: 'side' }, [{
+    id: 'c-vika', prompt: 'Какое мороженое купила Вика? Выбери клетку в её строке.',
+    build: pickEls([S.q1.qV0, S.q1.qV1, S.q1.noV2].map((el, j) => ({ el, box: [cellX(j) - 74, cellY(2) - 50, 148, 100], label: ICES[j][0] })), 0,
+      'У Ани зачёркнуты шоколадное и клубничное — у неё ванильное. Тогда Вике остаётся шоколадное.',
+      j => [null, 'Ванильное у Ани: в её строке это последняя свободная клетка.', 'Клубничное уже у Бори, а в столбце только одна галочка.'][j],
+      () => {
+        const q = S.q1;
+        fx(q.qA, { o: 0 }, 0, .25); fx(q.yesA, { o: 1, s: 1 }, .1, .4, back);
+        fx(q.qV1, { o: 0 }, .5, .25); fx(q.noV1, { o: 1, s: 1 }, .6, .4, back);
+        fx(q.qV0, { o: 0 }, 1, .25); fx(q.yesV0, { o: 1, s: 1 }, 1.1, .4, back);
+      }),
+  }], done) }],
+
+  ['euler', 'Круги Эйлера', m => {
+    const p = panel(0);
+    klTitle(p, 'Спорт и музыка');
+    const total = c37Class(p, .3);
+    const L = G(p);   // the circles go under the children
+    const kids = SPOTS.map((_, k) => c37Kid(p, 329 + k * 38, 250, 0));
+    kids.forEach((g, k) => show(g, m('kids', k * .04), .3));
+    const rS = c37Ring(L, ES, ONE, m('sport'));
+    klText(p, 'спорт: 14', 420, 320, m('sport', .4), { size: 32, fill: ONE, weight: 700, anchor: 'middle' });
+    for (let k = 0; k < 14; k++) tw(kids[k], { x: SPOTS[k][0], y: SPOTS[k][1] }, m('sport', .8 + k * .08), .7, io);
+    const rM = c37Ring(L, EM, TWO, m('music'));
+    klText(p, 'музыка: 11', 980, 320, m('music', .4), { size: 32, fill: TWO, weight: 700, anchor: 'middle' });
+    for (let k = 14; k < 20; k++) tw(kids[k], { x: SPOTS[k][0], y: SPOTS[k][1] }, m('music', .8 + (k - 14) * .1), .7, io);
+    // Everyone is in at least one circle: both outlines flash, then each child nods.
+    [rS, rM].forEach((r, k) => { tw(r, { 'a_stroke-width': 9 }, m('all', k * .3), .25); tw(r, { 'a_stroke-width': 4 }, m('all', .6 + k * .3), .4); });
+    kids.forEach((g, k) => pulse(g, m('all', 1.4 + k * .06), 1.35));
+    klText(p, 'круги Эйлера', 690, 872, m('eu'), { size: 30, fill: COL.dim, weight: 600, anchor: 'middle' });
+    const row = klRow(p, ['учеников: ', { m: '14 + 11' }], 1125, 470, m('sum'), { size: 30, msize: 46, anchor: 'start' });
+    klMath(p, [' = 25'], 1125 + row._w, 470, m('sum', 2.6), { size: 46, anchor: 'start' });
+    klStrike(p, 1115, 484, 1125 + row._w + mathW([' = 25'], 46) + 12, 446, m('wrong', .3));
+    klText(p, 'ошибка: учеников всего 20', 1125, 545, m('wrong', .6), { size: 28, fill: COL.bad, weight: 700 });
+    pulse(total, m('wrong', 1.5), 1.2);
+    // «Где же ошибка?»: the children in the middle blink: the answer is there.
+    kids.slice(9, 14).forEach((g, k) => pulse(g, m('wrong', 3.1 + k * .12), 1.45));
+  }],
+
+  ['both', 'Кого посчитали дважды', m => {
+    const p = panel(0);
+    klTitle(p, 'Кого посчитали дважды');
+    c37Class(p);
+    const L = G(p);
+    const lens = path(L, LENS, { fill: RULE, 'fill-opacity': .22 }, { o: 0 });
+    const rS = c37Ring(L, ES, ONE), rM = c37Ring(L, EM, TWO);
+    klText(p, 'спорт: 14', 420, 320, undefined, { size: 32, fill: ONE, weight: 700, anchor: 'middle' });
+    klText(p, 'музыка: 11', 980, 320, undefined, { size: 32, fill: TWO, weight: 700, anchor: 'middle' });
+    const kids = SPOTS.map(([x, y]) => c37Kid(p, x, y));
+    const mid = kids.slice(9, 14);
+    show(lens, .4, .6);
+    mid.forEach((g, k) => pulse(g, m('twice', 1 + k * .12), 1.4));
+    klText(p, 'и там, и там', 724, 322, m('tt'), { size: 30, fill: RULE, weight: 700, anchor: 'middle' });
+    klArrow(p, 724, 338, 724, 398, 368, RULE, m('tt', .3), .4);
+    mid.forEach((g, k) => { const c = mk('circle', { r: 13, fill: RULE }, g); put(c, { o: 0 }); show(c, m('tt', .5 + k * .08), .3); });
+    // Counted twice: a blue ring with the sport count, a green ring with the music count.
+    const ring = (g, r, col, t) => { const c = mk('circle', { r, fill: 'none', stroke: col, 'stroke-width': 3.5 }, g); put(c, { o: 0 }); show(c, t, .25); };
+    mid.forEach((g, k) => ring(g, 17.5, ONE, m('c1', .1 + k * .07)));
+    mid.forEach((g, k) => ring(g, 22, TWO, m('c2', .1 + k * .07)));
+    tw(rS, { 'a_stroke-width': 9 }, m('c1'), .2); tw(rS, { 'a_stroke-width': 4 }, m('c1', .7), .4);
+    tw(rM, { 'a_stroke-width': 9 }, m('c2'), .2); tw(rM, { 'a_stroke-width': 4 }, m('c2', .7), .4);
+    klRow(p, ['в обоих: ', { m: '25 − 20 = 5' }], 1125, 440, m('extra'), { size: 30, msize: 46, anchor: 'start', fill: RULE, weight: 700 });
+    klRow(p, ['только спорт: ', { m: '14 − 5 = 9' }], 1125, 525, m('only'), { size: 30, msize: 46, anchor: 'start', fill: ONE, weight: 600 });
+    kids.slice(0, 9).forEach((g, k) => pulse(g, m('only', .5 + k * .05), 1.35));
+    klText(p, '9', 505, 708, m('only', 1), { size: 44, fill: ONE, weight: 700, anchor: 'middle' });
+    klRow(p, ['только музыка: ', { m: '11 − 5 = 6' }], 1125, 610, m('only2'), { size: 30, msize: 46, anchor: 'start', fill: TWO, weight: 600 });
+    kids.slice(14).forEach((g, k) => pulse(g, m('only2', .5 + k * .06), 1.35));
+    klText(p, '6', 932, 708, m('only2', 1), { size: 44, fill: TWO, weight: 700, anchor: 'middle' });
+    klMath(p, ['9 + 5 + 6 = 20'], 1125, 705, m('check'), { size: 46, anchor: 'start' });
+    klMark(p, 1125 + mathW(['9 + 5 + 6 = 20'], 46) + 48, 690, m('check', 2.4), true, .8);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const fr = G(p, { o: 0 });
+    mk('rect', { x: 330, y: 150, width: 880, height: 470, rx: 22, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '12 10' }, fr);
+    T(fr, 'всего 30 ребят', { x: 330, y: 132, size: 30, fill: COL.dim, weight: 600 });
+    show(fr, .2);
+    c37Ring(p, [640, 400, 170], ONE, .3);
+    c37Ring(p, [900, 400, 170], TWO, .5);
+    klText(p, 'цирк: 18', 560, 205, .4, { size: 32, fill: ONE, weight: 700, anchor: 'middle' });
+    klText(p, 'зоопарк: 17', 980, 205, .6, { size: 32, fill: TWO, weight: 700, anchor: 'middle' });
+    const num = (s, x, col) => { const e = klText(p, s, x, 420, undefined, { size: 48, fill: col, weight: 700, anchor: 'middle' }); put(e, { o: 0 }); return e; };
+    S.q2 = { q: klText(p, '?', 770, 420, .8, { size: 52, fill: RULE, weight: 700, anchor: 'middle' }), both: num('5', 770, RULE), l: num('13', 560, ONE), r: num('12', 980, TWO) };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-cirk', prompt: 'Из 30 ребят 18 были в цирке, 17 — в зоопарке, и каждый был хотя бы где-то. Сколько ребят было…',
+    build: blanks([
+      { parts: ['и там, и там: ', { box: '5' }], why: '18 + 17 = 35, а ребят 30: пятерых посчитали дважды. 35 − 30 = 5.',
+        hint: 'Сложи обе группы и вычти, сколько всего ребят.', fx: () => { fx(S.q2.q, { o: 0 }, 0, .25); fx(S.q2.both, { o: 1 }, .2, .4); } },
+      { parts: ['только в цирке: ', { box: '13' }], why: '18 − 5 = 13. А только в зоопарке: 17 − 5 = 12.',
+        hint: 'Из тех, кто был в цирке, убери тех, кто был и там, и там.', fx: () => { fx(S.q2.l, { o: 1 }, .3, .4); fx(S.q2.r, { o: 1 }, .7, .4); } },
+    ]),
+  }], done) }],
+
+  ['converse', '«Если…, то…»', m => {
+    const p = panel(0);
+    klTitle(p, '«Если…, то…» не переворачивают');
+    const L = G(p);
+    const rSm = c37Ring(L, [440, 580, 120], ONE, m('birds'));
+    klText(p, 'воробьи', 440, 592, m('birds', .4), { size: 32, fill: ONE, weight: 700, anchor: 'middle' });
+    const rBig = c37Ring(L, [520, 520, 270], TWO, m('then'));
+    klText(p, 'птицы', 520, 222, m('then', .4), { size: 34, fill: TWO, weight: 700, anchor: 'middle' });
+    const bird = (x, y, col, t) => { const e = mk('circle', { cx: x, cy: y, r: 11, fill: col }, p); put(e, { o: 0 }); show(e, t, .3); };
+    [[400, 645], [480, 645], [440, 520]].forEach(([x, y], k) => bird(x, y, ONE, m('birds', .7 + k * .15)));
+    [[330, 380], [640, 690], [720, 570], [470, 320]].forEach(([x, y], k) => bird(x, y, TWO, m('then', .8 + k * .15)));
+    c37Words(p, [['если воробей, ', COL.chalk, 500]], 880, 330, m('birds'), 32);
+    c37Words(p, [['то птица', COL.chalk, 500]], 880 + klW('если воробей, ', 32, 500), 330, m('then'), 32);
+    const A = c37Words(p, [['все ', COL.chalk], ['воробьи', ONE], [' — ', COL.chalk], ['птицы', TWO]], 880, 410, m('every'), 38);
+    klMark(p, 880 + A.w + 46, 398, m('every', 1.4), true, .8);
+    [[rSm, 0], [rBig, 1.6]].forEach(([r, dt]) => { tw(r, { 'a_stroke-width': 9 }, m('inside', dt), .25); tw(r, { 'a_stroke-width': 4 }, m('inside', dt + .7), .4); });
+    // The same words swapped: «воробьи» and «птицы» trade places along two arcs.
+    const B = c37Words(p, [['все ', COL.chalk], ['воробьи', ONE], [' — ', COL.chalk], ['птицы', TWO]], 880, 510, m('flip'), 38);
+    const [w0, w1, w2, w3] = B.parts.map(q => q.w), to = [0, w0 + w3 + w2, w0 + w3, w0];
+    B.parts.forEach((q, k) => { if (k) prog(u => put(q.e, { x: q.x + (to[k] - q.x) * u, y: (k === 1 ? 34 : k === 3 ? -34 : 0) * Math.sin(Math.PI * u) }), m('flip', 1.2), 1, io); });
+    const ask = klText(p, '?', 880 + B.w + 14, 510, m('flip', 2.4), { size: 38, fill: RULE, weight: 700 });
+    hide(ask, m('crow', .9), .3);
+    const crow = G(p, { x: 690, y: 420, o: 0, s: .5 });
+    mk('circle', { r: 16, fill: '#22201f', stroke: COL.chalk, 'stroke-width': 2.5 }, crow);
+    T(crow, 'ворона', { y: 50, size: 28, weight: 600, anchor: 'middle' });
+    pop(crow, m('crow', .4));
+    klStrike(p, 870, 520, 880 + B.w + 12, 488, m('crow', 1.2));
+    klText(p, 'ошибка: ворона — птица, но не воробей', 880, 575, m('crow', 1.5), { size: 28, fill: COL.bad, weight: 700 });
+    const r1 = 'части «если…, то…»', r2 = 'нельзя менять местами';
+    klText(p, r1, 900, 690, m('rule'), { size: 34, fill: RULE, weight: 600 });
+    klText(p, r2, 900, 736, m('rule', 1.6), { size: 34, fill: RULE, weight: 600 });
+    const bw = Math.max(klW(r1, 34, 600), klW(r2, 34, 600)) + 44;
+    draw(path(p, `M${878} ${646}h${bw}v${110}h${-bw}Z`, { stroke: RULE, 'stroke-width': 3 }, { d: 0 }), m('rule', 4.5), .8);
+    tw(rSm, { 'a_stroke-width': 9 }, m('often'), .25); tw(rSm, { 'a_stroke-width': 4 }, m('often', .7), .4);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    c37Ring(p, [760, 390, 220], TWO, .3);
+    c37Ring(p, [680, 430, 95], ONE, .5);
+    klText(p, 'решили задачу', 760, 145, .4, { size: 32, fill: TWO, weight: 700, anchor: 'middle' });
+    klText(p, 'отличники', 680, 440, .6, { size: 28, fill: ONE, weight: 700, anchor: 'middle' });
+    const kolya = G(p, { x: 1180, y: 390, o: 0 });
+    mk('circle', { r: 14, fill: COL.chalk }, kolya);
+    T(kolya, 'Коля', { y: 50, size: 28, weight: 600, anchor: 'middle' });
+    const q = T(kolya, '?', { x: 26, y: -12, size: 36, fill: RULE, weight: 700 });
+    show(kolya, .8);
+    S.q3 = { kolya, q };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-otlichnik', prompt: 'Все отличники решили задачу. Коля решил задачу. Можно ли утверждать, что Коля — отличник?',
+    build: choice(['да', 'нет'], 1,
+      'Задачу могли решить не только отличники: Коля может быть в большом круге, но не в маленьком.',
+      ['Это и есть ошибка: части «если…, то…» поменяли местами. Из «все отличники решили» не следует «все, кто решил, — отличники».', null],
+      () => { fx(S.q3.kolya, { x: 880, y: 300 }, 0, .9); fx(S.q3.q, { o: 0 }, .6, .3); }),
+  }], done) }],
+
+  ['knights', 'Рыцари и лжецы', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Рыцари и лжецы');
+    const isl = G(p, { o: 0 });
+    path(isl, 'M140 770Q400 650 660 770Z', { fill: '#33452f', stroke: COL.dim, 'stroke-width': 3 });
+    const wave = path(isl, 'M110 812q25 -14 50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0', { stroke: KL.DEN, 'stroke-width': 3, 'stroke-opacity': .55 });
+    show(isl, .3);
+    prog(q => put(wave, { x: 22 * Math.sin(q * D * Math.PI / 2) }), 0, D, lin);   // the sea rolls slowly all through
+    const man = c37Person(p, 400, 718, 0);
+    show(man, .7);
+    c37Words(p, [['рыцарь', YES, 700], [' — всегда говорит правду', COL.chalk, 500]], 100, 240, m('knight'), 32);
+    c37Words(p, [['лжец', LIAR, 700], [' — всегда лжёт', COL.chalk, 500]], 100, 292, m('liar'), 32);
+    c37Bubble(p, 500, 430, 230, 84, 430, 518, '«Я лжец»', m('says'), 38);
+    const q = klText(p, '?', 400, 688, m('says', 2.4), { size: 56, fill: COL.chalk, weight: 700, anchor: 'middle' });
+    // Try «knight»: the figure turns green, the chain of reasons runs, and it breaks.
+    const tK = man.tint(YES);
+    hide(q, m('try1'), .3);
+    show(tK, m('try1'), .4); hide(tK, m('try2', -.2), .4);
+    c37Words(p, [['если он ', COL.chalk, 500], ['рыцарь', YES, 700]], 760, 380, m('try1'), 32);
+    klText(p, '→ он сказал правду', 800, 428, m('t1a'), { size: 30, fill: COL.dim });
+    klText(p, '→ значит, он лжец', 800, 474, m('t1b'), { size: 30, fill: COL.dim });
+    klMark(p, 1150, 440, m('t1c'), false, .8);
+    klText(p, 'так не бывает', 1190, 450, m('t1c', .3), { size: 28, fill: COL.bad, weight: 600 });
+    // Try «liar»: the same, in orange.
+    const tL = man.tint(LIAR);
+    show(tL, m('try2'), .4); hide(tL, m('none', .2), .4);
+    c37Words(p, [['если он ', COL.chalk, 500], ['лжец', LIAR, 700]], 760, 560, m('try2'), 32);
+    klText(p, '→ он соврал', 800, 608, m('t2a'), { size: 30, fill: COL.dim });
+    klText(p, '→ значит, он рыцарь', 800, 654, m('t2b'), { size: 30, fill: COL.dim });
+    klMark(p, 1150, 620, m('t2c'), false, .8);
+    klText(p, 'снова противоречие', 1190, 630, m('t2c', .3), { size: 28, fill: COL.bad, weight: 600 });
+    tw(man, { o: .35 }, m('none', 1.2), .6);
+    klText(p, '«Я лжец» не скажет никто', 760, 750, m('none', .3), { size: 32, fill: RULE, weight: 700 });
+    klText(p, 'предположи → проверь → ищи противоречие', 760, 820, m('rule'), { size: 30, fill: RULE, weight: 600 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    path(p, 'M360 562H1200', { stroke: COL.dim, 'stroke-width': 3 }, { o: .7 });
+    const A = c37Person(p, 560, 560, 0), B = c37Person(p, 1000, 560, 0);
+    show(A, .2); show(B, .35);
+    klText(p, 'А', 560, 612, .3, { size: 36, weight: 700, anchor: 'middle' });
+    klText(p, 'Б', 1000, 612, .4, { size: 36, weight: 700, anchor: 'middle' });
+    c37Bubble(p, 320, 300, 360, 84, 518, 398, '«Мы оба лжецы»', .6, 36);
+    const badge = (s, x, col) => { const e = klText(p, s, x, 662, undefined, { size: 30, fill: col, weight: 700, anchor: 'middle' }); put(e, { o: 0 }); return e; };
+    S.q4 = { A, B, tA: A.tint(LIAR), tB: B.tint(YES), bA: badge('лжец', 560, LIAR), bB: badge('рыцарь', 1000, YES) };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-rycar', prompt: 'Житель А сказал: «Мы оба лжецы». Кто из двоих рыцарь? Выбери его на картинке.',
+    build: pickEls([S.q4.A, S.q4.B].map((el, k) => ({ el, box: [[560, 1000][k] - 80, 368, 160, 210], label: ['А', 'Б'][k] })), 1,
+      'Рыцарь не может сказать «мы оба лжецы»: он бы назвал лжецом себя. Значит, А — лжец, его слова ложны, и они не оба лжецы: Б — рыцарь.',
+      () => 'Если А — рыцарь, его слова правдивы и он сам лжец. Так не бывает: А — лжец.',
+      () => { const q = S.q4; fx(q.tA, { o: 1 }, 0, .4); fx(q.bA, { o: 1 }, .2, .4); fx(q.tB, { o: 1 }, .6, .4); fx(q.bB, { o: 1 }, .8, .4); }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'В каждой строке и каждом столбце — одна галочка',
+    ['Общих в двух группах:  ', { m: '14 + 11 − 20 = 5' }],
+    '«Если…, то…» нельзя переворачивать',
+    'Рыцари и лжецы: предположи и ищи противоречие',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-ryad', prompt: 'Маша, Даша и Глаша сидят в ряд. Маша сидит не с краю, а Даша — не слева. Кто сидит слева?',
+    build: choice(['Маша', 'Даша', 'Глаша'], 2, 'Маша не с краю — она в середине. Даша не слева, значит, справа. Слева остаётся Глаша.',
+      ['Левое место — край, а Маша сидит не с краю.', 'Даша — не слева: так сказано в условии.', null]),
+  }, {
+    id: 'p-sekcii', prompt: 'Петя, Коля и Саша занимаются плаванием, футболом и шахматами, каждый чем-то одним. Петя не плавает и не играет в шахматы, Коля не плавает. Чем занимается Саша?',
+    build: choice(['плаванием', 'футболом', 'шахматами'], 0, 'У Пети два крестика — у него футбол. Коля не плавает, а футбол занят: у него шахматы. Саше остаётся плавание.',
+      [null, 'Футбол у Пети: в его строке это последняя свободная клетка.', 'Шахматы у Коли: он не плавает, а футбол уже у Пети.']),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-murka', prompt: 'Все кошки любят молоко. Мурка любит молоко. Можно ли утверждать, что Мурка — кошка?',
+    build: choice(['да', 'нет'], 1, 'Молоко любят не только кошки: из «все кошки любят молоко» не следует «все, кто любит молоко, — кошки».',
+      ['Это ошибка: части «если…, то…» поменяли местами. Мурка может быть и не кошкой.', null]),
+  }, {
+    id: 'p-ya-rycar', prompt: 'На острове живут рыцари, которые всегда говорят правду, и лжецы, которые всегда лгут. Житель сказал: «Я рыцарь». Кто он?',
+    build: choice(['рыцарь', 'лжец', 'понять нельзя'], 2, 'Рыцарь скажет это честно, а лжец соврёт — фраза у обоих одна и та же.',
+      ['Лжец тоже может так сказать — и соврёт.', 'Рыцарь тоже может так сказать — и это будет правда.', null]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-sport-muz', prompt: 'В классе 25 учеников. 17 занимаются спортом, 12 — музыкой, а 3 ничем не занимаются.',
+    build: blanks([
+      { parts: ['хотя бы чем-то заняты ', { box: '22' }, ' ученика'], why: '25 − 3 = 22.', hint: 'Убери из класса тех, кто ничем не занимается.' },
+      { parts: ['и спортом, и музыкой — ', { box: '7' }, ' учеников'], why: '17 + 12 = 29, а занятых 22: семерых посчитали дважды. 29 − 22 = 7.', hint: 'Сложи обе группы и вычти тех, кто хотя бы чем-то занят.' },
+    ]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

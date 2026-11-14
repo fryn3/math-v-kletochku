@@ -50,7 +50,9 @@ window.TIMINGS = {
    "work5": 6.756,
    "buy": 13.566,
    "buy4": 16.613,
-   "rule": 22.602
+   "rule": 22.602,
+   "one": 24.047,
+   "units": 26.157
   },
   "cues": [
    [

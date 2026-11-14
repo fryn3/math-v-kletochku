@@ -167,6 +167,10 @@ const BEATS = [
     c36StrikeRow(p, w, 1080, 650, m('strike'));
     klText(p, 'потеряли часть Димы', 1080, 712, m('strike', .5), { size: 30, fill: COL.bad, weight: 700 });
     c36Glow(dc, m('strike', 1));
+    // The same strip read as a ratio: 1 : 3 is the same four parts.
+    klRow(p, ['отношение  ', { m: '1', fill: NUM }, { m: ' : ' }, { m: '3', fill: DEN }], 620, 440, m('ratio', 2.4), { size: 34, msize: 56 });
+    [dc, ...sc].forEach((c, i) => c36Glow(c, m('same', .3 + i * .3)));
+    cnt.forEach((e, i) => { const n = T(p, String(i + 1), { x: 200 + i * CW + 20, y: 590, size: 24, fill: COL.board, font: MATH, weight: 700, anchor: 'middle', o: 0 }); show(n, m('same', .3 + i * .3), .2); });
   }],
 
   ['q1', 'Проверь себя', () => {
@@ -203,8 +207,8 @@ const BEATS = [
     const o = { anchor: 'start', size: 34, msize: 52 };
     klRow(p, [{ m: '30 − 6 = 24' }], X0, 580, m('rest'), o);
     klRow(p, [{ m: '24 : 2 = 12', fill: RULE }], X0, 660, m('half', .6), o);
-    c36Lab(p, X0 + 6 * U, 292, '12', m('half', 1.4), 44);
-    c36Lab(p, X0 + 6 * U, 422, '12', m('half', 1.7), 44);
+    c36Lab(p, X0 + 6 * U, 295, '12', m('half', 1.4), 44);
+    c36Lab(p, X0 + 6 * U, 425, '12', m('half', 1.7), 44);
     c36Glow(kc, m('katya'));
     tw(pc, { x: X0 + 12 * U, y: 370, o: 1 }, m('back'), 1, io);
     klRow(p, [{ m: '12 + 6 = 18', fill: DEN }], X0, 740, m('sum'), o);
@@ -272,15 +276,15 @@ const BEATS = [
     klText(p, 'Петя', 130, 382, .2, { size: 30, anchor: 'end', weight: 600 });
     const H = 60, mkPic = (cx, build) => { const g = G(p, { o: 0 }); build(g, cx - 150); show(g, .3); return g; };
     S.q3pics = [
-      mkPic(300, (g, x) => { c36Cell(g, x, 240, 100, H, NUM); c36Row(g, x, 340, 2, 100, H, DEN); }),
-      mkPic(800, (g, x) => { c36Cell(g, x, 240, 200, H, NUM); c36Cell(g, x, 340, 200, H, DEN); c36Cell(g, x + 200, 340, 70, H, DIF, undefined, '2'); }),
-      mkPic(1300, (g, x) => { c36Cell(g, x, 240, 100, H, NUM); c36Row(g, x, 340, 3, 100, H, DEN); }),
+      mkPic(380, (g, x) => { c36Cell(g, x, 240, 100, H, NUM); c36Row(g, x, 340, 2, 100, H, DEN); }),
+      mkPic(830, (g, x) => { c36Cell(g, x, 240, 200, H, NUM); c36Cell(g, x, 340, 200, H, DEN); c36Cell(g, x + 200, 340, 70, H, DIF, undefined, '2'); }),
+      mkPic(1280, (g, x) => { c36Cell(g, x, 240, 100, H, NUM); c36Row(g, x, 340, 3, 100, H, DEN); }),
     ];
-    ['А', 'Б', 'В'].forEach((s, i) => klText(p, s, 300 + i * 500, 470, .4, { size: 30, fill: COL.dim, weight: 600, anchor: 'middle' }));
-    S.q3ok = c36Tick(p, 500, 370);
+    ['А', 'Б', 'В'].forEach((s, i) => klText(p, s, 380 + i * 450, 470, .4, { size: 30, fill: COL.dim, weight: 600, anchor: 'middle' }));
+    S.q3ok = c36Tick(p, 490, 370);
   }, { ask: done => quiz(BAND, [{
     id: 'c-kartinka', prompt: 'У Пети в 2 раза больше марок, чем у Коли. Нажми на картинку, которая подходит.',
-    build: pickEls(S.q3pics.map((g, i) => ({ el: g, box: [300 + i * 500 - 190, 214, 380, 286], label: ['А', 'Б', 'В'][i] })), 0,
+    build: pickEls(S.q3pics.map((g, i) => ({ el: g, box: [380 + i * 450 - 170, 214, 340, 286], label: ['А', 'Б', 'В'][i] })), 0,
       'У Коли одна часть, у Пети две таких же части: в 2 раза больше.',
       i => i === 1 ? 'Здесь у Пети такая же полоска и кусочек 2 — это «на 2 больше».' : 'Здесь у Пети три части против одной — это «в 3 раза больше».',
       () => fx(S.q3ok, { o: 1 }, 0, .3)),
@@ -307,9 +311,22 @@ const BEATS = [
   ['order', 'Обратные действия', m => {
     const p = panel(0);
     klTitle(p, 'Обратные действия — в обратном порядке');
-    const o = { size: 36, msize: 96 };
-    klRow(p, [{ m: '+' }, '    отменяет    ', { m: '−', fill: RULE }], 380, 320, m('pm'), o);
-    klRow(p, [{ m: '·' }, '    отменяет    ', { m: ':', fill: RULE }], 380, 470, m('md'), o);
+    const o = { size: 34, msize: 64 };
+    klRow(p, [{ m: '+ 5' }, '   отменяет   ', { m: '− 5', fill: RULE }], 420, 310, m('pm'), o);
+    klRow(p, [{ m: '· 3' }, '   отменяет   ', { m: ': 3', fill: RULE }], 420, 420, m('md'), o);
+    // The coat and the sweater: put on in one order, taken off in the other; the two words slide past each other.
+    const wd = (s, x, y, col, t0, d = .3) => { const g = G(p, { x, y, o: 0 }); T(g, s, { x: 0, y: 0, size: 34, fill: col, weight: 600, anchor: 'middle' }); show(g, t0, d); return g; };
+    const Y1 = 590, Y2 = 690, XA = 380, XB = 610;
+    klText(p, 'надели:', 110, Y1, m('coat'), { size: 30, fill: COL.dim });
+    wd('свитер', XA, Y1, COL.chalk, m('coat', .2));
+    klText(p, '→', (XA + XB) / 2, Y1, m('coat', .5), { size: 34, fill: COL.dim, anchor: 'middle' });
+    wd('куртку', XB, Y1, RULE, m('coat', .7));
+    klText(p, 'снимаем:', 110, Y2, m('coat', 1.4), { size: 30, fill: COL.dim });
+    // The jacket goes first and lands before the sweater sets off, so the two never cross.
+    const jk = wd('куртку', XB, Y1, RULE, m('coat', 1.5), .6), sw = wd('свитер', XA, Y1, COL.chalk, m('coat', 2.4), .6);
+    tw(jk, { x: XA, y: Y2 }, m('coat', 1.5), .8, io);
+    tw(sw, { x: XB, y: Y2 }, m('coat', 2.4), .8, io);
+    klText(p, '→', (XA + XB) / 2, Y2, m('coat', 3.2), { size: 34, fill: COL.dim, anchor: 'middle' });
     path(p, 'M760 220V800', { stroke: COL.faint, 'stroke-width': 2 });
     // The chain once more, small, with the order of the steps back numbered.
     const xs = [920, 1170, 1420], Y = 330;
@@ -318,7 +335,7 @@ const BEATS = [
     c36Num(p, (xs[1] + xs[2]) / 2, Y + 150, 1, m('order', .8));
     c36Arrow(p, xs[1] - 45, xs[0] + 45, Y + 30, Y + 110, ': 3', RULE, m('order', 2.2), { size: 40 });
     c36Num(p, (xs[0] + xs[1]) / 2, Y + 150, 2, m('order', 2.7));
-    klText(p, 'сделали последним — отменяем первым', 1170, 560, m('coat'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'сделали последним — отменяем первым', 1170, 560, m('order', 3.2),{ size: 30, fill: RULE, weight: 600, anchor: 'middle' });
     const w = klRow(p, [{ m: '26 : 3 = ?' }], 1040, 700, m('wrong'), { anchor: 'start', size: 34, msize: 56, fill: COL.dim });
     c36StrikeRow(p, w, 1040, 700, m('strike'));
     klText(p, 'не делится нацело', 1170, 770, m('strike', .5), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
