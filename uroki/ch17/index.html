@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Десятичные дроби · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 4.1 «Десятичные дроби» (5 класс). Beat ids match papermorph/content/uroki/ch17/narration.ru.json.
+const CHAPTER = { number: 17, label: '4.1', title: 'Десятичные дроби', minutes: 8, language: 'ru', next: '../ch18/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, WHOLE = KL.WHOLE, RULE = KL.RULE;
+const HEADS = ['сотни', 'десятки', 'единицы', 'десятые', 'сотые', 'тысячные'];
+
+/* ---------- this lesson's helpers ---------- */
+// The centre x of character i of a string of maths text at size that starts at x0.
+function c17Cx(str, size, x0, i) { return x0 + textW(str.slice(0, i), size) + textW(str[i], size) / 2; }
+// A place-value table read left to right: heads[k] names column k, each cw wide from x0; rows of cells h high from y.
+// The first `shown` columns fade in at t0, the rest wait hidden in cols[k] (bring them in with show). The integer and
+// the fractional part meet at xb, the left edge of column `split`. Returns { g, cols, X(k), cy(r), xb, h, y }.
+function c17Table(p, { x0, y, cw = 170, h = 150, rows = 1, heads = HEADS, split = 3, t0, shown = heads.length, size = 28 }) {
+  const g = G(p), H = rows * h, X = k => x0 + (k + .5) * cw;
+  const cols = heads.map((s, k) => {
+    const c = G(g, { o: 0 });
+    mk('rect', { x: x0 + k * cw, y, width: cw, height: H, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-opacity': .5 }, c);
+    for (let r = 1; r < rows; r++) path(c, `M${x0 + k * cw} ${y + r * h}h${cw}`, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .3, 'stroke-dasharray': '6 6' });
+    T(c, s, { x: X(k), y: y - 18, size, fill: COL.dim, anchor: 'middle', weight: 600 });
+    if (k < shown) show(c, t0);
+    return c;
+  });
+  return { g, cols, X, cy: r => y + (r + .5) * h, xb: x0 + split * cw, h, y, H };
+}
+// One digit (maths face) centred on x with its baseline at y; fades in at t0 when given.
+function c17Dig(p, ch, x, y, { size = 110, fill = COL.chalk, t0 } = {}) {
+  const e = T(p, ch, { x, y, size, fill, font: MATH, anchor: 'middle', o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) show(e, t0);
+  return e;
+}
+// A number written in a column (place under place): the comma at commaX, cells cw wide, baseline y. at[i] is the time
+// character i appears (undefined: at once); fills[i] its colour. Returns the characters' elements in string order.
+function c17Col(p, str, commaX, y, { size = 72, cw = 46, fill = COL.chalk, at = [], fills = [] } = {}) {
+  const ci = str.indexOf(','), n = ci < 0 ? str.length : ci, gap = cw * .5;
+  return [...str].map((ch, i) => {
+    const x = ch === ',' ? commaX : i < n ? commaX - gap / 2 - (n - 1 - i + .5) * cw : commaX + gap / 2 + (i - n - .5) * cw;
+    return c17Dig(p, ch, x, y, { size, fill: fills[i] || fill, t0: at[i] });
+  });
+}
+// The comma x that puts the last digit of str (f digits after its comma) in the cell ending at the right edge R.
+function c17Right(str, R, cw = 46) { const f = str.length - str.indexOf(',') - 1; return R - cw / 2 - cw * .25 - (f - .5) * cw; }
+// Small dots under characters (centres xs) at height y, one after another from t0: counting digits and zeros.
+function c17Dots(p, xs, y, t0, col = RULE) {
+  return xs.map((x, i) => { const d = mk('circle', { cx: x, cy: y, r: 7, fill: col }, p); put(d, { o: 0 }); show(d, t0 + i * .3, .2); return d; });
+}
+// A hundred square whose own faint cell lines are hidden: ten columns are cut by thick KL.DEN lines (draw with c17Cols),
+// cells by thin ones (c17Rows). Returns klHundred's object.
+function c17Square(p, opts) {
+  const H = klHundred(p, opts);
+  put(H.g.children[2], { o: 0 });
+  return H;
+}
+function c17Cols(H, t0, { width = 3.5, step = .08, now = false } = {}) {
+  for (let k = 1; k < 10; k++) {
+    const l = path(H.top, `M${H.x + k * H.c} ${H.y}V${H.y + H.W}`, { stroke: DEN, 'stroke-width': width }, now ? {} : { d: 0 });
+    if (!now) draw(l, t0 + (k - 1) * step, .35);
+  }
+}
+function c17Rows(H, t0, { step = .06, now = false } = {}) {
+  for (let k = 1; k < 10; k++) {
+    const l = path(H.top, `M${H.x} ${H.y + k * H.c}H${H.x + H.W}`, { stroke: DEN, 'stroke-width': 1.6, 'stroke-opacity': .8 }, now ? {} : { d: 0 });
+    if (!now) draw(l, t0 + (k - 1) * step, .35);
+  }
+}
+// Shade a decimal 0,ab on a hundred square: a whole columns, then b cells of the next column; returns the blocks (hidden).
+function c17Fill(H, a, b, fill) {
+  const out = [];
+  for (let j = 0; j < a; j++) out.push(H.cell(0, j, 1, 10, fill));
+  for (let i = 0; i < b; i++) out.push(H.cell(i, a, 1, 1, fill));
+  return out;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Десятичные дроби', (m, D) => klIntro(m, D, {
+    unit: 'Глава 4 · Десятичные дроби и проценты · Тема 4.1',
+    title: 'Десятичные дроби',
+    sub: 'Разряды продолжаются за запятую',
+    art: (g, t0) => {
+      klExpr(g, [{ s: '2,35' }, { s: '=' }, { s: '2', fill: WHOLE }, { s: '+' }, { f: [3, 10] }, { s: '+' }, { f: [5, 100] }], 800, 600, { size: 50, anchor: 'middle', t0 });
+    },
+  })],
+
+  ['places', 'Разряды после запятой', m => {
+    const p = panel(0);
+    klTitle(p, 'Разряды после запятой');
+    const tb = c17Table(p, { x0: 290, y: 240, cw: 170, h: 170, t0: .3, shown: 3 });
+    [m('tenth'), m('hund'), m('thou')].forEach((t, i) => { show(tb.cols[3 + i], t); });
+    // Each place is ten times smaller than its left neighbour: «: 10» under every step to the right.
+    const arr = G(p), ay = 440;
+    const step = (k, t) => {
+      klArrow(arr, tb.X(k) + 14, ay, tb.X(k + 1) - 14, ay, ay + 50, RULE, t, .5);
+      klText(arr, ': 10', (tb.X(k) + tb.X(k + 1)) / 2, ay + 92, t + .3, { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+    };
+    step(0, m('left', .2)); step(1, m('left', 1.2)); step(2, m('tenth', 1.6)); step(3, m('hund', .4)); step(4, m('thou', .2));
+    // The comma: the border between the whole part and the fractional part.
+    hide(arr, m('comma'), .4);
+    draw(path(p, `M${tb.xb} ${tb.y - 50}V${tb.y + tb.H + 14}`, { stroke: RULE, 'stroke-width': 3, 'stroke-opacity': .6 }, { d: 0 }), m('comma'), .5);
+    c17Dig(p, ',', tb.xb, tb.cy(0) + 44, { size: 130, fill: RULE, t0: m('comma', .4) });
+    klBrace(p, tb.X(0) - 70, tb.xb - 16, tb.y + tb.H + 30, 'целая часть', m('comma', 1.0), { up: false, fill: WHOLE, size: 30 });
+    klBrace(p, tb.xb + 16, tb.X(5) + 70, tb.y + tb.H + 30, 'дробная часть', m('comma', 1.6), { up: false, fill: NUM, size: 30 });
+    // 2,35: the digits drop into their places.
+    const dy = tb.cy(0) + 44;
+    klMath(p, ['2,35'], 530, 700, m('num'), { size: 72, anchor: 'end' });
+    [['2', 2, 'd2', WHOLE], ['3', 3, 'd3', NUM], ['5', 4, 'd5', NUM]].forEach(([ch, k, mk_, fill]) => {
+      const d = c17Dig(p, ch, tb.X(k), dy - 70, { size: 130, fill });
+      put(d, { o: 0 });
+      tw(d, { o: 1, y: dy }, m(mk_), .45, out);
+    });
+    // … and the same number as a sum, each term under its own place.
+    klMath(p, ['='], 600, 700, m('sum'), { size: 72 });
+    klExpr(p, [{ s: '2', fill: WHOLE }], tb.X(2), 676, { size: 72, anchor: 'middle', t0: m('sum', .2) });
+    klMath(p, ['+'], tb.xb, 700, m('sum', 1.2), { size: 64 });
+    klExpr(p, [{ f: [3, 10] }], tb.X(3), 676, { size: 60, anchor: 'middle', t0: m('sum', 1.3) });
+    klMath(p, ['+'], tb.xb + 170, 700, m('sum', 2.6), { size: 64 });
+    klExpr(p, [{ f: [5, 100] }], tb.X(4), 676, { size: 60, anchor: 'middle', t0: m('sum', 2.7) });
+  }],
+
+  ['square', 'Десятые и сотые', m => {
+    const p = panel(0);
+    klTitle(p, 'Десятые и сотые на квадрате');
+    const H = c17Square(p, { x: 150, y: 210, c: 52, t0: .2 });
+    klText(p, '1', 150 + 260, 200 - 14, m('one'), { size: 40, fill: COL.chalk, weight: 700, anchor: 'middle' });
+    pulse(H.g, m('one', .1), 1.04);
+    c17Cols(H, m('col', .3));
+    klText(p, 'столбик  =', 760, 300, m('col', 1.6), { size: 34, fill: COL.chalk });
+    klFrac(p, 1, 10, 960, 288, m('col', 1.8), { size: 48 });
+    c17Fill(H, 3, 0, NUM).forEach((r, j) => tw(r, { o: 1 }, m('three', .2 + j * .3), .3));
+    c17Rows(H, m('cells', .2));
+    klText(p, 'клетка  =', 760, 420, m('cells', 4.2), { size: 34, fill: COL.chalk });
+    klFrac(p, 1, 100, 960, 408, m('cells', 4.4), { size: 48 });
+    const ring = mk('rect', { x: H.x + 6 * H.c - 3, y: H.y + 4 * H.c - 3, width: H.c + 6, height: H.c + 6, rx: 4, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p);
+    put(ring, { o: 0 }); show(ring, m('cells', 4.6), .3); hide(ring, m('count'), .3);
+    const outl = mk('rect', { x: H.x - 4, y: H.y - 4, width: 3 * H.c + 8, height: H.W + 8, rx: 4, fill: 'none', stroke: RULE, 'stroke-width': 5 }, p);
+    put(outl, { o: 0 }); show(outl, m('eq', .3), .3);
+    ['10', '20', '30'].forEach((s, j) => klText(p, s, H.x + (j + .5) * H.c, H.y + H.W - 16, m('count', .4 + j * .5), { size: 26, fill: COL.board, weight: 700, anchor: 'middle' }));
+    const t3 = m('three', 1.2);
+    const sq = klExpr(p, [{ s: '0,3', t: t3 }, { s: '=', t: t3 + .5 }, { f: [3, 10], t: t3 + .5 }, { s: '=', t: m('count', 2.2) }, { f: [30, 100], t: m('count', 2.2) },
+      { s: '=', t: m('eq', 3.2) }, { s: '0,30', t: m('eq', 3.2) }], 760, 580, { size: 64 });
+    pulse(sq[0].g, m('eq', 4.4), 1.2); pulse(sq[6].g, m('eq', 6.6), 1.2);
+    klMath(p, ['0,3  =  0,30  =  0,300'], 1060, 720, m('zero'), { size: 56, fill: RULE });
+    klMath(p, [F('3', '10'), '  =  ', F('3 · 10', '10 · 10'), '  =  ', F('30', '100')], 1060, 820, m('zero', 2.2), { size: 40, fill: COL.dim });
+  }],
+
+  ['frac', 'В обыкновенную дробь', m => {
+    const p = panel(0);
+    klTitle(p, 'Десятичная дробь → обыкновенная');
+    const S_ = 80, xEq = 640;
+    // A row "decimal = fraction"; dots count the digits after the comma and the zeros of the denominator.
+    const row = (dec, n, d, y, t0, tf) => {
+      const r = klEq(p, [{ s: dec }], [{ f: [n, d], t: tf }], y, t0, { xEq, size: S_ });
+      const L = r.l[0], x0 = L.c - L.w / 2, F_ = r.r[0], dx0 = F_.c - textW(String(d), S_) / 2;
+      return { r, after: [...dec].map((_, i) => i).filter(i => i > dec.indexOf(',')).map(i => c17Cx(dec, S_, x0, i)), base: y + .35 * S_,
+        zeros: [...String(d)].map((_, i) => i).slice(1).map(i => c17Cx(String(d), S_, dx0, i)), dbase: y + .9 * S_, decEl: L, fr: F_ };
+    };
+    const A = row('0,07', 7, 100, 270, m('a'));
+    c17Dots(p, A.after, A.base + 22, m('count', .3));
+    c17Dots(p, A.zeros, A.dbase + 20, m('count', 1.8));
+    const B = row('1,5', 15, 10, 500, m('b'), m('b', 3.5));
+    put(B.fr.fr.num, { o: 0 });
+    c17Dots(p, B.after, B.base + 22, m('b', 1.9));
+    c17Dots(p, B.zeros, B.dbase + 20, m('b', 3.9));
+    show(B.fr.fr.num, m('top', 1.2));
+    pulse(B.decEl.g, m('top', 1.2), 1.15);
+    klExpr(p, [{ s: '=' }, { f: [3, 2] }], B.fr.c + B.fr.w / 2 + 24, 500, { size: S_, t0: m('red', .3) });
+    const C = row('0,125', 125, 1000, 730, m('c'));
+    c17Dots(p, C.after, C.base + 22, m('cc'));
+    c17Dots(p, C.zeros, C.dbase + 20, m('cc', 1.0));
+    // The rule beside the rows.
+    const box = G(p, { o: 0 });
+    mk('rect', { x: 1110, y: 230, width: 400, height: 210, rx: 18, fill: COL.chalk, 'fill-opacity': .04, stroke: RULE, 'stroke-width': 3 }, box);
+    ['сколько цифр', 'после запятой —', 'столько нулей', 'в знаменателе'].forEach((s, i) => T(box, s, { x: 1310, y: 282 + i * 44, size: 32, fill: RULE, weight: 600, anchor: 'middle' }));
+    show(box, m('count', 3.0));
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const H = c17Square(p, { x: 610, y: 130, c: 40, t0: .2 });
+    c17Cols(H, 0, { now: true, width: 3 }); c17Rows(H, 0, { now: true });
+    [0, 1, 2].forEach(i => show(H.cell(9, i), .4));
+    klText(p, 'весь квадрат — 1', 570, 340, .3, { size: 32, fill: COL.dim, anchor: 'end' });
+    S.q1a = G(p, { o: 0 });
+    klExpr(S.q1a, [{ f: [3, 100] }, { s: '=' }, { s: '0,03', fill: RULE }], 1050, 320, { size: 60 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-kvadrat', prompt: 'Какая часть квадрата закрашена? Запиши десятичной дробью.',
+    build: blanks([{ parts: [{ box: '0,03' }],
+      why: ['Закрашены 3 клетки из 100: ', $m(F('3', '100')), ' = 0,03. Сотые — второй знак после запятой, а на месте десятых стоит 0.'],
+      hint: 'В квадрате сто клеток, одна клетка — одна сотая. Сотые — второй знак после запятой.',
+      fx: () => fx(S.q1a, { o: 1 }, .1, .4) }]),
+  }], done) }],
+
+  ['compare', 'Сравнение', m => {
+    const p = panel(0);
+    klTitle(p, 'Что больше: 0,5 или 0,45?');
+    const A = c17Square(p, { x: 120, y: 220, c: 32, t0: .2 }), B = c17Square(p, { x: 500, y: 220, c: 32, t0: .2 });
+    [A, B].forEach(H => { c17Cols(H, 0, { now: true, width: 2.5 }); c17Rows(H, 0, { now: true }); });
+    const xa = 280 - textW('0,5', 72) / 2;
+    const la = klMath(p, ['0,5'], xa, 630, .4, { size: 72, anchor: 'start' });
+    const lb = klMath(p, ['0,45'], 660, 630, .5, { size: 72, fill: TWO });
+    pulse(la, 1.4, 1.12); pulse(lb, 3.2, 1.12);
+    // Count the places after the comma: one against two, then the padded zero makes two.
+    [A, B].forEach(H => { tw(H.g, { o: .3 }, m('pad', .4), .5); tw(H.g, { o: 1 }, m('cmp', 2.0), .5); });
+    c17Dots(p, [c17Cx('0,5', 72, xa, 2)], 656, m('pad', 1.6));
+    const xb0 = 660 - textW('0,45', 72) / 2;
+    c17Dots(p, [2, 3].map(i => c17Cx('0,45', 72, xb0, i)), 656, m('pad', 2.0), TWO);
+    c17Dots(p, [xa + textW('0,5', 72) + textW('0', 72) / 2], 656, m('pad', 3.9));
+    klText(p, '50', 120 + 2.5 * 32, 220 + 175, m('pad', 6.2), { size: 44, fill: COL.board, weight: 700, anchor: 'middle' });
+    klText(p, '45', 500 + 2 * 32, 220 + 175, m('cmp', 2.0), { size: 44, fill: COL.board, weight: 700, anchor: 'middle' });
+    // The trap: more digits look bigger.
+    klRow(p, [{ m: '45 > 5' }, ',  значит  ', { m: '0,45 > 0,5' }], 1200, 330, m('trap', .6), { size: 32, msize: 48, fill: COL.dim });
+    klStrike(p, 930, 350, 1470, 290, m('cross'));
+    klText(p, 'ошибка!', 1200, 400, m('cross', .3), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+    c17Fill(A, 5, 0, NUM).forEach((r, j) => tw(r, { o: 1 }, m('look', .9 + j * .2), .3));
+    c17Fill(B, 4, 5, TWO).forEach((r, j) => tw(r, { o: 1 }, m('look', 2.6 + (j < 4 ? j * .2 : .8 + (j - 4) * .12)), .3));
+    // Pad with a zero: 0,5 becomes 0,50.
+    klMath(p, ['0'], xa + textW('0,5', 72), 630, m('pad', 3.6), { size: 72, fill: RULE, anchor: 'start' });
+    klMath(p, ['0,5  ='], 1180, 520, m('pad', 3.8), { size: 60, anchor: 'end' });
+    klMath(p, ['0,50'], 1205, 520, m('pad', 5.6), { size: 60, anchor: 'start' });
+    klMath(p, ['0,50  >  0,45'], 1200, 650, m('cmp', .3), { size: 64, fill: RULE });
+    klText(p, '50 сотых > 45 сотых', 1200, 710, m('cmp', 2.4), { size: 30, fill: COL.dim, anchor: 'middle' });
+    klText(p, 'больше цифр после запятой — не значит больше число', 800, 820, m('rule'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    pulse(lb, m('rule', 1.4), 1.15); pulse(la, m('rule', 2.6), 1.15);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const A = c17Square(p, { x: 420, y: 130, c: 30, t0: .2 }), B = c17Square(p, { x: 880, y: 130, c: 30, t0: .2 });
+    [A, B].forEach(H => { c17Cols(H, 0, { now: true, width: 2.5 }); c17Rows(H, 0, { now: true }); });
+    S.q2A = c17Fill(A, 6, 0, NUM); S.q2B = c17Fill(B, 5, 8, TWO);
+    const xa = 570 - textW('0,6', 64) / 2;
+    klMath(p, ['0,6'], xa, 520, .3, { size: 64, anchor: 'start' });
+    S.q2z = klMath(p, ['0'], xa + textW('0,6', 64), 520, undefined, { size: 64, fill: RULE, anchor: 'start' });
+    put(S.q2z, { o: 0 });
+    klMath(p, ['0,58'], 1030, 520, .3, { size: 64, fill: TWO });
+    S.q2q = klText(p, '?', 800, 520, .4, { size: 64, fill: COL.dim, anchor: 'middle', weight: 600 });
+    S.q2gt = klMath(p, ['>'], 800, 520, undefined, { size: 72, fill: RULE });
+    put(S.q2gt, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sravni', prompt: ['Сравни: ', $m('0,6'), ' … ', $m('0,58')],
+    build: choice(['<', '>', '='], 1,
+      'Уравняем знаки: 0,6 = 0,60, а 60 сотых больше 58 сотых. Шесть столбиков больше, чем пять столбиков и восемь клеток.',
+      ['Больше цифр — не значит больше число. Допиши ноль: 0,6 = 0,60, и сравни 60 и 58.', null,
+        'Дроби равны, только если после уравнивания знаков совпадают все цифры: 0,60 и 0,58 — нет.'],
+      () => {
+        S.q2A.forEach((r, i) => fx(r, { o: 1 }, i * .08, .25)); S.q2B.forEach((r, i) => fx(r, { o: 1 }, i * .06, .25));
+        fx(S.q2z, { o: 1 }, .9, .3); fx(S.q2q, { o: 0 }, 1.1, .2); fx(S.q2gt, { o: 1 }, 1.2, .3);
+      }),
+  }], done) }],
+
+  ['add', 'Сложение и вычитание', m => {
+    const p = panel(0);
+    klTitle(p, 'Сложение и вычитание: разряд под разрядом');
+    [520, 1100].forEach(x => draw(path(p, `M${x} 230V640`, { stroke: COL.chalk, 'stroke-width': 2 }, { d: 0, o: .2 }), .3, .5));
+    const R1 = 370, R2 = 460, LN = 490, RES = 575, S_ = 72;
+    const line = (x1, x2, t) => draw(path(p, `M${x1} ${LN}H${x2}`, { stroke: COL.chalk, 'stroke-width': 3.5 }, { d: 0 }), t, .4);
+    // Left: pressed to the right edge — tenths over hundredths.
+    klText(p, 'так нельзя', 300, 260, m('wrong'), { size: 30, fill: COL.bad, weight: 600, anchor: 'middle' });
+    const w1 = c17Col(p, '12,4', c17Right('12,4', 440), R1, { at: [0, 0, 0, 0].map(() => m('wrong', .3)) });
+    const w2 = c17Col(p, '3,75', c17Right('3,75', 440), R2, { at: [0, 0, 0, 0].map(() => m('wrong', .5)) });
+    klMath(p, ['+'], 210, R2 - 40, m('wrong', .5), { size: 60 });
+    line(190, 450, m('wrong', .8));
+    [w1[3], w2[3]].forEach(e => { tw(e, { c_fill: COL.bad }, m('wrong', 3.6), .3); pulse(e, m('wrong', 3.6), 1.3); });
+    klStrike(p, 190, 530, 460, 320, m('wrong', 6.1));
+    // Middle: comma under comma.
+    klMath(p, ['12,4 + 3,75'], 810, 260, .3, { size: 44, fill: COL.dim });
+    c17Col(p, '12,4', 800, R1, { at: [0, 0, 0, 0].map(() => m('right', .2)) });
+    c17Col(p, '3,75', 800, R2, { at: [0, 0, 0, 0].map(() => m('right', .4)) });
+    klMath(p, ['+'], 630, R2 - 40, m('right', .4), { size: 60 });
+    klGuide(p, 800, 310, 600, m('right', 1.0), RULE);
+    line(620, 920, m('right', 1.4));
+    c17Col(p, '12,40', 800, R1, { at: [, , , , m('pad', .4)], fills: [, , , , RULE] }).slice(0, 4).forEach(e => e.remove());
+    klArrow(p, 930, 625, 650, 625, 650, RULE, m('sum', .4), .8);
+    const sAt = [m('sum', 7.3), m('sum', 6.6), m('comma', .4), m('sum', 4.4), m('sum', 3.1)];
+    c17Col(p, '16,15', 800, RES, { at: sAt, fills: [, , RULE] });
+    c17Dig(p, '1', 800 - 11.5 - 23, 300, { size: 34, fill: COL.dim, t0: m('sum', 5.6) });
+    // Right: subtraction, 5 = 5,00.
+    klMath(p, ['5 − 1,28'], 1310, 260, m('minus'), { size: 44, fill: COL.dim });
+    c17Col(p, '5,00', 1310, R1, { at: [m('minus', .3), m('minus', 3.6), m('minus', 3.6), m('minus', 3.6)], fills: [, RULE, RULE, RULE] });
+    c17Col(p, '1,28', 1310, R2, { at: [0, 0, 0, 0].map(() => m('minus', .5)) });
+    klMath(p, ['−'], 1170, R2 - 40, m('minus', .5), { size: 60 });
+    line(1160, 1440, m('minus', .8));
+    c17Col(p, '3,72', 1310, RES, { at: [m('diff', 2.0), m('diff', 2.2), m('diff', 1.4), m('diff', .8)], fills: [, RULE] });
+    klText(p, 'запятая в ответе — под запятыми', 800, 720, m('comma', 1.2), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const S_ = 80, cw = 52;
+    c17Col(p, '0,7', 800, 230, { size: S_, cw, at: [.2, .2, .2] });
+    c17Col(p, '0,45', 800, 340, { size: S_, cw, at: [.3, .3, .3, .3] });
+    klMath(p, ['+'], 620, 300, .3, { size: 64 });
+    draw(path(p, 'M600 375H960', { stroke: COL.chalk, 'stroke-width': 3.5 }, { d: 0 }), .4, .4);
+    klGuide(p, 800, 160, 480, .5, RULE);
+    const pad = c17Col(p, '0,70', 800, 230, { size: S_, cw, fills: [, , , RULE] });
+    pad.slice(0, 3).forEach(e => e.remove());
+    put(pad[3], { o: 0 });
+    S.q3els = [pad[3]];
+    c17Col(p, '1,15', 800, 460, { size: S_, cw, fills: [, RULE] }).reverse().forEach(e => { put(e, { o: 0 }); S.q3els.push(e); });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-slozhi', prompt: 'Сложи: запятая под запятой.',
+    build: blanks([{ parts: ['0,7 + 0,45 = ', { box: '1,15' }],
+      why: '0,70 + 0,45: сотые 0 + 5 = 5, десятые 7 + 4 = 11 — пишем 1, а 1 переходит в единицы. Получается 1,15.',
+      hint: 'Допиши ноль, чтобы знаков стало поровну: 0,70 + 0,45. Складывай разряд под разрядом.',
+      fx: () => S.q3els.forEach((e, i) => fx(e, { o: 1 }, i * .3, .3)) }]),
+  }], done) }],
+
+  ['shift', 'Умножение на 10 и 100', m => {
+    const p = panel(0);
+    klTitle(p, 'Умножение и деление на 10, 100');
+    const tb = c17Table(p, { x0: 220, y: 220, cw: 170, h: 140, rows: 2, t0: .2 });
+    const comma = path(p, `M${tb.xb} ${tb.y - 40}V${tb.y + tb.H + 10}`, { stroke: RULE, 'stroke-width': 3, 'stroke-opacity': .6 }, { o: 0 });
+    show(comma, .3);
+    [0, 1].forEach(r => c17Dig(p, ',', tb.xb, tb.cy(r) + 38, { size: 110, fill: RULE, t0: .3 }));
+    const dy = r => tb.cy(r) + 38;
+    // 3,14: the digits move to the left, the comma stays at the border of the places.
+    const g1 = G(p, { o: 0 });
+    [['3', 2], ['1', 3], ['4', 4]].forEach(([c, k]) => c17Dig(g1, c, tb.X(k), dy(0)));
+    show(g1, .4);
+    pulse(g1, 1.4, 1.06);
+    tw(g1, { x: -170 }, m('x10', 3.4), .9);
+    const l10 = klText(p, '· 10', 1270, tb.cy(0) + 14, 3.0, { size: 40, fill: RULE, weight: 700 });
+    hide(l10, m('x100'), .3);
+    tw(g1, { x: -340 }, m('x100', 2.0), .9);
+    klText(p, '· 100', 1270, tb.cy(0) + 14, m('x100', .3), { size: 40, fill: RULE, weight: 700 });
+    klMath(p, ['3,14 · 10  =  31,4'], 220, 590, m('x10', 6.4), { size: 50, anchor: 'start' });
+    klMath(p, ['3,14 · 100  =  314'], 220, 660, m('x100', 3.0), { size: 50, anchor: 'start' });
+    // It looks as if the comma moved right — by as many places as there are zeros.
+    const hop = G(p, { o: 0 });
+    const cx0 = 220 + textW('3', 50), cx1 = 220 + textW('3,14', 50);
+    path(hop, `M${cx0} 615Q${(cx0 + cx1) / 2} 590 ${cx1} 612`, { stroke: RULE, 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '6 6' });
+    show(hop, m('comma', 1.0));
+    klText(p, 'запятая — вправо на столько знаков, сколько нулей', 1020, 625, m('comma', 2.0), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    // 45,6 : 10: the digits move to the right.
+    const g2 = G(p, { o: 0 });
+    [['4', 1], ['5', 2], ['6', 3]].forEach(([c, k]) => c17Dig(g2, c, tb.X(k), dy(1)));
+    show(g2, m('div'));
+    klText(p, ': 10', 1270, tb.cy(1) + 14, m('div', 1.0), { size: 40, fill: RULE, weight: 700 });
+    tw(g2, { x: 170 }, m('div', 1.2), .9);
+    klMath(p, ['45,6 : 10  =  4,56'], 220, 730, m('res', .4), { size: 50, anchor: 'start' });
+    const back = G(p, { o: 0 }), e0 = 220 + textW('45', 50) + 4, e1 = 220 + textW('4', 50) + 4;
+    path(back, `M${e0} 752Q${(e0 + e1) / 2} 778 ${e1} 752`, { stroke: RULE, 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '6 6' });
+    show(back, m('res', 3.0));
+    pulse(g2, m('res', 3.4), 1.06);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const tb = c17Table(p, { x0: 290, y: 200, cw: 170, h: 150, t0: .2 });
+    path(p, `M${tb.xb} ${tb.y - 30}V${tb.y + tb.H + 10}`, { stroke: RULE, 'stroke-width': 3, 'stroke-opacity': .6 });
+    c17Dig(p, ',', tb.xb, tb.cy(0) + 38, { size: 110, fill: RULE });
+    S.q4g = G(p, { o: 0 }); show(S.q4g, .3);
+    S.q4z = [['0', 2], ['0', 3]].map(([c, k]) => c17Dig(S.q4g, c, tb.X(k), tb.cy(0) + 38));
+    c17Dig(S.q4g, '7', tb.X(4), tb.cy(0) + 38);
+    klText(p, '· 100', 1340, tb.cy(0) + 14, .4, { size: 40, fill: RULE, weight: 700 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sto', prompt: 'Умножь на 100.',
+    build: blanks([{ parts: ['0,07 · 100 = ', { box: '7' }],
+      why: 'Умножить на 100 — сдвинуть цифры на два разряда влево: семёрка из сотых попадает в единицы. 0,07 · 100 = 7.',
+      hint: 'В числе 100 два нуля: цифры переходят на два места влево.',
+      fx: () => { fx(S.q4g, { x: -340 }, 0, .9); S.q4z.forEach(e => fx(e, { o: 0 }, 1.0, .4)); } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['После запятой — десятые, сотые, тысячные:  ', { m: ['2,35 = 2 + ', F('3', '10'), ' + ', F('5', '100')] }],
+    ['Знаков после запятой — нулей в знаменателе:  ', { m: ['0,07 = ', F('7', '100')] }],
+    ['Нули в конце дробь не меняют:  ', { m: '0,5 = 0,50 > 0,45' }],
+    ['Запятая под запятой;  ', { m: '· 10' }, ' — цифры на разряд влево:  ', { m: '3,14 → 31,4' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-dec', prompt: 'Запиши десятичной дробью.',
+    build: blanks([
+      { parts: [F('3', '100'), ' = ', { box: '0,03' }], why: 'Три сотых: сотые — второй знак после запятой, 3/100 = 0,03.', hint: 'Сотые — второй знак после запятой; на месте десятых будет 0.' },
+      { parts: [F('7', '10'), ' = ', { box: '0,7' }], why: 'Семь десятых: 7/10 = 0,7.', hint: 'Десятые — первый знак после запятой.' },
+      { parts: ['2 + ', F('4', '100'), ' = ', { box: '2,04' }], why: 'Две целых и четыре сотых: 2,04 (десятых нет — пишем 0).', hint: 'Сотые — второй знак после запятой. Что стоит на месте десятых?' },
+    ]),
+  }, {
+    id: 'p-obyk', prompt: 'Запиши обыкновенной дробью (несократимой).',
+    build: blanks([
+      { parts: ['0,25 = ', { box: '1/4', lowest: true }], why: '0,25 = 25/100 = 1/4 (сократили на 25).', hint: 'Два знака после запятой — знаменатель 100. Потом сократи.' },
+      { parts: ['1,6 = ', { box: '8/5', lowest: true }], why: '1,6 = 16/10 = 8/5 (сократили на 2), то есть 1 3/5.', hint: 'Один знак после запятой — знаменатель 10; в числитель идут все цифры: 16/10. Сократи.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-sr1', prompt: ['Сравни: ', $m('0,7'), ' … ', $m('0,69')],
+    build: choice(['<', '>', '='], 1, '0,7 = 0,70, а 70 сотых больше 69 сотых.',
+      ['Больше цифр — не значит больше число. Допиши ноль: 0,70 и 0,69.', null, 'Уравняй знаки: 0,70 и 0,69 — числа разные.']),
+  }, {
+    id: 'p-sr2', prompt: ['Сравни: ', $m('0,30'), ' … ', $m('0,3')],
+    build: choice(['<', '>', '='], 2, 'Ноль в конце дробь не меняет: 30/100 = 3/10.',
+      ['Ноль в конце ничего не меняет: 0,30 = 0,3.', 'Лишняя цифра — ноль в конце; он ничего не прибавляет: 0,30 = 0,3.']),
+  }, {
+    id: 'p-max', prompt: 'Какое число самое большое?',
+    build: choice([$m('0,8'), $m('0,75'), $m('0,709')], 0, 'Уравняем знаки: 0,800, 0,750 и 0,709. Больше всех 800 тысячных.',
+      [null, 'Допиши нули: 0,750 и 0,800 — восемь десятых больше.', 'Больше цифр — не значит больше: 0,709 < 0,800.']),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-sum', prompt: 'Вычисли (запятая под запятой).',
+    build: blanks([
+      { parts: ['6 − 2,35 = ', { box: '3,65' }], why: '6,00 − 2,35 = 3,65.', hint: 'Запиши 6 как 6,00 и вычитай разряд под разрядом.' },
+      { parts: ['1,25 + 0,8 = ', { box: '2,05' }], why: '1,25 + 0,80 = 2,05.', hint: 'Допиши ноль: 0,8 = 0,80. Десятые: 2 + 8 = 10 — пишем 0, 1 переходит в единицы.' },
+    ]),
+  }, {
+    id: 'p-sdvig', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['2,4 · 100 = ', { box: '240' }], why: 'Цифры сдвигаются на два разряда влево: 2,4 · 100 = 240.', hint: 'В 100 два нуля — сдвиг на два разряда влево; пустое место займёт ноль.' },
+      { parts: ['7,5 : 10 = ', { box: '0,75' }], why: 'Цифры сдвигаются на один разряд вправо: 7,5 : 10 = 0,75.', hint: 'При делении на 10 цифры уходят на один разряд вправо.' },
+    ]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

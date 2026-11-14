@@ -40,6 +40,7 @@ You make ONE lesson of the Papermorph lesson book «Математика в кл
 - The answer box takes numbers only: an answer that is a word, a Roman numeral or an expression is a choice. A side card (`{x: 820, y: 220, w: 700, cls: 'side'}`, as in ch09 `q3`) passes the layout check.
 - Shoot the intro at `intro:sub+1`: at `intro:end` it has already faded out. Re-shoot the sheet after your last layout fix.
 - `check.py` in Chromium may print one console warning, «Did not find element expected to be parsed from: <link rel=expect href="#bar">»: it comes from the engine's head (approved ch13 has it too) and is not yours to fix.
+- math.js `pointRow` draws a decimal point, but this book writes a decimal comma: use ch17's `c17Table` / `c17Col` (comma at a fixed x) instead.
 - Finished lessons hold helpers worth copying under your own prefix (list in `chapters.md`, «Кандидаты в общую библиотеку»): read the one you need, not the whole page.
 
 ## Check before you report

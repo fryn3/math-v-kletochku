@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Среднее арифметическое · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 4.4 «Среднее арифметическое» (5–6 класс). Beat ids match papermorph/content/uroki/ch20/narration.ru.json.
+const CHAPTER = { number: 20, label: '4.4', title: 'Среднее арифметическое', minutes: 7, language: 'ru', next: '../ch21/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, RULE = KL.RULE;
+
+/* ---------- columns of cells ---------- */
+// Where cell k (0 at the bottom) of a column standing on `base` sits: the top-left corner of the cell.
+const c20At = (x, base, ch, k) => [x, base - (k + 1) * ch];
+// One cell w × h: a group at (x, y) holding the shaded square with a chalk edge, so it can fly on its own.
+function c20Cell(p, x, y, w, h, fill = NUM, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { width: w, height: h, fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .55 }, g);
+  return g;
+}
+// A column of n cells on base at x; the cells come in from the bottom up from t0 (no t0: at once). Returns the cells.
+function c20Col(p, x, base, n, cw, ch, t0, fill = NUM) {
+  return Array.from({ length: n }, (_, k) => {
+    const [cx, cy] = c20At(x, base, ch, k), c = c20Cell(p, cx, cy, cw, ch, fill, t0 === undefined ? 1 : 0);
+    if (t0 !== undefined) show(c, t0 + k * .04, .3);
+    return c;
+  });
+}
+// A cell flies along an arc from (x0, y0) to (x1, y1), lifted by `lift` in the middle; on the answer clock when fxMode.
+function c20Fly(cell, [x0, y0], [x1, y1], t, dur = .8, lift = 70, fxMode = false) {
+  const pf = q => put(cell, { x: x0 + (x1 - x0) * q, y: y0 + (y1 - y0) * q - Math.sin(Math.PI * q) * lift });
+  if (fxMode) fxp(pf, t, dur); else prog(pf, t, dur);
+}
+// Cut a cell at (x, y) into k equal horizontal layers: KL.DEN cut lines are drawn at tCut, then the cell gives way to k
+// loose layers (hidden until then), which the caller flies to the other columns. Returns { slices, lines }.
+function c20Cut(p, cell, x, y, cw, ch, k, tCut) {
+  const sh = ch / k;
+  const slices = Array.from({ length: k }, (_, j) => c20Cell(p, x, y + j * sh, cw, sh, NUM, 0));
+  const lines = Array.from({ length: k - 1 }, (_, j) => path(p, `M${x - 6} ${y + (j + 1) * sh}H${x + cw + 6}`, { stroke: DEN, 'stroke-width': 4 }, { d: 0 }));
+  lines.forEach((l, j) => draw(l, tCut + j * .1, .35));
+  hide(cell, tCut + .5, .05);
+  slices.forEach(s => show(s, tCut + .5, .05));
+  return { slices, lines };
+}
+// A dashed level line from x1 to x2 at y, drawn on at t0.
+function c20Level(p, x1, x2, y, t0, col = RULE, width = 4) {
+  const e = path(p, `M${x1} ${y}H${x2}`, { stroke: col, 'stroke-width': width, 'stroke-dasharray': '14 10' }, { o: 0 });
+  if (t0 !== undefined) show(e, t0, .4);
+  return e;
+}
+// A floor line under columns from x1 to x2.
+const c20Floor = (p, x1, x2, base, t0) => draw(path(p, `M${x1} ${base + 2}H${x2}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), t0, .5);
+
+/* ---------- liquid columns (a quantity that pours, not counted cells) ---------- */
+// A column w wide on base at x whose height v (in cells of height ch) can change smoothly: a shaded bar with cell lines
+// every ch (a pattern tied to base, so the lines stay put while the top moves). Returns { set(v), x, w }.
+function c20Bar(p, x, base, w, ch, v, fill = NUM) {
+  const id = `c20pat${x}_${base}_${ch}`;   // fixed by the geometry, so a replay builds the same page
+  const defs = mk('defs', {}, p), pat = mk('pattern', { id, patternUnits: 'userSpaceOnUse', width: 20, height: ch, x: 0, y: base % ch }, defs);
+  mk('path', { d: 'M0 0H20', stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .45 }, pat);
+  const bar = mk('rect', { x, width: w, fill, 'fill-opacity': .85 }, p);
+  const lines = mk('rect', { x, width: w, fill: `url(#${id})` }, p);
+  const edge = mk('rect', { x, width: w, fill: 'none', stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-opacity': .7 }, p);
+  const set = h => [bar, lines, edge].forEach(e => { e.setAttribute('y', base - h * ch); e.setAttribute('height', Math.max(0, h * ch)); });
+  set(v);
+  return { set, x, w };
+}
+// Pour bars from heights `from` to `to` (in cells) over dur: every moment keeps the total when the totals agree.
+function c20Pour(bars, from, to, t, dur = 2, fxMode = false) {
+  const pf = q => bars.forEach((b, i) => b.set(from[i] + (to[i] - from[i]) * q));
+  if (fxMode) fxp(pf, t, dur); else prog(pf, t, dur);
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Среднее арифметическое', (m, D) => klIntro(m, D, {
+    unit: 'Глава 4 · Десятичные дроби и проценты · Тема 4.4',
+    title: 'Среднее арифметическое',
+    sub: 'Как одним числом рассказать о многих числах сразу',
+    art: (g, t0) => {
+      const X = [700, 760, 820], B = 700, C = 50;
+      const cols = [3, 1, 2].map((n, i) => c20Col(g, X[i], B, n, C, C, t0 + i * .1));
+      c20Fly(cols[0][2], c20At(X[0], B, C, 2), c20At(X[1], B, C, 1), t0 + 1.4, .8, 50);
+      c20Level(g, 680, 890, B - 2 * C, t0 + 2.4);
+    },
+  })],
+
+  ['level', 'Выравниваем столбики', m => {
+    const p = panel(0);
+    klTitle(p, 'Выровняем столбики', 'клетки перекладываем, но не добавляем и не убираем');
+    const H = [6, 2, 5, 3, 4], CW = 90, CH = 60, GAP = 30, X0 = 200, B = 720;
+    const X = H.map((_, i) => X0 + i * (CW + GAP));
+    c20Floor(p, X0 - 30, X[4] + CW + 30, B, .1);
+    const cols = H.map((n, i) => c20Col(p, X[i], B, n, CW, CH, .15 + i * .1));
+    H.forEach((n, i) => klText(p, String(n), X[i] + CW / 2, B + 52, m('h', i * .45), { size: 40, weight: 700, fill: COL.dim, anchor: 'middle' }));
+    // The count stays 20 while the cells move.
+    const sum = klRow(p, ['всего клеток:  ', { m: '20', fill: NUM }], 1180, 400, m('sum'), { size: 36, msize: 56 });
+    klRow(p, ['столбиков:  ', { m: '5', fill: DEN }], 1180, 480, m('sum', .6), { size: 36, msize: 56 });
+    // Two cells from the 6 go to the 2, one cell from the 5 goes to the 3.
+    c20Fly(cols[0][5], c20At(X[0], B, CH, 5), c20At(X[1], B, CH, 2), m('move'), .9);
+    c20Fly(cols[0][4], c20At(X[0], B, CH, 4), c20At(X[1], B, CH, 3), m('move', 1.1), .9);
+    c20Fly(cols[2][4], c20At(X[2], B, CH, 4), c20At(X[3], B, CH, 3), m('move', 2.2), .9, 80);
+    const pts = [];
+    X.forEach(x => { for (let k = 0; k < 4; k++) pts.push([x + CW / 2, B - (k + .5) * CH + 11]); });
+    const nums = klCount(p, pts, m('cnt'), { step: .09, size: 30, fill: COL.board });
+    nums.forEach(e => hide(e, m('even', -.3), .3));
+    pulse(sum, m('cnt', 1.9), 1.25);
+    c20Level(p, X0 - 30, X[4] + CW + 30, B - 4 * CH, m('even'));
+    klText(p, '4', X[4] + CW + 50, B - 4 * CH + 14, m('even', .3), { size: 44, weight: 700, fill: RULE });
+    const ax = X[4] + CW + 50;
+    draw(path(p, `M${ax} ${B}V${B - 4 * CH + 30}`, { stroke: RULE, 'stroke-width': 3 }, { d: 0 }), m('mean'), .6);
+    draw(path(p, `M${ax - 9} ${B - 12}L${ax} ${B}L${ax + 9} ${B - 12}M${ax - 9} ${B - 4 * CH + 42}L${ax} ${B - 4 * CH + 30}L${ax + 9} ${B - 4 * CH + 42}`, { stroke: RULE, 'stroke-width': 3 }, { d: 0 }), m('mean', .5), .3);
+    klRow(p, ['среднее арифметическое:  ', { m: '4', fill: RULE }], 1180, 620, m('avg'), { size: 36, msize: 60, fill: RULE, weight: 600 });
+  }],
+
+  ['rule', 'Сумма : количество', m => {
+    const p = panel(0);
+    klTitle(p, 'Среднее = сумма : количество');
+    const CW = 80, CH = 60, GAP = 24, X0 = 150, B = 640;
+    const X = [0, 1, 2, 3, 4].map(i => X0 + i * (CW + GAP)), XC = [0, 1, 2, 3, 4].map(i => X0 + 48 + i * CW);
+    c20Floor(p, X0 - 20, X[4] + CW + 20, B, .1);
+    const cols = X.map((x, i) => { const g = G(p); c20Col(g, x, B, 4, CW, CH, .1 + i * .05); return g; });
+    const labs = [6, 2, 5, 3, 4].map((n, i) => klText(p, String(n), X[i] + CW / 2, B + 50, .4, { size: 38, weight: 700, fill: COL.dim, anchor: 'middle' }));
+    c20Level(p, X0 - 20, X[4] + CW + 20, B - 4 * CH, .5);
+    // The worked lines on the right, one per mark.
+    klRow(p, [{ m: '6 + 2 + 5 + 3 + 4 = ' }, { m: '20', fill: NUM }], 1150, 300, m('sum'), { size: 40, msize: 60 });
+    labs.forEach((l, i) => pulse(l, m('sum', i * .15), 1.3));
+    klRow(p, ['количество:  ', { m: '5', fill: DEN }], 1150, 390, m('cnt'), { size: 36, msize: 60 });
+    klRow(p, [{ m: '20', fill: NUM }, { m: ' : ' }, { m: '5', fill: DEN }, { m: ' = ' }], 1150, 490, m('dq'), { size: 40, msize: 72, anchor: 'end' });
+    klRow(p, [{ m: '4', fill: RULE }], 1150, 490, m('dr'), { size: 40, msize: 72, anchor: 'start' });
+    // «сумму» lights the cells, «количество» the columns.
+    cols.forEach((g, i) => { tw(g, { y: -10 }, m('div', 1 + i * .12), .2, out); tw(g, { y: 0 }, m('div', 1.2 + i * .12), .3); });
+    const box = G(p, { o: 0 });
+    mk('rect', { x: 830, y: 548, width: 640, height: 84, rx: 16, fill: 'none', stroke: RULE, 'stroke-width': 3 }, box);
+    const W3 = ['среднее = ', 'сумма', ' : количество'], ws = W3.map(w => klW(w, 36, 700));
+    let bx = 1150 - (ws[0] + ws[1] + ws[2]) / 2;
+    W3.forEach((w, i) => { klText(box, w, bx, 602, m(['rule', 'rs', 'rc'][i]), { size: 36, fill: RULE, weight: 700 }); bx += ws[i]; });
+    show(box, m('rule'));
+    // The level columns slide together into one 4 × 5 rectangle.
+    labs.forEach(l => hide(l, m('rect'), .3));
+    cols.forEach((g, i) => tw(g, { x: XC[i] - X[i] }, m('rect', .2), .7));
+    klBrace(p, XC[0], XC[4] + CW, B + 22, '5', m('rect', 1.1), { up: false, fill: DEN, size: 44 });
+    draw(path(p, `M${XC[0] - 22} ${B}H${XC[0] - 34}V${B - 4 * CH}H${XC[0] - 22}`, { stroke: RULE, 'stroke-width': 3 }, { d: 0 }), m('rect', 1.8), .5);
+    klText(p, '4', XC[0] - 50, B - 2 * CH + 15, m('rect', 2.1), { size: 44, weight: 700, fill: RULE, anchor: 'end' });
+    klRow(p, ['сумма = среднее · количество'], 1150, 720, m('back'), { size: 34, weight: 600, fill: RULE });
+    klRow(p, [{ m: '20', fill: NUM }, { m: ' = ' }, { m: '4', fill: RULE }, { m: ' · ' }, { m: '5', fill: DEN }], 1150, 800, m('back', .8), { size: 40, msize: 64 });
+    // The rectangle's 20 cells are the sum: its frame is drawn round them.
+    draw(path(p, `M${XC[0]} ${B}V${B - 4 * CH}H${XC[4] + CW}V${B}Z`, { stroke: NUM, 'stroke-width': 6 }, { d: 0 }), m('back', 1.8), 1.2);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const H = [3, 7, 5, 1], CW = 70, CH = 44, GAP = 26, X0 = 620, B = 600;
+    const X = H.map((_, i) => X0 + i * (CW + GAP)), x2 = X[3] + CW + 24;
+    c20Floor(p, X0 - 24, x2, B, .1);
+    S.q1 = { X, B, CH, cols: H.map((n, i) => c20Col(p, X[i], B, n, CW, CH, .15 + i * .08)) };
+    H.forEach((n, i) => klText(p, String(n), X[i] + CW / 2, B + 44, .4, { size: 34, weight: 700, fill: COL.dim, anchor: 'middle' }));
+    S.q1.lines = [3, 4, 5, 6].map(h => {
+      const y = B - h * CH, l = c20Level(p, X0 - 24, x2, y, .6, COL.chalk, 2.5);
+      klText(p, String(h), x2 + 40, y + 12, .6, { size: 32, weight: 600, fill: COL.dim, anchor: 'middle' });
+      return { l, y };
+    });
+    S.q1.x1 = X0 - 30; S.q1.w = x2 + 70 - S.q1.x1;
+  }, { ask: done => {
+    const Q = S.q1;
+    quiz(BAND, [{
+      id: 'c-uroven', prompt: 'На какой высоте выровняются столбики? Нажми на нужную линию.',
+      build: pickEls(Q.lines.map((L, i) => ({ el: L.l, box: [Q.x1, L.y - 20, Q.w, 40], label: String(i + 3) })), 1,
+        'Всего 3 + 7 + 5 + 1 = 16 клеток, столбиков 4: 16 : 4 = 4.',
+        i => i === 0 ? 'Посчитай все клетки и раздели на число столбиков.' : 'Столько клеток не хватит: всего их 16, а столбиков 4.',
+        () => {
+          const { X, B, CH, cols } = Q;
+          // The 7 gives one cell to the 3 and two to the 1; the 5 gives one to the 1.
+          c20Fly(cols[1][6], c20At(X[1], B, CH, 6), c20At(X[0], B, CH, 3), 0, .7, 50, true);
+          c20Fly(cols[1][5], c20At(X[1], B, CH, 5), c20At(X[3], B, CH, 1), .5, .8, 90, true);
+          c20Fly(cols[1][4], c20At(X[1], B, CH, 4), c20At(X[3], B, CH, 2), 1, .8, 90, true);
+          c20Fly(cols[2][4], c20At(X[2], B, CH, 4), c20At(X[3], B, CH, 3), 1.5, .7, 50, true);
+          fx(Q.lines[1].l, { 'a_stroke-width': 5, c_stroke: RULE }, 2.2, .3);
+        }),
+    }], done);
+  } }],
+
+  ['frac', 'Среднее — дробное число', m => {
+    const p = panel(0);
+    klTitle(p, 'Среднее не всегда целое', 'оценки: 5, 3, 4, 5');
+    const H = [5, 3, 4, 5], CW = 90, CH = 64, GAP = 30, X0 = 180, B = 680;
+    const X = H.map((_, i) => X0 + i * (CW + GAP)), x2 = X[3] + CW + 30;
+    c20Floor(p, X0 - 30, x2, B, .1);
+    const cols = H.map((n, i) => c20Col(p, X[i], B, n, CW, CH, m('cols', i * .3)));
+    H.forEach((n, i) => klText(p, String(n), X[i] + CW / 2, B + 50, m('cols', i * .3), { size: 40, weight: 700, fill: COL.dim, anchor: 'middle' }));
+    c20Fly(cols[0][4], c20At(X[0], B, CH, 4), c20At(X[1], B, CH, 3), m('move'), .9);
+    const extra = cols[3][4], [ex, ey] = c20At(X[3], B, CH, 4);
+    tw(extra, { s: 1.08 }, m('move', 1.5), .2); tw(extra, { s: 1 }, m('move', 1.75), .3);
+    const { slices, lines } = c20Cut(p, extra, ex, ey, CW, CH, 4, m('cut'));
+    lines.forEach(l => hide(l, m('share'), .3));
+    // Layers 0–2 go to columns 0–2; layer 3 is already on top of column 3.
+    const sy = B - 4 * CH - CH / 4;
+    [0, 1, 2].forEach(i => c20Fly(slices[i], [ex, ey + i * CH / 4], [X[i], sy], m('share', .2 + i * .5), .8, 40 + 20 * (2 - i)));
+    c20Level(p, X0 - 30, x2, sy, m('h'));
+    klText(p, '4,25', x2 + 16, sy + 14, m('dec'), { size: 40, weight: 700, fill: RULE });
+    klMath(p, ['4', F('1', '4')], 1100, 300, m('h', .6), { size: 64, fill: RULE, anchor: 'end' });
+    klMath(p, [' = 4,25'], 1100, 300, m('dec'), { size: 64, fill: RULE, anchor: 'start' });
+    klRow(p, [{ m: '5 + 3 + 4 + 5 = ' }, { m: '17', fill: NUM }], 1120, 450, m('div'), { size: 40, msize: 56 });
+    klRow(p, [{ m: '17', fill: NUM }, { m: ' : ' }, { m: '4', fill: DEN }, { m: ' = ' }], 1120, 540, m('d2'), { size: 40, msize: 56, anchor: 'end' });
+    klRow(p, [{ m: '4,25', fill: RULE }], 1120, 540, m('d3'), { size: 40, msize: 56, anchor: 'start' });
+    klMath(p, ['<  4,25  <'], 1120, 680, m('between'), { size: 56 });
+    klText(p, 'между наименьшим и наибольшим', 1120, 740, m('between', .3), { size: 30, fill: COL.dim, anchor: 'middle' });
+    klMath(p, ['3'], 1120 - mathW(['<  4,25  <'], 56) / 2 - 18, 680, m('lo'), { size: 56, fill: COL.dim, anchor: 'end' });
+    c20Level(p, X0 - 30, x2, B - 3 * CH, m('lo'), COL.dim, 2);
+    klMath(p, ['5'], 1120 + mathW(['<  4,25  <'], 56) / 2 + 18, 680, m('hi'), { size: 56, fill: COL.dim, anchor: 'start' });
+    c20Level(p, X0 - 30, x2, B - 5 * CH, m('hi'), COL.dim, 2);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const H = [3, 4, 6, 6], CW = 70, CH = 48, GAP = 26, X0 = 640, B = 540;
+    const X = H.map((_, i) => X0 + i * (CW + GAP)), x2 = X[3] + CW + 24;
+    c20Floor(p, X0 - 24, x2, B, .1);
+    H.forEach((n, i) => { c20Col(p, X[i], B, n, CW, CH, .15 + i * .08); klText(p, String(n), X[i] + CW / 2, B + 44, .4, { size: 34, weight: 700, fill: COL.dim, anchor: 'middle' }); });
+    S.q2 = { line: c20Level(p, X0 - 24, x2, B - 4.75 * CH), lab: klText(p, '4,75', x2 + 14, B - 4.75 * CH + 12, undefined, { size: 36, weight: 700, fill: RULE }) };
+    put(S.q2.lab, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-srednee', prompt: 'Найди среднее чисел 3, 4, 6, 6.',
+    build: blanks([{ parts: ['сумма: ', { box: '19' }, ',   среднее: ', { box: '4.75' }],
+      why: 'Сумма 19, чисел 4: 19 : 4 = 4,75 — между 3 и 6.',
+      hint: 'Сначала сложи все числа, потом раздели сумму на их количество — на 4.',
+      fx: () => { fx(S.q2.line, { o: 1 }, 0, .4); fx(S.q2.lab, { o: 1 }, .2, .4); } }]),
+  }], done) }],
+
+  ['newval', 'Новое число', m => {
+    const p = panel(0);
+    klTitle(p, 'Добавилось новое число');
+    const CW = 80, CH = 56, GAP = 24, X0 = 180, B = 660;
+    const X = [0, 1, 2, 3, 4].map(i => X0 + i * (CW + GAP)), x2 = X[4] + CW + 30;
+    c20Floor(p, X0 - 30, X[3] + CW + 30, B, .1);
+    [0, 1, 2, 3].forEach(i => { c20Col(p, X[i], B, 4, CW, CH, .15 + i * .08); klText(p, '?', X[i] + CW / 2, B + 48, .5, { size: 38, weight: 700, fill: COL.dim, anchor: 'middle' }); });
+    const old = c20Level(p, X0 - 30, X[3] + CW + 30, B - 4 * CH, m('four'));
+    const oldLab = klText(p, 'среднее 4', X0 - 40, B - 4 * CH - 16, m('four', .3), { size: 30, weight: 600, fill: RULE });
+    klRow(p, ['сумма:  ', { m: '4 · 4 = ' }, { m: '16', fill: NUM }], 1150, 300, m('sum'), { size: 36, msize: 56 });
+    const pts = [];
+    [0, 1, 2, 3].forEach(i => { for (let k = 0; k < 4; k++) pts.push([X[i] + CW / 2, B - (k + .5) * CH + 10]); });
+    klCount(p, pts, m('sum', .6), { step: .13, size: 28, fill: COL.board }).forEach(e => hide(e, m('add', -.3), .3));
+    // The new grade 5 slides in as a fifth column.
+    const g5 = G(p, { x: 500 });
+    const c5 = c20Col(g5, X[4], B, 5, CW, CH);
+    path(g5, `M${X[4] - 10} ${B + 2}H${X[4] + CW + 30}`, { stroke: COL.chalk, 'stroke-width': 3 });
+    T(g5, '5', { x: X[4] + CW / 2, y: B + 48, size: 38, weight: 700, fill: NUM, anchor: 'middle' });
+    put(g5, { o: 0 });
+    tw(g5, { o: 1, x: 0 }, m('add'), .9, out);
+    klRow(p, ['оценок  ', { m: '5', fill: DEN }, ',  сумма:  ', { m: '16 + 5 = ' }, { m: '21', fill: NUM }], 1150, 400, m('new'), { size: 36, msize: 56 });
+    const [ex, ey] = c20At(X[4], B, CH, 4);
+    tw(c5[4], { s: 1.08 }, m('new', 1.2), .2); tw(c5[4], { s: 1 }, m('new', 1.45), .3);
+    const { slices, lines } = c20Cut(p, c5[4], ex, ey, CW, CH, 5, m('cut'));
+    lines.forEach(l => hide(l, m('share'), .3));
+    hide(oldLab, m('share'), .3);
+    const sh = CH / 5, sy = B - 4 * CH - sh;
+    [0, 1, 2, 3].forEach(i => c20Fly(slices[i], [ex, ey + i * sh], [X[i], sy], m('share', .1 + i * .3), .8, 40 + 12 * (3 - i)));
+    tw(old, { 'a_stroke-width': 2, o: .5 }, m('mean'), .3);
+    c20Level(p, X0 - 30, x2, sy, m('mean'));
+    klText(p, '4,2', x2 + 14, sy - 4, m('mean', .2), { size: 38, weight: 700, fill: RULE });
+    klRow(p, [{ m: '21', fill: NUM }, { m: ' : ' }, { m: '5', fill: DEN }, { m: ' = ' }], 1150, 520, m('mean', .5), { size: 40, msize: 64, anchor: 'end' });
+    klRow(p, [{ m: '4,2', fill: RULE }], 1150, 520, m('mres'), { size: 40, msize: 64, anchor: 'start' });
+    klRow(p, ['было  ', { m: '4', fill: COL.dim }, ',  стало  ', { m: '4,2', fill: RULE }], 1150, 650, m('small'), { size: 34, msize: 52 });
+    klText(p, 'прибавка делится на всех', 1150, 710, m('all'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    slices.forEach((s, i) => { tw(s, { y: sy - 10 }, m('all', .3 + i * .15), .2, out); tw(s, { y: sy }, m('all', .5 + i * .15), .3); });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const CW = 50, CH = 26, GAP = 16, X0 = 610, B = 520;
+    const X = [0, 1, 2, 3, 4, 5].map(i => X0 + i * (CW + GAP));
+    c20Floor(p, X0 - 20, X[5] + CW + 20, B, .1);
+    S.q3 = { X, B, CH, cols: [6, 6, 6, 6, 6, 12].map((n, i) => c20Col(p, X[i], B, n, CW, CH, .15 + i * .06, i === 5 ? KL.TWO : NUM)) };
+    [6, 6, 6, 6, 6, 12].forEach((n, i) => klText(p, String(n), X[i] + CW / 2, B + 40, .4, { size: 30, weight: 700, fill: i === 5 ? KL.TWO : COL.dim, anchor: 'middle' }));
+    klText(p, 'среднее 6', X0 - 30, B - 6 * CH - 14, .5, { size: 28, weight: 600, fill: RULE, anchor: 'end' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-novoe', prompt: 'Среднее пяти чисел равно 6. К ним добавили число 12.',
+    build: blanks([{ parts: ['сумма: ', { box: '42' }, ',   среднее: ', { box: '7' }],
+      why: 'Сумма пяти чисел 5 · 6 = 30, с новым числом 42; чисел теперь 6: 42 : 6 = 7.',
+      hint: 'Сумма пяти чисел — среднее · количество = 5 · 6. Прибавь 12 и раздели на 6.',
+      fx: () => { const { X, B, CH, cols } = S.q3; [0, 1, 2, 3, 4].forEach(i => c20Fly(cols[5][11 - i], c20At(X[5], B, CH, 11 - i), c20At(X[i], B, CH, 6), i * .3, .7, 40, true)); } }]),
+  }], done) }],
+
+  ['speed', 'Средняя скорость', m => {
+    const p = panel(0);
+    klTitle(p, 'Средняя скорость');
+    const CW = 130, CH = 36, B = 700, X = [240, 420];
+    c20Floor(p, 200, 590, B, .1);
+    // One cell is 10 km; each bar is the distance covered in that hour.
+    const bars = X.map(x => c20Bar(p, x, B, CW, CH, 0));
+    ['1-й час', '2-й час'].forEach((s, i) => klText(p, s, X[i] + CW / 2, B + 46, m('trip', i * .3), { size: 30, fill: COL.dim, anchor: 'middle' }));
+    c20Pour([bars[0]], [0], [9], m('h1'), 1);
+    klText(p, '90 км', X[0] + CW / 2, B - 9 * CH - 18, m('h1', .8), { size: 32, weight: 700, fill: NUM, anchor: 'middle' });
+    c20Pour([bars[1]], [0], [6], m('h2'), .8);
+    const l60 = klText(p, '60 км', X[1] + CW / 2, B - 6 * CH - 18, m('h2', .7), { size: 32, weight: 700, fill: NUM, anchor: 'middle' });
+    klText(p, '1 клетка = 10 км', 200, 250, m('trip'), { size: 28, fill: COL.dim });
+    hide(l60, m('even'), .3);
+    c20Pour(bars, [9, 6], [7.5, 7.5], m('even', .2), 1.8);
+    c20Level(p, 200, 590, B - 7.5 * CH, m('even', 2));
+    klText(p, 'по 75 км', 610, B - 7.5 * CH + 12, m('even', 2.2), { size: 34, weight: 700, fill: RULE });
+    klRow(p, ['путь:  ', { m: '90 + 60 = ' }, { m: '150 км', fill: NUM }, ',   время:  ', { m: '2 ч', fill: DEN }], 1180, 330, m('even', .2), { size: 34, msize: 48 });
+    const box = G(p, { o: 0 });
+    mk('rect', { x: 860, y: 450, width: 640, height: 84, rx: 16, fill: 'none', stroke: RULE, 'stroke-width': 3 }, box);
+    T(box, 'весь путь : всё время', { x: 1180, y: 504, size: 38, fill: RULE, weight: 700, anchor: 'middle' });
+    show(box, m('rule'));
+    klRow(p, [{ m: '150', fill: NUM }, { m: ' : ' }, { m: '2', fill: DEN }, { m: ' = ' }], 1180, 660, m('calc'), { size: 40, msize: 72, weight: 600, anchor: 'end' });
+    klRow(p, [{ m: '75', fill: RULE }, '  км/ч'], 1180, 660, m('res'), { size: 40, msize: 72, weight: 600, anchor: 'start' });
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Средняя скорость — не среднее скоростей');
+    const CW = 90, CH = 36, GAP = 20, X0 = 140, B = 680;
+    const X = [0, 1, 2, 3, 4].map(i => X0 + i * (CW + GAP)), x2 = X[4] + CW + 24;
+    c20Floor(p, X0 - 24, x2, B, .1);
+    const V = [6, 6, 4, 4, 4];
+    const bars = X.map(x => c20Bar(p, x, B, CW, CH, 0));
+    c20Pour(bars.slice(0, 2), [0, 0], [6, 6], m('go'), .8);
+    c20Pour(bars.slice(2), [0, 0, 0], [4, 4, 4], m('ret'), .8);
+    const labs = V.map((v, i) => klText(p, `${v * 10}`, X[i] + CW / 2, B + 44, m(i < 2 ? 'go' : 'ret', .4 + i * .1), { size: 32, weight: 700, fill: COL.dim, anchor: 'middle' }));
+    klBrace(p, X[0], X[1] + CW, 400, 'туда: 2 ч', m('go', 1), { size: 30, fill: NUM });
+    klBrace(p, X[2], X[4] + CW, 400, 'обратно: 3 ч', m('ret', 1), { size: 30, fill: DEN });
+    klText(p, 'столбик — путь за один час (клетка = 10 км)', 100, 250, m('go'), { size: 26, fill: COL.dim });
+    // The wrong answer: the two speeds averaged.
+    const bad = c20Level(p, X0 - 24, x2, B - 5 * CH, m('wrong', .8), COL.bad, 3);
+    klMath(p, ['(60 + 40) : 2 = 50'], 1140, 330, m('wrong'), { size: 56, fill: COL.dim });
+    klStrike(p, 920, 345, 1360, 290, m('strike'));
+    klText(p, 'ошибка!', 1140, 400, m('strike', .2), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+    hide(bad, m('why'), .4);
+    bars.slice(2).forEach((b, i) => { pulse(labs[2 + i], m('why', .8 + i * .2), 1.4); });
+    labs.forEach(l => hide(l, m('even'), .3));
+    c20Pour(bars, V, [4.8, 4.8, 4.8, 4.8, 4.8], m('even', .2), 1.6);
+    c20Level(p, X0 - 24, x2, B - 4.8 * CH, m('even', 1.8));
+    klText(p, '48', x2 + 14, B - 4.8 * CH + 12, m('res'), { size: 38, weight: 700, fill: RULE });
+    klRow(p, ['путь:  ', { m: '120 + 120 = ' }, { m: '240 км', fill: NUM }], 1140, 540, m('right'), { size: 34, msize: 48 });
+    klRow(p, ['время:  ', { m: '2 + 3 = ' }, { m: '5 ч', fill: DEN }], 1140, 610, m('time'), { size: 34, msize: 48 });
+    klRow(p, [{ m: '240', fill: NUM }, { m: ' : ' }, { m: '5', fill: DEN }, { m: ' = ' }], 1140, 730, m('calc'), { size: 40, msize: 68, weight: 600, anchor: 'end' });
+    klRow(p, [{ m: '48', fill: RULE }, '  км/ч'], 1140, 730, m('res'), { size: 40, msize: 68, weight: 600, anchor: 'start' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const CW = 100, CH = 18, GAP = 30, X0 = 620, B = 560;
+    const X = [0, 1, 2].map(i => X0 + i * (CW + GAP));
+    c20Floor(p, X0 - 24, X[2] + CW + 24, B, .1);
+    S.q4 = { bars: [15, 12, 12].map((v, i) => c20Bar(p, X[i], B, CW, CH, v)) };
+    [15, 12, 12].forEach((v, i) => {
+      klText(p, `${v} км`, X[i] + CW / 2, B - v * CH - 14, .3, { size: 28, weight: 700, fill: NUM, anchor: 'middle' });
+      klText(p, `${i + 1}-й час`, X[i] + CW / 2, B + 38, .3, { size: 26, fill: COL.dim, anchor: 'middle' });
+    });
+    S.q4.line = c20Level(p, X0 - 24, X[2] + CW + 24, B - 13 * CH);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-skorost', prompt: 'Велосипедист ехал 1 ч со скоростью 15 км/ч, а потом 2 ч со скоростью 12 км/ч. Какова его средняя скорость?',
+    build: choice(['13 км/ч', '13,5 км/ч', '12 км/ч'], 0,
+      'Весь путь 15 + 12 + 12 = 39 км, всё время 3 ч: 39 : 3 = 13 км/ч.',
+      [null, '13,5 = (15 + 12) : 2 — это среднее двух скоростей. Но со скоростью 12 км/ч он ехал дольше.', 'Первый час он ехал быстрее, так что средняя скорость больше 12 км/ч.'],
+      () => { c20Pour(S.q4.bars, [15, 12, 12], [13, 13, 13], 0, 1.4, true); fx(S.q4.line, { o: 1 }, 1.4, .4); }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Среднее арифметическое = сумма : количество',
+    'Оно лежит между наименьшим и наибольшим числом',
+    'Сумма = среднее · количество',
+    'Средняя скорость = весь путь : всё время',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-najdi', prompt: 'Найди среднее арифметическое.',
+    build: blanks([
+      { parts: ['12, 15, 18, 19   →   ', { box: '16' }], why: '12 + 15 + 18 + 19 = 64, 64 : 4 = 16.', hint: 'Сложи четыре числа и раздели сумму на 4.' },
+      { parts: ['5, 4, 4, 5, 3   →   ', { box: '4.2' }], why: '5 + 4 + 4 + 5 + 3 = 21, 21 : 5 = 4,2.', hint: 'Оценок пять: сумму дели на 5.' },
+    ]),
+  }, {
+    id: 'p-summa', prompt: 'Среднее арифметическое трёх чисел равно 10. Найди их сумму.',
+    build: blanks([{ parts: ['сумма: ', { box: '30' }], why: 'Сумма = среднее · количество = 10 · 3 = 30.', hint: 'Сумма — это среднее, умноженное на количество.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-dobavili', prompt: 'Среднее четырёх чисел равно 7. К ним добавили число 12. Найди новое среднее.',
+    build: blanks([{ parts: ['новое среднее: ', { box: '8' }], why: 'Сумма 4 · 7 = 28, с новым числом 40; чисел 5: 40 : 5 = 8.', hint: 'Найди сумму четырёх чисел: 4 · 7. Прибавь 12 и раздели на 5.' }]),
+  }, {
+    id: 'p-avto', prompt: 'Автомобиль ехал 2 ч со скоростью 70 км/ч и 1 ч со скоростью 55 км/ч. Найди его среднюю скорость.',
+    build: blanks([{ parts: [{ box: '65' }, ' км/ч'], why: 'Путь 140 + 55 = 195 км, время 3 ч: 195 : 3 = 65 км/ч.', hint: 'Весь путь (2 · 70 + 55) раздели на всё время — 3 часа.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['Среднее арифметическое всегда равно одному из чисел.'], ans: ['no'], why: 'Среднее чисел 5, 3, 4, 5 — это 4,25: такого числа среди них нет.' },
+      { parts: ['Среднее не меньше наименьшего числа и не больше наибольшего.'], ans: ['yes'], why: 'Выровненные столбики не ниже самого низкого и не выше самого высокого.' },
+      { parts: ['Средняя скорость — это полусумма двух скоростей.'], ans: ['no'], why: 'Весь путь делят на всё время: с медленной скоростью часто едут дольше.' },
+      { parts: ['Если среднее пяти чисел равно 3, то их сумма равна 15.'], ans: ['yes'], why: 'Сумма = среднее · количество = 3 · 5 = 15.' },
+    ], [['yes', 'верно', null, '1'], ['no', 'неверно', null, '2']], { multi: false, text: true }),
+  }, {
+    id: 'p-tretje', prompt: 'Среднее трёх чисел равно 8. Два из них — 5 и 9. Найди третье число.',
+    build: choice(['10', '8', '7'], 0, 'Сумма трёх чисел 8 · 3 = 24, третье число 24 − 5 − 9 = 10.',
+      [null, '8 — это среднее. Сумма трёх чисел 8 · 3 = 24; вычти из неё 5 и 9.', '7 — это среднее чисел 5 и 9. Найди сумму трёх: 8 · 3 = 24.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

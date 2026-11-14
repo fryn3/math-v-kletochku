@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Умножение и деление десятичных дробей · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 4.2 «Умножение и деление десятичных дробей». Beat ids match papermorph/content/uroki/ch18/narration.ru.json.
+const CHAPTER = { number: 18, label: '4.2', title: 'Умножение и деление десятичных дробей', minutes: 8, language: 'ru', next: '../ch19/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, RULE = KL.RULE;
+
+// A number written digit by digit in even slots, with a decimal comma (KL.RULE) that can hop between them.
+// places = digits after the comma (0: the comma sits at the far right, hidden). px(k) is the gap with k digits after it.
+// hop(from, to, t, run) moves the comma gap by gap along arcs over the digits (run = tw in a beat, fx in an answer).
+function c18Digits(p, digits, x, y, places, { size = 84, fill = COL.chalk, t0 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), w = size * .68, n = digits.length, x0 = x - n * w / 2;
+  const ds = [...digits].map((c, i) => T(g, c, { x: x0 + (i + .5) * w, y, size, fill, font: MATH, anchor: 'middle' }));
+  const px = k => x0 + (n - k) * w;
+  const cm = T(g, ',', { x: px(places), y, size, fill: RULE, font: MATH, anchor: 'middle', weight: 700, o: places ? 1 : 0 });
+  const trail = path(g, '', { stroke: RULE, 'stroke-width': 2.5, 'stroke-dasharray': '5 6' }, { o: 0 });
+  if (t0 !== undefined) show(g, t0);
+  return { g, ds, cm, px, w, x0, x1: x0 + n * w,
+    hop(from, to, t, run = tw, dur = .5) {
+      const steps = Math.abs(to - from), sg = Math.sign(to - from), at = k => px(from + sg * k);
+      run(cm, { o: 1 }, t, .2);
+      let d = '';
+      for (let k = 0; k < steps; k++) d += `M${at(k)} ${y - size * .2}Q${(at(k) + at(k + 1)) / 2} ${y - size * 1.5} ${at(k + 1)} ${y - size * .2}`;
+      trail.setAttribute('d', d);
+      run(trail, { o: .8 }, t + steps * dur, .3);
+      run(trail, { o: 0 }, t + steps * dur + 1.8, .6);
+      (run === tw ? prog : fxp)(q => {
+        const s = q * steps, k = Math.min(steps - 1, Math.floor(s)), f = s - k;
+        put(cm, { x: at(k) + (at(k + 1) - at(k)) * f, y: y - Math.sin(Math.PI * f) * size * .9 });
+      }, t, steps * dur, lin);
+    } };
+}
+
+// Long division «уголком»: the dividend (with its comma) at (x, y) in even slots, the divisor beyond the corner, the
+// quotient under it. Parts are made hidden for the beat to bring in: t = a time shows them then, null keeps them hidden
+// (for an answer's fx), undefined shows them at once. num(str, right, row) writes a number ending in slot `right`
+// on row `row` (minus: a subtraction row); line(a, b, row) underlines slots a..b; q(str, i) / qc(i) put a digit / the
+// comma into the quotient; move(str, i, row, t) brings dividend digit i down to a row.
+function c18Corner(p, { x, y, dividend, divisor, size = 72, lh = size * 1.05, qn = 3, t0 }) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), w = size * .62, base = { size, font: MATH, anchor: 'middle' };
+  const digs = [], cmAt = [];
+  for (const ch of dividend) ch === ',' ? cmAt.push(digs.length) : digs.push(ch);
+  const dx = i => x + w * (i + .5), ry = r => y + r * lh;
+  const xv = x + w * digs.length + size * .25, xq = xv + size * .3, qy = y + lh;
+  const dg = digs.map((c, i) => T(g, c, { ...base, x: dx(i), y }));
+  const cm = cmAt.map(k => T(g, ',', { ...base, x: x + w * k, y, fill: RULE, weight: 700 }));
+  path(g, `M${xv} ${y - size * .8}V${qy + size * .3}M${xv} ${y + size * .28}H${xq + Math.max(w * qn, textW(divisor, size)) + size * .2}`, { stroke: COL.chalk, 'stroke-width': 3 });
+  T(g, divisor, { ...base, anchor: 'start', x: xq, y, fill: DEN });
+  const vis = (e, t, key = 'o') => { if (t !== undefined) { put(e, { [key]: 0 }); if (t !== null) tw(e, { [key]: 1 }, t, key === 'd' ? .4 : .35); } return e; };
+  if (t0 !== undefined) show(g, t0);
+  return { g, dg, cm, dx, ry, qy, xq, w,
+    qx: i => xq + w * (i + .5),
+    num(str, right, r, t, { minus = false, fill = COL.chalk } = {}) {
+      const e = G(g);
+      [...str].forEach((c, i) => T(e, c, { ...base, x: dx(right - str.length + 1 + i), y: ry(r), fill }));
+      if (minus) T(e, '−', { ...base, size: size * .8, x: dx(right - str.length + 1) - w * .9, y: ry(r) - size * .42, fill: COL.dim });
+      return vis(e, t);
+    },
+    line(a, b, r, t) { return vis(path(g, `M${dx(a) - w * .5 - 6} ${ry(r) + size * .2}H${dx(b) + w * .5 + 6}`, { stroke: COL.chalk, 'stroke-width': 2.5 }, { d: 1 }), t, 'd'); },
+    q(str, i, t) { return vis(T(g, str, { ...base, x: xq + w * (i + .5), y: qy }), t); },
+    qc(i, t) { return vis(T(g, ',', { ...base, x: xq + w * i, y: qy, fill: RULE, weight: 700 }), t); },
+    move(i, r, t) {
+      const e = T(g, digs[i], { ...base, x: dx(i), y, fill: RULE, o: 0 });
+      show(e, t, .15); tw(e, { y: ry(r) }, t + .15, .7, io); tw(e, { c_fill: COL.chalk }, t + .9, .4);
+      return e;
+    } };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Умножение и деление десятичных дробей', (m, D) => klIntro(m, D, {
+    unit: 'Глава 4 · Десятичные дроби и проценты · Тема 4.2',
+    title: 'Умножение и деление десятичных дробей',
+    sub: 'Считаем, как с целыми числами, а потом ставим запятую на место',
+    art: (g, t0) => {
+      klArea(g, { x: 560, y: 540, w: 150, h: 150, cols: 10, rows: 10, nc: 2, nr: 3, t0, all: true, hatch: 10 });
+      klMath(g, ['0,3 · 0,2 = 0,06'], 1000, 632, t0 + .3, { size: 56 });
+    },
+  })],
+
+  ['area', 'Часть от части', m => {
+    const p = panel(0);
+    klTitle(p, 'Ноль целых три десятых на ноль целых две десятых');
+    const A = klArea(p, { x: 190, y: 250, w: 500, h: 500, cols: 10, rows: 10, nc: 2, nr: 3, t0: .2 });
+    A.vcuts.forEach((c, i) => draw(c, m('sq', i * .06), .4));
+    A.hcuts.forEach((c, i) => draw(c, m('sq', .6 + i * .06), .4));
+    const unitT = klText(p, 'единица: 100 клеток', 440, 800, m('sq', .8), { size: 28, fill: COL.dim, anchor: 'middle' });
+    hide(unitT, m('six', -.2), .2); show(unitT, m('six', 3.9), .4);
+    show(A.rowShade, m('rows'), .5);
+    draw(path(p, `M162 ${A.y}V${A.y + 3 * A.rh}`, { stroke: NUM, 'stroke-width': 4 }, { d: 0 }), m('rows', .2), .4);
+    klMath(p, ['0,3'], 104, A.y + 1.5 * A.rh + 15, m('rows', .2), { size: 42, fill: NUM });
+    show(A.colShade, m('cols'), .5);
+    draw(path(p, `M${A.x} 222H${A.x + 2 * A.cw}`, { stroke: TWO, 'stroke-width': 4 }, { d: 0 }), m('cols', .2), .4);
+    klMath(p, ['0,2'], A.x + A.cw, 204, m('cols', .2), { size: 42, fill: TWO });
+    show(A.over, m('both'), .4);
+    tw(A.over, { 'a_stroke-width': 12 }, m('both', .3), .25); tw(A.over, { 'a_stroke-width': 7 }, m('both', .6), .4);
+    const cells = [];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) cells.push(A.cc(i, j).map((v, k) => k ? v + 11 : v));
+    tw(A.over, { 'a_stroke-width': 12 }, m('both', 2.6), .25); tw(A.over, { 'a_stroke-width': 7 }, m('both', 2.9), .4);
+    klCount(p, cells, m('count'), { step: .2, size: 30, fill: COL.chalk });
+    // The question is on the board from the start; its answer and the fraction line follow on the words.
+    const subj = klRow(p, [{ m: '0,3', fill: NUM }, { m: ' · ' }, { m: '0,2', fill: TWO }], 790, 330, .3, { msize: 72, anchor: 'start' });
+    const res = klMath(p, [' = 0,06'], 790 + subj._w, 330, m('res'), { size: 72, anchor: 'start', fill: RULE });
+    tw(res, { o: .4 }, m('res', 2.4), .25); tw(res, { o: 1 }, m('res', 2.7), .3);
+    klRow(p, ['закрашено дважды: 6 клеток по ', { m: F('1', '100') }], 790, 440, m('count', 1.3), { size: 30, msize: 44, anchor: 'start', fill: COL.dim });
+    const fr1 = [F('3', '10'), ' · ', F('2', '10')], wf = mathW(fr1, 56);
+    klMath(p, fr1, 790, 575, m('frac', 2.4), { size: 56, anchor: 'start' });
+    klMath(p, [' = ', F('6', '100'), ' = 0,06'], 790 + wf, 575, m('frac', 4.6), { size: 56, anchor: 'start' });
+    // The trap: 0,6 would be six whole columns, not six cells.
+    const wT = mathW(['0,3 · 0,2 = 0,6'], 56);
+    klMath(p, ['0,3 · 0,2 = 0,6'], 790, 720, m('trap'), { size: 56, anchor: 'start', fill: COL.dim });
+    klStrike(p, 780, 735, 800 + wT, 690, m('trap', 1.6));
+    klText(p, 'ошибка!', 790 + wT / 2, 790, m('trap', 1.8), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    const six = put(mk('rect', { x: A.x - 4, y: A.y - 4, width: 6 * A.cw + 8, height: A.h + 8, rx: 6, fill: COL.bad, 'fill-opacity': .12, stroke: COL.bad, 'stroke-width': 4, 'stroke-dasharray': '12 9' }, p), { o: 0 });
+    show(six, m('six'), .4);
+    const sixT = klText(p, '0,6 — шесть столбиков', A.x + 3 * A.cw, 800, m('six', .2), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    hide(six, m('six', 3.4), .5); hide(sixT, m('six', 3.4), .5);
+    tw(A.over, { 'a_stroke-width': 12 }, m('six', 3.3), .25); tw(A.over, { 'a_stroke-width': 7 }, m('six', 3.6), .4);
+  }],
+
+  ['rule', 'Умножаем, как целые', m => {
+    const p = panel(0);
+    klTitle(p, 'Умножаем, как целые числа, потом ставим запятую');
+    const size = 84, W = size * .68;
+    // One line that changes: the factors lose their commas, the product appears, the commas come back.
+    const line = (y, a, pa, b, pb, c, t0, tw0) => {
+      let x = 330;
+      const A = c18Digits(p, a, x + a.length * W / 2, y, pa, { size, fill: NUM, t0 });
+      x += a.length * W + 42;
+      klMath(p, ['·'], x, y, t0 + 2.2, { size });
+      x += 42;
+      const B = c18Digits(p, b, x + b.length * W / 2, y, pb, { size, fill: TWO, t0: t0 + 2.2 });
+      x += b.length * W + 48;
+      klMath(p, ['='], x, y, tw0, { size });
+      x += 48;
+      const P = c18Digits(p, c, x + c.length * W / 2, y, 0, { size, t0: tw0 });
+      return { A, B, P };
+    };
+    const brace = (R, k, y, label, t) => klBrace(p, R.px(k) + 4, R.px(0) + 4, y, label, t, { up: false, fill: DEN, size: 28 });
+    // 2,3 · 0,04: 23 · 4 = 92, then 1 + 2 = 3 digits after the comma: 0,092.
+    const r1 = line(320, '23', 1, '004', 2, '0092', m('ex'), m('whole', 4));
+    const z1 = [r1.P.ds[0], r1.P.ds[1]];
+    z1.forEach(e => put(e, { o: 0 }));
+    hide(r1.A.cm, m('whole', .3), .3); hide(r1.B.cm, m('whole', .3), .3);
+    hide(r1.B.ds[0], m('whole', .6), .3); hide(r1.B.ds[1], m('whole', .6), .3);
+    show(r1.A.cm, m('c1')); brace(r1.A, 1, 350, '1 знак', m('c1', .2));
+    show(r1.B.cm, m('c2')); show(r1.B.ds[0], m('c2')); show(r1.B.ds[1], m('c2')); brace(r1.B, 2, 350, '2 знака', m('c2', .2));
+    klText(p, '1 + 2 = 3', 1250, 330, m('sum'), { size: 40, fill: DEN, weight: 700 });
+    r1.P.hop(0, 3, m('hop', .4), tw, .6);
+    show(z1[1], m('hop', 4.0), .4); show(z1[0], m('hop', 4.6), .4);
+    tw(z1[1], { c_fill: RULE }, m('hop', 4.0), .2); tw(z1[1], { c_fill: COL.chalk }, m('hop', 5.4), .6);
+    tw(z1[0], { c_fill: RULE }, m('hop', 4.6), .2); tw(z1[0], { c_fill: COL.chalk }, m('hop', 5.8), .6);
+    brace(r1.P, 3, 350, '3 знака', m('hop', 2.4));
+    klText(p, 'ноль целых девяносто две тысячных', 800, 470, m('ans'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    // 1,5 · 0,4: 15 · 4 = 60, two digits after the comma: 0,60, and only then the end zero goes.
+    const r2 = line(640, '15', 1, '04', 1, '060', m('ex2'), m('whole2', 1.8));
+    put(r2.P.ds[0], { o: 0 });
+    hide(r2.A.cm, m('whole2'), .3); hide(r2.B.cm, m('whole2'), .3); hide(r2.B.ds[0], m('whole2', .3), .3);
+    show(r2.A.cm, m('hop2')); show(r2.B.cm, m('hop2')); show(r2.B.ds[0], m('hop2'));
+    r2.P.hop(0, 2, m('hop2', .4), tw, .55);
+    show(r2.P.ds[0], m('hop2', 1.5), .4);
+    brace(r2.P, 2, 670, '1 + 1 = 2', m('hop2', 1.2));
+    const end = r2.P.ds[2];
+    klStrike(p, r2.P.px(0) - W * .85, 655, r2.P.px(0) - W * .15, 585, m('zero', .4));
+    tw(end, { o: .3 }, m('zero', .8), .5);
+    klText(p, '0,60 = 0,6', 1250, 640, m('zero', 1.2), { size: 40, fill: COL.chalk, weight: 600 });
+    klText(p, 'сначала ставим запятую, потом отбрасываем нули', 800, 820, m('after'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klMath(p, ['3,6 · 0,3'], 800, 200, .2, { size: 64, anchor: 'end' });
+    S.q1eq = klMath(p, [' = 1,08'], 800, 200, undefined, { size: 64, anchor: 'start', fill: RULE });
+    put(S.q1eq, { o: 0 });
+    klRow(p, ['как целые:  ', { m: '36 · 3 = 108' }], 800, 290, .3, { size: 30, msize: 48, fill: COL.dim });
+    S.q1row = c18Digits(p, '108', 800, 490, 2, { size: 130, t0: .4 });
+    put(S.q1row.cm, { o: 0 });
+    S.q1gaps = [3, 2, 1, 0].map(k => { const e = put(mk('circle', { cx: S.q1row.px(k), cy: 512, r: 7, fill: COL.dim }, p), { o: 0 }); show(e, .5); return e; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-zapyataya', prompt: 'Нажми на место, где стоит запятая в произведении 3,6 · 0,3.',
+    build: pickEls(S.q1gaps.map((e, i) => ({ el: e, box: [S.q1row.px(3 - i) - 30, 385, 60, 140], label: ['0,108', '1,08', '10,8', '108'][i] })), 1,
+      '36 · 3 = 108, а после запятой у множителей 1 + 1 = 2 знака: 3,6 · 0,3 = 1,08.',
+      k => k === 0 ? 'Так после запятой три знака, а у множителей вместе только 1 + 1 = 2.'
+        : k === 2 ? 'Так после запятой один знак. Посчитай знаки у обоих множителей.'
+          : 'Без запятой получится 108 — в сто раз больше. Отдели знаки справа.',
+      () => { fx(S.q1row.cm, { o: 1 }, 0, .3); fx(S.q1eq, { o: 1 }, .3, .4); }),
+  }], done) }],
+
+  ['divint', 'Деление на целое число', m => {
+    const p = panel(0);
+    klTitle(p, 'Делим на целое число уголком');
+    const C = c18Corner(p, { x: 230, y: 330, dividend: '7,2', divisor: '3', size: 76, lh: 80, qn: 2, t0: m('ex') });
+    pulse(C.dg[0], m('q1'), 1.3);
+    C.q('2', 0, m('q1', .6));
+    C.num('6', 0, 1, m('r1'), { minus: true });
+    C.line(0, 0, 1, m('r1', .4));
+    C.num('1', 0, 2, m('r1', .8));
+    // The comma of the dividend is copied down into the quotient the moment the whole part runs out.
+    const fly = T(C.g, ',', { size: 76, font: MATH, anchor: 'middle', x: C.dx(0) + C.w * .5, y: 330, fill: RULE, weight: 700, o: 0 });
+    show(fly, m('comma', .6), .2);
+    tw(fly, { x: C.xq + C.w, y: C.qy }, m('comma', .8), .9, io);
+    tw(C.cm[0], { s: 1.5 }, m('comma', .2), .25, out); tw(C.cm[0], { s: 1 }, m('comma', .45), .3);
+    C.move(1, 2, m('down'));
+    C.q('4', 1, m('q2', .8));
+    C.num('12', 1, 3, m('r2'), { minus: true });
+    C.line(0, 1, 3, m('r2', .4));
+    C.num('0', 1, 4, m('r2', .8));
+    const a1 = ['7 : 3 = 2'], wa = mathW(a1, 52);
+    klMath(p, a1, 760, 330, m('q1'), { size: 52, anchor: 'start' });
+    klMath(p, [' (ост. 1)'], 760 + wa, 330, m('r1'), { size: 52, anchor: 'start', fill: COL.dim });
+    klText(p, 'целая часть кончилась — ставим запятую', 760, 420, m('comma'), { size: 30, fill: RULE, weight: 600 });
+    klMath(p, ['12 : 3 = 4'], 760, 510, m('q2'), { size: 52, anchor: 'start' });
+    klMath(p, ['7,2 : 3 = 2,4'], 760, 650, m('ans'), { size: 72, anchor: 'start' });
+    klRow(p, ['проверка:  ', { m: '2,4 · 3 = 7,2' }], 760, 760, m('check'), { size: 30, msize: 48, anchor: 'start', fill: COL.dim });
+    klMark(p, 1230, 745, m('check', 3.5), true, .8);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = c18Corner(p, { x: 660, y: 200, dividend: '9,1', divisor: '7', size: 66, lh: 70, qn: 2, t0: .2 });
+    S.q2steps = [C.q('1', 0, null), C.num('7', 0, 1, null, { minus: true }), C.line(0, 0, 1, null), C.num('2', 0, 2, null),
+      C.qc(1, null), C.num('1', 1, 2, null, { fill: RULE }), C.q('3', 1, null), C.num('21', 1, 3, null, { minus: true }), C.line(0, 1, 3, null), C.num('0', 1, 4, null)];
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-ugolok', prompt: 'Раздели уголком.',
+    build: blanks([{ parts: ['9,1 : 7 = ', { box: '1.3' }],
+      why: '9 : 7 = 1 (ост. 2), ставим запятую, сносим 1: 21 : 7 = 3. Ответ: 1,3.',
+      hint: 'Сначала раздели целую часть 9 на 7, потом поставь запятую и снеси следующую цифру.',
+      fx: () => S.q2steps.forEach((e, i) => fx(e, e.tagName === 'path' ? { d: 1 } : { o: 1 }, i * .18, .3)) }]),
+  }], done) }],
+
+  ['divdec', 'Деление на десятичную дробь', m => {
+    const p = panel(0);
+    klTitle(p, 'Делим на десятичную дробь');
+    const size = 72;
+    const ex = (y, a, b, ra, rb, pl, tSubj, tFrac) => {
+      const sj = klRow(p, [{ m: a, fill: NUM }, { m: ' : ' }, { m: b, fill: DEN }], 610, y + 22, tSubj, { msize: size, anchor: 'end' });
+      tw(sj, { o: .45 }, tSubj + 2.6, .25); tw(sj, { o: 1 }, tSubj + 2.9, .3);
+      klMath(p, ['='], 645, y + 22, tFrac, { size });
+      draw(path(p, `M${740 - ra.length * size * .34 - 12} ${y}H${740 + ra.length * size * .34 + 12}`, { stroke: COL.chalk, 'stroke-width': 3.5 }, { d: 0 }), tFrac, .4);
+      return [c18Digits(p, ra, 740, y - 25, pl, { size, fill: NUM, t0: tFrac }), c18Digits(p, rb, 740, y + 75, pl, { size, fill: DEN, t0: tFrac })];
+    };
+    // 4,8 : 0,6 = 4,8/0,6 = 48/6 = 8.
+    const [t1, b1] = ex(375, '4,8', '0,6', '48', '06', 1, m('ex'), m('frac'));
+    [t1, b1].forEach((R, i) => {
+      klMath(p, ['· 10'], 810, (i ? 450 : 350), m('x10'), { size: 40, anchor: 'start', fill: RULE });
+      R.hop(1, 0, m('x10', 2.6 + i * .8), tw, .6);
+      hide(R.cm, m('same', 1), .4);
+    });
+    klText(p, 'основное свойство дроби', 740, 525, m('same'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    hide(b1.ds[0], m('whole'), .4);
+    tw(b1.ds[1], { s: 1.25 }, m('whole', .3), .25, out); tw(b1.ds[1], { s: 1 }, m('whole', .55), .3);
+    klMath(p, ['= 48 : 6 ='], 920, 397, m('whole', 1), { size: 60, anchor: 'start' });
+    klMath(p, ['8'], 935 + mathW(['= 48 : 6 ='], 60), 397, m('ans'), { size: 72, anchor: 'start', fill: RULE });
+    // 1,2 : 0,04 = 120 : 4 = 30: two places, and the dividend needs a zero.
+    const [t2, b2] = ex(675, '1,2', '0,04', '120', '004', 2, m('ex2'), m('ex2', 1.5));
+    put(t2.ds[2], { o: 0 });
+    [t2, b2].forEach((R, i) => {
+      klMath(p, ['· 100'], 830, (i ? 750 : 650), m('x100'), { size: 40, anchor: 'start', fill: RULE });
+      R.hop(2, 0, m('x100', 1 + i * .3), tw, .55);
+      hide(R.cm, m('zero', 2.2), .4);
+    });
+    show(t2.ds[2], m('zero', .3), .4);
+    tw(t2.ds[2], { c_fill: RULE }, m('zero', .3), .2); tw(t2.ds[2], { c_fill: NUM }, m('zero', 2), .5);
+    hide(b2.ds[0], m('zero', 2.2), .4); hide(b2.ds[1], m('zero', 2.2), .4);
+    klMath(p, ['= 120 : 4 ='], 960, 697, m('ans2'), { size: 60, anchor: 'start' });
+    klMath(p, ['30'], 975 + mathW(['= 120 : 4 ='], 60), 697, m('ans2', 1.6), { size: 72, anchor: 'start', fill: RULE });
+    klText(p, 'сдвигаем обе запятые одинаково, пока делитель не станет целым', 800, 845, m('rule'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klRow(p, [{ m: '2,4', fill: NUM }, { m: ' : ' }, { m: '0,08', fill: DEN }], 600, 362, .2, { msize: 72, anchor: 'end' });
+    klMath(p, ['='], 640, 362, .3, { size: 72 });
+    draw(path(p, `M668 340H852`, { stroke: COL.chalk, 'stroke-width': 3.5 }, { d: 0 }), .3, .4);
+    S.q3t = c18Digits(p, '240', 760, 315, 2, { size: 80, fill: NUM, t0: .3 });
+    S.q3b = c18Digits(p, '008', 760, 420, 2, { size: 80, fill: DEN, t0: .3 });
+    put(S.q3t.ds[2], { o: 0 });
+    S.q3res = klMath(p, ['= 240 : 8 = 30'], 900, 362, undefined, { size: 60, anchor: 'start', fill: RULE });
+    put(S.q3res, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sdvig', prompt: 'На какое деление целых чисел можно заменить 2,4 : 0,08?',
+    build: choice(['24 : 8', '240 : 8', '2,4 : 8'], 1,
+      'В делителе два знака после запятой: сдвигаем обе запятые на два знака. 2,4 → 240, 0,08 → 8, и 240 : 8 = 30.',
+      ['В делимом запятую сдвинули на один знак, а в делителе — на два. Сдвигать нужно одинаково.', null,
+        'Запятую сдвинули только в делителе — частное от этого изменилось.'],
+      () => {
+        S.q3t.hop(2, 0, 0, fx, .45); S.q3b.hop(2, 0, .2, fx, .45);
+        fx(S.q3t.ds[2], { o: 1 }, .6, .3);
+        [S.q3t.cm, S.q3b.cm, S.q3b.ds[0], S.q3b.ds[1]].forEach(e => fx(e, { o: 0 }, 1.2, .3));
+        fx(S.q3res, { o: 1 }, 1.4, .4);
+      }),
+  }], done) }],
+
+  ['frac', 'Обыкновенная дробь в десятичную', m => {
+    const p = panel(0);
+    klTitle(p, 'Обыкновенная дробь — это деление');
+    const C = c18Corner(p, { x: 220, y: 300, dividend: '3,000', divisor: '8', size: 62, lh: 64, qn: 5, t0: m('ex', .8) });
+    [C.dg[1], C.dg[2], C.dg[3], C.cm[0]].forEach(e => put(e, { o: 0 }));
+    klMath(p, [F('3', '8')], 900, 330, .3, { size: 64, anchor: 'start' });
+    const ask = klText(p, 'как записать её с запятой?', 900, 430, 2.4, { size: 28, fill: COL.dim });
+    hide(ask, m('pad', .6), .3);
+    klMath(p, [' = 3 : 8'], 900 + mathW([F('3', '8')], 64), 330, m('ex', .8), { size: 64, anchor: 'start' });
+    pulse(C.dg[0], m('zero'), 1.3);
+    C.q('0', 0, m('zero', 2));
+    C.qc(1, m('zero', 3.3));
+    show(C.cm[0], m('zero', 3.3), .3);
+    [1, 2, 3].forEach(i => { show(C.dg[i], m('pad', .4 + i * .3), .3); tw(C.dg[i], { c_fill: RULE }, m('pad', .4 + i * .3), .1); tw(C.dg[i], { c_fill: COL.chalk }, m('pad', 1.8 + i * .2), .5); });
+    klText(p, '3 = 3,000: нули в конце ничего не меняют', 900, 450, m('pad', 1), { size: 28, fill: COL.dim });
+    // 30 : 8 = 3 (ост. 6), 60 : 8 = 7 (ост. 4), 40 : 8 = 5.
+    [C.dg[0], C.dg[1]].forEach(e => pulse(e, m('s1'), 1.25));
+    C.q('3', 1, m('s1', .8)); C.num('24', 1, 1, m('s1', 1.3), { minus: true }); C.line(0, 1, 1, m('s1', 1.6)); C.num('6', 1, 2, m('s1', 2.6));
+    C.move(2, 2, m('s2')); C.q('7', 2, m('s2', 1.2)); C.num('56', 2, 3, m('s2', 1.6), { minus: true }); C.line(1, 2, 3, m('s2', 1.9)); C.num('4', 2, 4, m('s2', 2.8));
+    C.move(3, 4, m('s3')); C.q('5', 3, m('s3', 1.2)); C.num('40', 3, 5, m('s3', 1.5), { minus: true }); C.line(2, 3, 5, m('s3', 1.8)); C.num('0', 3, 6, m('s3', 2.2));
+    klMath(p, ['= 0,375'], 900 + mathW([F('3', '8'), ' = 3 : 8 '], 64), 330, m('ans', .5), { size: 64, anchor: 'start', fill: RULE });
+    klText(p, 'остаток 0 — деление закончилось', 900, 560, m('s3', 2.6), { size: 28, fill: COL.dim });
+  }],
+
+  ['period', 'Периодические дроби', m => {
+    const p = panel(0);
+    klTitle(p, 'Когда деление не кончается');
+    const C = c18Corner(p, { x: 220, y: 300, dividend: '1,000', divisor: '3', size: 60, lh: 64, qn: 5, t0: .3 });
+    C.q('0', 0, m('ex', 1)); C.qc(1, m('ex', 1.6));
+    C.q('3', 1, m('loop', .6)); C.num('9', 1, 1, m('loop', 1), { minus: true }); C.line(0, 1, 1, m('loop', 1.2));
+    C.num('1', 1, 2, m('loop', 2.6), { fill: RULE });
+    C.move(2, 2, m('loop', 3.2)); C.q('3', 2, m('again')); C.num('9', 2, 3, m('again', .3), { minus: true }); C.line(1, 2, 3, m('again', .5));
+    C.num('1', 2, 4, m('again', 1.2), { fill: RULE });
+    const nx = C.q('3', 3, m('again', 2.2)); C.q('…', 4, m('again', 2.8));
+    // The remainder 1 comes back: a loop from the second remainder to the first.
+    const ring = (x, y, t) => draw(path(p, `M${x - 26} ${y}a26 32 0 1 0 52 0a26 32 0 1 0 -52 0`, { stroke: RULE, 'stroke-width': 3.5 }, { d: 0 }), t, .4);
+    ring(C.dx(1), C.ry(2) - 20, m('again', 1.8)); ring(C.dx(2), C.ry(4) - 20, m('again', 1.8));
+    const x1 = C.dx(2) - 30, y1 = C.ry(4) - 20, x2 = C.dx(1) - 30, y2 = C.ry(2) - 20;
+    draw(path(p, `M${x1} ${y1}C${x1 - 120} ${y1} ${x2 - 120} ${y2} ${x2} ${y2}`, { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '8 7' }, { d: 0 }), m('again', 2.2), .6);
+    klText(p, 'снова 1', C.dx(0) - 130, (y1 + y2) / 2 + 10, m('again', 2.6), { size: 26, fill: RULE, weight: 600, anchor: 'middle' });
+    const a = [F('1', '3'), ' = 0,333…'], wa = mathW(a, 56);
+    klMath(p, a, 820, 330, m('again', 3), { size: 56, anchor: 'start' });
+    klMath(p, [' = 0,(3)'], 820 + wa, 330, m('per', .6), { size: 56, anchor: 'start', fill: RULE });
+    klText(p, 'в скобках — период', 820 + wa + 40, 400, m('per', 2), { size: 28, fill: COL.dim });
+    const b = [F('2', '11'), ' = 0,1818…'], wb = mathW(b, 56);
+    klMath(p, b, 820, 500, m('ex2'), { size: 56, anchor: 'start' });
+    klMath(p, [' = 0,(18)'], 820 + wb, 500, m('ex2', 3.8), { size: 56, anchor: 'start', fill: RULE });
+    draw(path(p, `M${C.xq + 3 * C.w} ${C.qy - 52}V${C.qy + 14}`, { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '6 6' }, { d: 0 }), m('round', .4), .4);
+    pulse(nx, m('round', 3.4), 1.5);
+    klRow(p, ['до сотых:  ', { m: [F('1', '3'), ' ≈ 0,33'] }], 120, 700, m('r2'), { size: 30, msize: 52, anchor: 'start' });
+    klText(p, 'следующая цифра 3 < 5 — округляем вниз', 120, 770, m('r2', 1.5), { size: 26, fill: COL.dim });
+    klText(p, 'конечная дробь — когда в знаменателе', 820, 610, m('why'), { size: 30, fill: COL.chalk, weight: 600 });
+    klText(p, 'несократимой дроби только множители 2 и 5', 820, 652, m('why', .6), { size: 30, fill: COL.chalk, weight: 600 });
+    klText(p, 'у 3 и 11 других множителей нет — получился период', 820, 700, m('why', 3.6), { size: 24, fill: COL.dim });
+    klMath(p, [F('7', '40'), ' = 0,175'], 820, 790, m('ok', 4), { size: 56, anchor: 'start' });
+    klMath(p, ['40 = 2 · 2 · 2 · 5'], 1130, 790, m('ok', .4), { size: 44, anchor: 'start', fill: COL.dim });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'конечная дробь', 120, 250, .2, { size: 34, fill: RULE, weight: 600 });
+    klMath(p, [F('7', '40'), ' = 0,175'], 120, 350, .3, { size: 52, anchor: 'start' });
+    klText(p, '40 = 2 · 2 · 2 · 5', 420, 342, .3, { size: 28, fill: COL.dim });
+    klText(p, 'периодическая', 120, 470, .4, { size: 34, fill: RULE, weight: 600 });
+    klMath(p, [F('1', '3'), ' = 0,(3)'], 120, 570, .5, { size: 52, anchor: 'start' });
+    klText(p, 'в знаменателе 3', 420, 562, .5, { size: 28, fill: COL.dim });
+    S.q4res = [[F('3', '12'), ' = 0,25'], [F('2', '3'), ' = 0,(6)'], [F('3', '20'), ' = 0,15'], [F('5', '6'), ' = 0,8(3)']].map((parts, i) =>
+      put(klMath(p, parts, 120 + (i % 2) * 330, 690 + (i >> 1) * 110, undefined, { size: 44, anchor: 'start', fill: COL.good }), { o: 0 }));
+  }, { ask: done => quiz({ x: 820, y: 170, w: 690, cls: 'side' }, [{
+    id: 'c-period', prompt: 'Какая десятичная дробь получится?',
+    build: grid([
+      { parts: [F('3', '12')], ans: ['fin'], why: 'Сначала сократи: 3/12 = 1/4, а 4 = 2 · 2. Это 0,25.', fx: () => fx(S.q4res[0], { o: 1 }, 0, .4) },
+      { parts: [F('2', '3')], ans: ['per'], why: 'В знаменателе 3: деление не кончится, 2/3 = 0,(6).', fx: () => fx(S.q4res[1], { o: 1 }, 0, .4) },
+      { parts: [F('3', '20')], ans: ['fin'], why: '20 = 2 · 2 · 5: только двойки и пятёрки, 3/20 = 0,15.', fx: () => fx(S.q4res[2], { o: 1 }, 0, .4) },
+      { parts: [F('5', '6')], ans: ['per'], why: '6 = 2 · 3, а тройка даёт период: 5/6 = 0,8(3).', fx: () => fx(S.q4res[3], { o: 1 }, 0, .4) },
+    ], [['fin', 'конечная', null, '1'], ['per', 'периодическая', null, '2']], { multi: false }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Умножаем, как целые, и отделяем знаки:  ', { m: '0,3 · 0,2 = 0,06' }],
+    ['Нули в конце — после запятой:  ', { m: '0,60 = 0,6' }],
+    ['Делим — сдвигаем обе запятые:  ', { m: '4,8 : 0,6 = 48 : 6' }],
+    ['Дробь — это деление:  ', { m: [F('3', '8'), ' = 3 : 8 = 0,375'] }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-umnozh', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['1,2 · 0,3 = ', { box: '0.36' }], why: '12 · 3 = 36, после запятой 1 + 1 = 2 знака: 0,36.', hint: 'Умножь, как целые, и отдели столько знаков, сколько их у обоих множителей вместе.' },
+      { parts: ['2,5 · 4 = ', { box: '10' }], why: '25 · 4 = 100, отделяем один знак: 10,0 = 10.', hint: '25 · 4 = 100. Сколько знаков после запятой у множителей?' },
+      { parts: ['0,05 · 0,6 = ', { box: '0.03' }], why: '5 · 6 = 30, отделяем 2 + 1 = 3 знака: 0,030 = 0,03.', hint: 'Знаков после запятой 2 + 1 = 3. Не хватает цифр — допиши нули впереди.' },
+      { parts: ['3,7 · 100 = ', { box: '370' }], why: 'Умножить на 100 — сдвинуть запятую на два знака вправо: 370.', hint: 'Сколько нулей у 100, на столько знаков запятая прыгает вправо.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-delen', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['3,6 : 0,4 = ', { box: '9' }], why: 'Сдвигаем обе запятые на один знак: 36 : 4 = 9.', hint: 'Сдвинь запятые так, чтобы делитель стал целым.' },
+      { parts: ['7,5 : 5 = ', { box: '1.5' }], why: '7 : 5 = 1 (ост. 2), ставим запятую, 25 : 5 = 5. Ответ: 1,5.', hint: 'Дели уголком и поставь запятую, когда кончится целая часть.' },
+      { parts: ['0,36 : 0,12 = ', { box: '3' }], why: 'Сдвигаем обе запятые на два знака: 36 : 12 = 3.', hint: 'В делителе два знака после запятой.' },
+      { parts: ['4 : 0,5 = ', { box: '8' }], why: 'Сдвигаем запятые на один знак: 40 : 5 = 8.', hint: 'У числа 4 запятая стоит в конце: 4 = 4,0.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-perevod', prompt: 'Запиши в виде десятичной дроби, последнюю — округли до сотых.',
+    build: blanks([
+      { parts: [F('3', '8'), ' = ', { box: '0.375' }], why: '3 : 8 = 0,375.', hint: 'Раздели числитель на знаменатель: 3 = 3,000.' },
+      { parts: [F('7', '20'), ' = ', { box: '0.35' }], why: '7 : 20 = 0,35.', hint: 'Раздели 7 на 20, дописав нули: 7 = 7,00.' },
+      { parts: [F('2', '3'), ' = 0,666… ≈ ', { box: '0.67' }], why: 'До сотых: следующая цифра 6 ≥ 5, поэтому сотые увеличиваем: 0,67.', hint: 'Оставь две цифры после запятой и посмотри на третью: 5 и больше — округляем вверх.' },
+    ]),
+  }, {
+    id: 'p-tret', prompt: ['Чему равна дробь ', $m(F('2', '3')), '?'],
+    build: choice(['0,6', '0,(6)', '0,66'], 1, '2 : 3 = 0,666…: остаток 2 повторяется, и шестёрка повторяется без конца. Это 0,(6).',
+      ['0,6 = 3/5, а деление 2 : 3 не кончается.', null, '0,66 = 66/100: деление 2 : 3 на этом не кончается.']),
+  }, {
+    id: 'p-lovushka', prompt: 'Сколько будет 0,4 · 0,2?',
+    build: choice(['0,8', '0,08', '0,008'], 1, '4 · 2 = 8, после запятой 1 + 1 = 2 знака: 0,08.',
+      ['Так после запятой один знак, а у множителей вместе два.', null, 'Так после запятой три знака, а нужно 1 + 1 = 2.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

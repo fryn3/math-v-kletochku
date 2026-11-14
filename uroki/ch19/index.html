@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проценты · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 4.3 «Проценты» (6 класс). Beat ids match papermorph/content/uroki/ch19/narration.ru.json.
+const CHAPTER = { number: 19, label: '4.3', title: 'Проценты', minutes: 8, language: 'ru', next: '../ch20/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, RULE = KL.RULE;
+
+/* ---------- this lesson's helpers ---------- */
+// A hidden single cell of a klHundred (row i, column j) as its own rect, so it can move on its own.
+function c19Cell(g, i, j, fill = NUM) {
+  return put(mk('rect', { x: g.x + j * g.c, y: g.y + i * g.c, width: g.c, height: g.c, fill, 'fill-opacity': .85 }, g.shade), { o: 0 });
+}
+// A label centred in cell (i, j) of a klHundred.
+function c19CellText(p, g, i, j, str, t0, { size = 18, fill = COL.board } = {}) {
+  return klText(p, str, g.x + (j + .5) * g.c, g.y + (i + .5) * g.c + size * .36, t0, { size, fill, weight: 700, anchor: 'middle' });
+}
+// A rule box: a framed line of maths in KL.RULE, centred on (x, y), w wide, shown at t0.
+function c19Box(p, parts, x, y, w, t0, { size = 56, h = 120, mx = x, anchor = 'middle' } = {}) {
+  const box = G(p, { o: 0 });
+  mk('rect', { x: x - w / 2, y: y - h / 2, width: w, height: h, rx: 18, fill: COL.chalk, 'fill-opacity': .04, stroke: RULE, 'stroke-width': 3 }, box);
+  M(box, [].concat(parts), { x: mx, y: y + size * .05, size, fill: RULE, anchor });
+  show(box, t0);
+  return box;
+}
+// Labels in the middle of cells of a klStrip (cell indices from the list), fading in one after another.
+function c19StripText(p, strip, cells, str, t0, { step = .12, size = 36, fill = COL.board } = {}) {
+  return cells.map((k, i) => klText(p, str, strip.x + (k + .5) * strip.cw, strip.y + strip.h / 2 + size * .36, t0 === undefined ? undefined : t0 + i * step, { size, fill, weight: 700, anchor: 'middle' }));
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Проценты', (m, D) => klIntro(m, D, {
+    unit: 'Глава 4 · Десятичные дроби и проценты · Тема 4.3',
+    title: 'Проценты',
+    sub: 'Сотая часть — у неё есть своё имя',
+    art: (g, t0) => {
+      const h = klHundred(g, { x: 560, y: 545, c: 18, t0 });
+      [0, 1, 2, 3, 4].forEach(i => tw(h.cell(i, 0, 5, 1), { o: 1 }, m('sub', .6 + i * .15), .3));
+      klMath(g, ['25 %  =  ', F('1', '4'), '  =  0,25'], 1000, 640, m('sub', 3.4), { size: 48 });
+    },
+  })],
+
+  ['hundred', 'Одна сотая', m => {
+    const p = panel(0);
+    klTitle(p, 'Процент — одна сотая');
+    const g = klHundred(p, { x: 140, y: 210, c: 46, t0: .2 });
+    // One cell: one hundredth, and its name.
+    const c1 = g.cell(0, 0);
+    tw(c1, { o: 1 }, m('one', .2), .35);
+    klExpr(p, [{ s: '1 %', fill: RULE, t: m('one', 4.6) }, { s: '=', t: m('one', 4.6) }, { f: [1, 100], t: m('one', 1.6) }], 720, 300, { size: 64 });
+    // Twenty-five cells, row by row: a 5 × 5 block that turns out to be a quarter.
+    const rows = [0, 1, 2, 3, 4].map(i => g.cell(i, 0, 5, 1));
+    rows.forEach((r, i) => tw(r, { o: 1 }, m('many', .2 + i * .15), .3));
+    hide(c1, m('many', .9), .1);
+    klExpr(p, [{ s: '25 %', fill: RULE, t: m('many', .6) }, { s: '=', t: m('many', 2.6) }, { f: [25, 100], t: m('many', 2.6) },
+      { s: '=', t: m('quarter', 1.4) }, { f: [1, 4], t: m('quarter', 1.4) }, { s: '=', t: m('dec', .9) }, { s: '0,25', t: m('dec', .9) }], 720, 440, { size: 64 });
+    const mid = g.x + 5 * g.c;
+    const vLine = path(g.top, `M${mid} ${g.y}V${g.y + g.W}`, { stroke: DEN, 'stroke-width': 5 }, { d: 0 });
+    const hLine = path(g.top, `M${g.x} ${g.y + 5 * g.c}H${g.x + g.W}`, { stroke: DEN, 'stroke-width': 5 }, { d: 0 });
+    draw(vLine, m('quarter', .3), .5); draw(hLine, m('quarter', .5), .5);
+    // Half: the quarter grows down to the bottom.
+    const low = g.cell(5, 0, 5, 5);
+    tw(low, { o: 1 }, m('half', .3), .5);
+    hide(hLine, m('half', .3), .4);
+    klMath(p, ['50 %  =  ', F('1', '2')], 720, 600, m('half', .6), { size: 52, anchor: 'start' });
+    // A tenth: one column. A fifth: two columns.
+    [...rows, low].forEach(e => hide(e, m('tenth', .1), .4));
+    hide(vLine, m('tenth', .1), .4);
+    tw(g.cell(0, 0, 1, 10), { o: 1 }, m('tenth', .4), .4);
+    klMath(p, ['10 %  =  ', F('1', '10')], 1000, 600, m('tenth', .9), { size: 52, anchor: 'start' });
+    tw(g.cell(0, 1, 1, 10), { o: 1 }, m('fifth', .4), .4);
+    draw(path(g.top, `M${g.x + 2 * g.c} ${g.y}V${g.y + g.W}`, { stroke: DEN, 'stroke-width': 4 }, { d: 0 }), m('fifth', .6), .4);
+    klMath(p, ['20 %  =  ', F('1', '5')], 1280, 600, m('fifth', 1.2), { size: 52, anchor: 'start' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const xs = [290, 680, 1070], fills = [[0, 0, 5, 5], [0, 0, 5, 4], [0, 0, 2, 1]];
+    S.q1 = xs.map((x, k) => {
+      const g = klHundred(p, { x, y: 150, c: 24, t0: .2 + k * .15 });
+      tw(g.cell(...fills[k]), { o: 1 }, .5 + k * .15, .3);
+      return g;
+    });
+    S.q1lab = ['25 %', '20 %', '2 %'].map((s, k) => { const e = klText(p, s, xs[k] + 120, 450, undefined, { size: 40, fill: k === 1 ? RULE : COL.dim, weight: 700, anchor: 'middle' }); put(e, { o: 0 }); return e; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-dvadcat', prompt: 'Где закрашено 20 % квадрата? Выбери его на рисунке.',
+    build: pickEls(S.q1.map((g, k) => ({ el: g.g, box: [g.x - 16, 134, 272, 272], label: ['первый', 'второй', 'третий'][k] })), 1,
+      '20 % — это 20 клеток из ста: здесь 4 ряда по 5 клеток.',
+      k => k === 0 ? 'Здесь 5 рядов по 5 клеток — 25 клеток, это 25 %, четверть квадрата.' : 'Здесь только 2 клетки — это 2 %. А 20 % — это 20 клеток из ста.',
+      () => S.q1lab.forEach((e, k) => fx(e, { o: 1 }, k * .2, .4))),
+  }], done) }],
+
+  ['of', 'Процент от числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Процент от числа');
+    const g = klHundred(p, { x: 140, y: 250, c: 42, t0: .2 });
+    klBrace(p, g.x, g.x + g.W, 232, '4 000 ₽', m('whole', .3));
+    // 1 % is one cell: 4 000 : 100 = 40.
+    const first = g.cell(0, 0);
+    tw(first, { o: 1 }, m('one', .3), .35);
+    c19CellText(p, g, 0, 0, '40', m('one', 5.2));
+    klMath(p, ['1 %  =  4 000 : 100  =  40'], 780, 330, m('one', 3.0), { size: 54, anchor: 'start' });
+    // Fifteen such cells.
+    for (let k = 1; k < 15; k++) tw(g.cell(k / 10 | 0, k % 10), { o: 1 }, m('take', .4 + k * .1), .25);
+    klText(p, '15 клеток', g.x + g.W + 24, g.y + 1.2 * g.c, m('take', 2.0), { size: 28, fill: NUM, weight: 600 });
+    klMath(p, ['15 %  =  15 · 40  =  600'], 780, 450, m('line', .2), { size: 54, anchor: 'start' });
+    c19Box(p, ['4 000 · ', F('15', '100'), '  =  600'], 1100, 620, 640, m('rule', .6), { size: 54, h: 150 });
+    klRow(p, ['это ', { m: F('15', '100') }, ' от числа 4 000'], 1100, 790, m('rule', 4.0), { size: 32, msize: 44, fill: COL.dim });
+  }],
+
+  ['from', 'Число по его проценту', m => {
+    const p = panel(0);
+    klTitle(p, 'Число по его проценту');
+    klRow(p, [{ m: '30 %' }, '  класса — это  ', { m: '9' }, '  человек.'], 690, 235, m('nine', .2), { size: 36, msize: 46 });
+    klText(p, 'Всего — ?', 1010, 235, m('nine', 3.8), { size: 36, fill: RULE, weight: 600 });
+    const st = klStrip(p, { x: 300, y: 330, w: 1000, h: 90, d: 10, n: 0, t0: m('strip', .2) });
+    for (let k = 0; k < 10; k++) klText(p, '10 %', 300 + (k + .5) * 100, 312, m('strip', 1.8 + k * .1), { size: 24, fill: COL.dim, anchor: 'middle' });
+    const sh = klShade(st, 0, 3);
+    sh.forEach((r, i) => tw(r, { o: 1 }, m('three', 1.0 + i * .2), .3));
+    klBrace(p, 300, 600, 445, '9 человек', m('three', 2.2), { up: false, size: 34 });
+    c19StripText(p, st, [0, 1, 2], '3', m('one', 1.0), { step: .2, size: 40 });
+    c19StripText(p, st, [3, 4, 5, 6, 7, 8, 9], '3', m('all', .3), { step: .12, size: 40, fill: COL.chalk });
+    klBrace(p, 300, 1300, 545, '10 · 3 = 30 человек', m('all', 1.4), { up: false, size: 34, fill: RULE });
+    const L = m('line', .3), L2 = m('line', 2.2), L3 = m('line', 3.6);
+    klExpr(p, [{ s: '9', t: L }, { s: ':', t: L }, { f: [30, 100], t: L }, { s: '=', t: L2 }, { s: '9', t: L2 }, { s: '·', t: L2 }, { f: [100, 30], t: L2 },
+      { s: '=', t: L3 }, { s: '30', t: L3, fill: RULE }], 800, 740, { size: 60, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const st = klStrip(p, { x: 300, y: 250, w: 1000, h: 90, d: 5, n: 1, t0: .2 });
+    klBrace(p, 300, 1300, 222, '350', .3, { size: 40 });
+    for (let k = 0; k < 5; k++) klText(p, '20 %', 300 + (k + .5) * 200, 385, .4, { size: 28, fill: COL.dim, anchor: 'middle' });
+    S.q2q = c19StripText(p, st, [0], '?', undefined, { size: 44 })[0];
+    S.q2a = c19StripText(p, st, [0, 1, 2, 3, 4], '70', undefined, { size: 40 });
+    S.q2a.forEach((e, k) => { put(e, { o: 0 }); if (k) e.setAttribute('fill', COL.chalk); });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-ot', prompt: 'Найди 20 % от 350.',
+    build: blanks([{ parts: [{ box: '70' }],
+      why: ['20 % — это одна пятая: 350 : 5 = 70. Или так: ', $m('350 · 0,2 = 70'), '.'],
+      hint: '1 % от 350 — это 350 : 100 = 3,5. Возьми таких частей 20. Или раздели на 5: 20 % — одна пятая.',
+      fx: () => { fx(S.q2q, { o: 0 }, 0, .2); S.q2a.forEach((e, k) => fx(e, { o: 1 }, .2 + k * .12, .3)); } }]),
+  }], done) }],
+
+  ['part', 'Сколько процентов', m => {
+    const p = panel(0);
+    klTitle(p, 'Сколько процентов?');
+    const u = klUnits(p, { x: 200, y: 250, w: 960, h: 80, n: 24, per: 6, t0: .3, tSplit: m('group', .3) });
+    // The question on the picture: an empty hundred square waiting for its percent.
+    const h = klHundred(p, { x: 1180, y: 410, c: 26, t0: 2.6 });
+    const ask = klText(p, '? %', 1310, 730, 3.0, { size: 44, fill: RULE, weight: 700, anchor: 'middle' });
+    hide(ask, m('hund', .8), .3);
+    klText(p, '25 %', 1310, 730, m('hund', 1.0), { size: 44, fill: RULE, weight: 700, anchor: 'middle' });
+    const ring = mk('rect', { x: 196, y: 242, width: 248, height: 96, rx: 8, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p);
+    put(ring, { o: 0 }); show(ring, m('group', 3.6), .3);
+    klText(p, '24 задачи', 1190, 302, m('dots', 1.0), { size: 32, fill: COL.dim, weight: 600 });
+    u.shade(0, m('dots', 2.4));
+    klText(p, 'решено 6', u.gx(0), 230, m('dots', 2.6), { size: 30, fill: NUM, weight: 600, anchor: 'middle' });
+    klCount(p, [0, 1, 2, 3].map(k => [u.gx(k), 380]), m('group', 1.4), { step: .3, size: 32, fill: DEN });
+    klExpr(p, [{ f: [6, 24], t: m('frac', .1) }, { s: '=', t: m('group', 4.6) }, { f: [1, 4], t: m('group', 4.6) },
+      { s: '=', t: m('hund', .3) }, { f: [25, 100], t: m('hund', .3) }, { s: '=', t: m('hund', 1.0) }, { s: '25 %', fill: RULE, t: m('hund', 1.0) }], 200, 540, { size: 72 });
+    tw(h.cell(0, 0, 5, 5), { o: 1 }, m('hund', .5), .4);
+    c19Box(p, [F('часть', 'всё')], 500, 770, 520, m('rule', .5), { size: 50, h: 150, mx: 380 });
+    klMath(p, ['·  100 %'], 470, 775, m('rule', 3.0), { size: 50, fill: RULE, anchor: 'start' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const st = klStrip(p, { x: 300, y: 250, w: 1000, h: 80, d: 25, n: 15, t0: .2 });
+    klBrace(p, 300, 1300, 222, '25 учеников', .3, { size: 34 });
+    klBrace(p, 300, 900, 360, '15 девочек', .5, { up: false, size: 34, fill: NUM });
+    S.q3lines = [1, 2, 3, 4].map(k => path(p, `M${300 + k * 200} 240V340`, { stroke: DEN, 'stroke-width': 7, 'stroke-linecap': 'round' }, { d: 0 }));
+    S.q3lab = [0, 1, 2, 3, 4].map(k => { const e = klText(p, '20 %', 400 + k * 200, 470, undefined, { size: 30, fill: k < 3 ? NUM : COL.dim, weight: 600, anchor: 'middle' }); put(e, { o: 0 }); return e; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-skolko', prompt: 'В классе 25 учеников, 15 из них — девочки. Сколько процентов класса составляют девочки?',
+    build: blanks([{ parts: [F('15', '25'), ' · 100 % = ', { box: '60' }, ' %'],
+      why: ['Каждые 5 учеников — это 20 % класса, девочек три такие пятёрки: ', $m(F('15', '25')), ' = ', $m(F('60', '100')), ' = 60 %.'],
+      hint: 'Сократи 15/25 или доведи знаменатель до 100: умножь числитель и знаменатель на 4.',
+      fx: () => { S.q3lines.forEach((l, k) => fx(l, { d: 1 }, k * .12, .3)); S.q3lab.forEach((e, k) => fx(e, { o: 1 }, .5 + k * .12, .3)); } }]),
+  }], done) }],
+
+  ['sale', 'Скидка и наценка', m => {
+    const p = panel(0);
+    klTitle(p, 'Скидка и наценка');
+    const g = klHundred(p, { x: 160, y: 230, c: 42, t0: .2 });
+    klBrace(p, g.x, g.x + g.W, 212, '4 000 ₽', m('price', .5), { size: 34 });
+    const stay = [g.cell(0, 0, 10, 8), g.cell(8, 0, 5, 1)];
+    const gone = [];
+    for (let j = 5; j < 10; j++) gone.push(c19Cell(g, 8, j));
+    for (let j = 0; j < 10; j++) gone.push(c19Cell(g, 9, j));
+    [...stay, ...gone].forEach(e => tw(e, { o: 1 }, m('price', 1.2), .5));
+    klMath(p, ['4 000 ₽  =  100 %'], 760, 300, m('price', 2.4), { size: 50, anchor: 'start' });
+    // The discount: fifteen cells drift away.
+    gone.forEach((e, k) => tw(e, { x: 70, y: 30, o: 0 }, m('cut', 1.2 + k * .07), .6, io));
+    klRow(p, ['скидка:  ', { m: '100 % − 15 % = 85 %' }], 760, 400, m('left', .2), { size: 32, msize: 46, anchor: 'start' });
+    klMath(p, ['4 000 · 0,85'], 760, 480, m('line', .3), { size: 50, anchor: 'start' });
+    klMath(p, ['=  3 400 ₽'], 1060, 480, m('line', 3.8), { size: 50, anchor: 'start', fill: RULE });
+    // The markup: the cells come back and fifteen more are added outside the square.
+    gone.forEach((e, k) => tw(e, { x: 0, y: 0, o: 1 }, m('up', .2 + k * .03), .4));
+    const extra = [];
+    for (let i = 0; i < 10; i++) extra.push([g.x + g.W + 18, g.y + i * g.c]);
+    for (let i = 5; i < 10; i++) extra.push([g.x + g.W + 18 + g.c, g.y + i * g.c]);
+    extra.forEach(([x, y], k) => {
+      const r = mk('rect', { x, y, width: g.c, height: g.c, fill: TWO, 'fill-opacity': .85, stroke: COL.board, 'stroke-width': 1.5 }, p);
+      put(r, { x: 60, o: 0 });
+      tw(r, { x: 0, o: 1 }, m('up', 2.6 + k * .08), .4, out);
+    });
+    klRow(p, ['наценка:  ', { m: '100 % + 15 % = 115 %' }], 760, 600, m('up', 3.6), { size: 32, msize: 46, anchor: 'start' });
+    klMath(p, ['4 000 · 1,15  =  4 600 ₽'], 760, 680, m('line2', .2), { size: 50, anchor: 'start', fill: RULE });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const st = klStrip(p, { x: 300, y: 250, w: 1000, h: 90, d: 4, n: 3, t0: .2 });
+    klBrace(p, 300, 1300, 222, '12 000 ₽', .3, { size: 40 });
+    const off = mk('rect', { x: 1052, y: 252, width: 246, height: 86, fill: 'none', stroke: COL.bad, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p);
+    put(off, { o: 0 }); show(off, .5);
+    klText(p, '−25 %', 1175, 390, .6, { size: 32, fill: COL.bad, weight: 700, anchor: 'middle' });
+    S.q4a = c19StripText(p, st, [0, 1, 2, 3], '3 000', undefined, { size: 34 });
+    S.q4a.forEach((e, k) => { put(e, { o: 0 }); if (k === 3) e.setAttribute('fill', COL.dim); });
+    S.q4b = G(p, { o: 0 });
+    path(S.q4b, 'M300 368V380H1050V368', { stroke: RULE, 'stroke-width': 3, fill: 'none' });
+    klText(S.q4b, '9 000 ₽', 675, 420, undefined, { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-skidka', prompt: 'Телефон стоил 12 000 ₽ и подешевел на 25 %. Сколько рублей он стоит теперь?',
+    build: blanks([{ parts: [{ box: '9000' }, ' рублей'],
+      why: ['25 % — это четверть: 12 000 : 4 = 3 000. Осталось три четверти: ', $m('12 000 · 0,75 = 9 000'), '.'],
+      hint: 'Сначала найди 25 % от 12 000 (это четверть), потом вычти. Или умножь на 0,75.',
+      fx: () => { S.q4a.forEach((e, k) => fx(e, { o: 1 }, k * .12, .3)); fx(S.q4b, { o: 1 }, .6, .4); } }]),
+  }], done) }],
+
+  ['twice', 'Две скидки подряд', m => {
+    const p = panel(0);
+    klTitle(p, 'Две скидки подряд');
+    const g = klHundred(p, { x: 140, y: 220, c: 44, t0: .2 });
+    const top = [], bottom = [], cut = [];
+    for (let j = 0; j < 7; j++) { top.push(g.cell(0, j, 1, 8)); bottom.push(g.cell(8, j, 1, 2)); }
+    for (let j = 7; j < 10; j++) cut.push(g.cell(0, j, 1, 10));
+    [...top, ...bottom, ...cut].forEach(e => tw(e, { o: 1 }, .3, .5));
+    // −30 %: three columns go.
+    cut.forEach((e, k) => tw(e, { o: .12 }, m('first', 1.2 + k * .25), .5));
+    klText(p, '−30 %', g.x + 8.5 * g.c, 205, m('first', 1.4), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klRow(p, ['сначала ', { m: '−30 %' }, ':   ', { m: '100 − 30 = 70' }], 700, 300, m('first', 3.0), { size: 32, msize: 44, anchor: 'start' });
+    // −20 % of the new price: two cells of every remaining column of ten.
+    klRow(p, ['потом ', { m: '−20 %' }, ' от 70'], 700, 390, m('second', .5), { size: 32, msize: 44, anchor: 'start' });
+    const seventy = mk('rect', { x: g.x - 4, y: g.y - 4, width: 7 * g.c + 8, height: g.W + 8, rx: 6, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p);
+    put(seventy, { o: 0 }); show(seventy, m('second', 2.4), .3); hide(seventy, m('rows', 2.6), .4);
+    draw(path(g.top, `M${g.x} ${g.y + 8 * g.c}H${g.x + 7 * g.c}`, { stroke: DEN, 'stroke-width': 5 }, { d: 0 }), m('second', 3.4), .6);
+    klMath(p, [':   70 · 0,2 = 14'], 1000, 390, m('rows', .6), { size: 44, anchor: 'start' });
+    bottom.forEach((e, k) => tw(e, { o: .12 }, m('rows', 1.0 + k * .2), .4));
+    klText(p, '14 клеток', g.x + 3.5 * g.c, g.y + 9 * g.c + 10, m('rows', 2.4), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klText(p, '56', g.x + 3.5 * g.c, g.y + 4 * g.c + 20, m('left', .3), { size: 60, fill: COL.board, weight: 700, anchor: 'middle' });
+    klMath(p, ['70 − 14 = 56'], 700, 480, m('left', .3), { size: 44, anchor: 'start' });
+    // Not 50 %: the shares multiply. 7 columns of 10 and 8 rows of 10 left: 0,7 · 0,8 of the square.
+    klMath(p, ['30 % + 20 % = 50 %'], 700, 600, m('wrong', .3), { size: 50, anchor: 'start', fill: COL.dim });
+    klStrike(p, 690, 612, 1200, 560, m('wrong', 3.0));
+    klBrace(p, g.x, g.x + 7 * g.c, g.y + g.W + 14, '0,7', m('right', 1.0), { up: false, fill: RULE, size: 34 });
+    draw(path(p, `M${g.x - 20} ${g.y}H${g.x - 8}V${g.y + 8 * g.c}H${g.x - 20}`, { stroke: RULE, 'stroke-width': 3, fill: 'none' }, { d: 0 }), m('right', 3.4), .5);
+    klText(p, '0,8', g.x - 28, g.y + 4 * g.c + 12, m('right', 3.7), { size: 34, fill: RULE, weight: 600, anchor: 'end' });
+    klMath(p, ['0,7 · 0,8'], 700, 700, m('right', 2.0), { size: 50, anchor: 'start' });
+    klMath(p, ['=  0,56'], 900, 700, m('right', 5.6), { size: 50, anchor: 'start' });
+    klRow(p, ['общая скидка:  ', { m: '100 % − 56 % = 44 %', fill: RULE }], 700, 800, m('total', .2), { size: 32, msize: 48, anchor: 'start', weight: 600 });
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Процент — одна сотая:  ', { m: ['1 % = ', F('1', '100'), ',   25 % = ', F('1', '4'), ' = 0,25'] }],
+    ['Процент от числа:  ', { m: ['4 000 · ', F('15', '100'), ' = 600'] }],
+    ['Число по его проценту:  ', { m: ['9 : ', F('30', '100'), ' = 30'] }],
+    ['Сколько процентов:  ', { m: [F('6', '24'), ' · 100 % = 25 %'] }],
+    ['Скидки подряд:  ', { m: '0,7 · 0,8 = 0,56' }, '  — скидка 44 %, а не 50 %'],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-ot', prompt: 'Найди 15 % от 600.',
+    build: blanks([{ parts: [{ box: '90' }], why: ['1 % от 600 — это 6, а 15 % — это 15 · 6 = 90. Или так: ', $m('600 · 0,15 = 90'), '.'],
+      hint: '1 % — это 600 : 100. Возьми таких частей 15.' }]),
+  }, {
+    id: 'p-chislo', prompt: 'Найди число, 40 % которого равны 18.',
+    build: blanks([{ parts: [{ box: '45' }], why: ['40 % — это 4 части по 10 %: одна часть 18 : 4 = 4,5, а все десять — 45. Или так: ', $m('18 : 0,4 = 45'), '.'],
+      hint: 'Найди, сколько приходится на 10 % (18 : 4), потом возьми десять таких частей.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-zadachi', prompt: 'Из 40 задач решено 30. Сколько процентов задач решено?',
+    build: blanks([{ parts: [{ box: '75' }, ' %'], why: [$m(F('30', '40')), ' = ', $m(F('3', '4')), ' = 75 %.'],
+      hint: 'Раздели часть на всё (30 на 40) и умножь на 100 %.' }]),
+  }, {
+    id: 'p-nacenka', prompt: 'Товар стоил 800 ₽, его цену подняли на 20 %. Сколько рублей он стоит теперь?',
+    build: blanks([{ parts: [{ box: '960' }, ' рублей'], why: ['После наценки цена — 120 % прежней: ', $m('800 · 1,2 = 960'), '.'],
+      hint: '20 % от 800 — это 160. Прибавь их к цене. Или умножь на 1,2.' }]),
+  }, {
+    id: 'p-3po2', prompt: 'Нужно купить 3 одинаковых товара. Что выгоднее?',
+    build: choice(['«3 по цене 2»', 'скидка 30 %'], 0,
+      ['«3 по цене 2» — платишь за 2 товара из 3, это скидка ', $m(F('1', '3')), ', около 33 %. Это больше 30 %.'],
+      [null, ['«3 по цене 2» — это скидка в треть цены: ', $m(F('1', '3')), ' — около 33 %, больше, чем 30 %.']]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-tudaobratno', prompt: 'Цена 1 000 ₽ выросла на 10 %, а потом снизилась на 10 %. Сколько рублей она стоит теперь?',
+    build: blanks([{ parts: [{ box: '990' }, ' рублей'], why: [$m('1 000 · 1,1 = 1 100'), ', потом ', $m('1 100 · 0,9 = 990'), '. Вторые 10 % считали от большей цены, поэтому прежняя цена не вернулась.'],
+      hint: 'Найди цену после роста, а 10 % снижения считай уже от неё.' }]),
+  }, {
+    id: 'p-dve', prompt: 'Цену снизили на 50 %, а потом ещё на 50 %. На сколько процентов она снизилась всего?',
+    build: blanks([{ parts: [{ box: '75' }, ' %'], why: [$m('0,5 · 0,5 = 0,25'), ': осталось 25 % цены, значит, скидка 75 %. Не 100 %!'],
+      hint: 'Доли перемножают: после двух скидок остаётся 0,5 · 0,5 цены.' }]),
+  }, {
+    id: 'p-dolya', prompt: 'Какая запись равна 20 %?',
+    build: choice([$m(F('1', '5')), $m(F('1', '20')), $m('0,02')], 0, ['20 % = ', $m(F('20', '100')), ' = ', $m(F('1', '5')), '.'],
+      [null, [$m(F('1', '20')), ' — это 5 %: ', $m('100 : 20 = 5'), '.'], '0,02 — две сотых, это 2 %. А 20 % = 0,2.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

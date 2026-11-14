@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Единицы измерения · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 4.5 «Единицы измерения» (5–6 класс). Beat ids match papermorph/content/uroki/ch21/narration.ru.json.
+const CHAPTER = { number: 21, label: '4.5', title: 'Единицы измерения', minutes: 8, language: 'ru', next: '../ch22/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, WHOLE = KL.WHOLE, RULE = KL.RULE;
+const NB = ' ';   // thousands: 3 500 with a no-break space
+// Colours of this topic: down a step (·, to smaller units) KL.TWO, up a step (:, to larger units) KL.DEN,
+// the decimal comma KL.RULE, metres KL.WHOLE, the small added part (centimetres) KL.NUM.
+
+// A staircase of units: step k is w wide, its top rise·k lower than the first; the unit sits inside the step and the
+// factor to the next step sits right of the riser. Steps slide in at tU[k], factors at tF[k]. Returns { steps, facs }.
+function c21Steps(p, { x, y, w, rise, bottom, units, facs, tU, tF, size = 40, fsize = 32 }) {
+  const steps = units.map((u, k) => {
+    const x0 = x + k * w, top = y + k * rise, g = G(p, { o: 0, y: -16 });
+    mk('rect', { x: x0, y: top, width: w, height: bottom - top, fill: COL.chalk, 'fill-opacity': .05 + .015 * k }, g);
+    path(g, `M${x0} ${bottom}V${top}H${x0 + w}V${bottom}`, { stroke: COL.chalk, 'stroke-width': 3 });
+    const label = T(g, u, { x: x0 + w / 2, y: top + rise * .72, size, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, tU[k], .45, out);
+    return { g, x0, top, label };
+  });
+  const fs = facs.map((f, k) => klText(p, f, x + (k + 1) * w + 12, y + k * rise + rise * .5, tF[k], { size: fsize, fill: TWO, weight: 600 }));
+  return { steps, facs: fs };
+}
+
+// Digits in even slots with a decimal comma that hops between them (places = digits after the comma; 0 hides it).
+// hidden: slots that start invisible (zeros that appear). hop(from, to, t0, R) moves the comma one slot per `dur`,
+// with R = { tw, prog } (default) or { tw: fx, prog: fxp } for an answer effect. px(k) is the x of the comma with k
+// digits after it, so px(0) is the right end of the number.
+function c21Num(p, digits, x, y, places, { size = 110, fill = COL.chalk, hidden = [] } = {}) {
+  const g = G(p), w = size * .75, n = digits.length, x0 = x - n * w / 2;
+  const ds = [...digits].map((c, i) => T(g, c, { x: x0 + i * w + w / 2, y, size, fill, font: MATH, anchor: 'middle', o: hidden.includes(i) ? 0 : 1 }));
+  const px = k => x0 + (n - k) * w;
+  const comma = T(g, ',', { x: px(places), y, size, fill: RULE, font: MATH, weight: 700, anchor: 'middle', o: places ? 1 : 0 });
+  const trail = path(g, '', { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '6 7' }, { o: 0 });
+  return { g, ds, comma, px, w, x0,
+    hop(from, to, t0, R = { tw, prog }, dur = .5) {
+      const steps = Math.abs(to - from), sg = Math.sign(to - from);
+      let d = '';
+      for (let k = 0; k < steps; k++) {
+        const a = px(from + sg * k), b = px(from + sg * (k + 1));
+        d += `M${a} ${y - size * .55}Q${(a + b) / 2} ${y - size * 1.25} ${b} ${y - size * .55}`;
+      }
+      trail.setAttribute('d', d);
+      if (!from) R.tw(comma, { o: 1 }, t0, .2);
+      R.tw(trail, { o: .9 }, t0, .3);
+      R.prog(q => {
+        const s = q * steps, k = Math.min(steps - 1, Math.floor(s)), f = s - k;
+        const a = px(from + sg * k), b = px(from + sg * (k + 1));
+        put(comma, { x: a + (b - a) * f, y: y - Math.sin(Math.PI * f) * size * .6 });
+      }, t0, steps * dur, lin);
+      if (!to) R.tw(comma, { o: 0 }, t0 + steps * dur, .3);
+      R.tw(trail, { o: 0 }, t0 + steps * dur + .8, .5);
+    } };
+}
+
+// A unit after a c21Num: text at the number's right end that can slide (x) and be swapped for another unit.
+function c21Unit(p, str, x, y, t0, size = 72) {
+  return klText(p, str, x, y, t0, { size, fill: COL.chalk, weight: 500 });
+}
+
+// A metre (or any) bar: a rectangle with ticks every `tick` px and a label inside. Returns { g, label }.
+function c21Bar(p, x, y, w, h, { fill = WHOLE, op = .35, label = '', tick = 0, t0, size = 32 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x, y, width: w, height: h, fill, 'fill-opacity': op, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  let d = '';
+  if (tick) for (let k = 1; k * tick < w - 1; k++) d += `M${x + k * tick} ${y + h}v${-h * .28}`;
+  const ticks = path(g, d, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .7 }, { o: tick ? 1 : 0 });
+  const lab = label ? T(g, label, { x: x + w / 2, y: y + h / 2 + size * .36, size, weight: 600, anchor: 'middle' }) : null;
+  if (t0 !== undefined) show(g, t0);
+  return { g, label: lab, ticks };
+}
+
+// A small car standing on the road at (0, 0): move its group with tw/prog.
+function c21Car(p, x, y, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x: -26, y: -64, width: 48, height: 24, rx: 7, fill: TWO, 'fill-opacity': .6, stroke: COL.chalk, 'stroke-width': 2.5 }, g);
+  mk('rect', { x: -48, y: -44, width: 96, height: 30, rx: 8, fill: TWO, stroke: COL.chalk, 'stroke-width': 2.5 }, g);
+  [-26, 26].forEach(cx => mk('circle', { cx, cy: -12, r: 11, fill: COL.board, stroke: COL.chalk, 'stroke-width': 3 }, g));
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Единицы измерения', (m, D) => klIntro(m, D, {
+    unit: 'Глава 4 · Десятичные дроби и проценты · Тема 4.5',
+    title: 'Единицы измерения',
+    sub: 'Как переводить одни единицы в другие',
+    art: (g, t0) => {
+      ['м', 'дм', 'см'].forEach((u, k) => {
+        const x0 = 620 + k * 120, top = 560 + k * 36;
+        mk('rect', { x: x0, y: top, width: 120, height: 680 - top, fill: COL.chalk, 'fill-opacity': .07 }, g);
+        path(g, `M${x0} 680V${top}H${x0 + 120}V680`, { stroke: COL.chalk, 'stroke-width': 3 });
+        const lab = T(g, u, { x: x0 + 60, y: top + 30, size: 26, weight: 600, anchor: 'middle' });
+        pulse(lab, t0 + 8.6 + k * .5, 1.35);
+        if (k) { const f = T(g, '· 10', { x: x0 + 8, y: top - 8, size: 22, fill: TWO, weight: 600, o: 0 }); show(f, t0 + 6.6 + k * .8); }
+      });
+    },
+  })],
+
+  ['ladder', 'Лестница единиц', m => {
+    const p = panel(0);
+    klTitle(p, 'Лестница единиц', 'Каждая единица — ступенька');
+    const L = c21Steps(p, { x: 110, y: 240, w: 185, rise: 104, bottom: 780, units: ['км', 'м', 'дм', 'см', 'мм'],
+      facs: ['· 1' + NB + '000', '· 10', '· 10', '· 10'], tU: [.3, m('m'), m('dm'), m('cm'), m('mm')], tF: [m('s1'), m('s2'), m('s3'), m('s4')] });
+    L.steps.forEach((s, k) => pulse(s.label, m(['km', 'm', 'dm', 'cm', 'mm'][k], .05), 1.25));
+    ['s1', 's2', 's3', 's4'].forEach((mark, k) => { pulse(L.steps[k].label, m(mark, .1), 1.3); pulse(L.steps[k + 1].label, m(mark, .6), 1.3); });
+    klText(p, 'крупная единица —', 1140, 262, m('whole'), { size: 28, fill: COL.dim });
+    klText(p, 'целое число мелких', 1140, 300, m('whole', .3), { size: 28, fill: COL.dim });
+    L.steps.forEach((s, k) => { tw(s.g, { y: -8 }, m('whole', .6 + k * .25), .2, out); tw(s.g, { y: 0 }, m('whole', .8 + k * .25), .3); });
+    klArrow(p, 320, 205, 1070, 630, 300, TWO, m('down'), 1.2);
+    klText(p, 'вниз — умножаем', 880, 380, m('down', 1), { size: 32, fill: TWO, weight: 700 });
+    L.facs.forEach((f, k) => pulse(f, m('down', 1.6 + k * .45), 1.3));
+    klArrow(p, 1000, 840, 150, 590, 905, DEN, m('up'), 1.2);
+    klText(p, 'вверх — делим', 1070, 862, m('up', 1), { size: 32, fill: DEN, weight: 700 });
+    c21Steps(p, { x: 1140, y: 470, w: 135, rise: 104, bottom: 780, units: ['т', 'кг', 'г'], facs: ['· 1' + NB + '000', '· 1' + NB + '000'],
+      tU: [m('mass'), m('mass', .4), m('mass', .8)], tF: [m('kg'), m('kg', .4)], fsize: 28 });
+  }],
+
+  ['comma', 'Сдвигаем запятую', m => {
+    const p = panel(0);
+    klTitle(p, 'Длина и масса: сдвигаем запятую');
+    ['· 10', '· 100', '· 1' + NB + '000'].forEach((s, i) => klText(p, s, [1010, 1160, 1330][i], 230, m(['ten', 'hundred', 'thousand'][i]), { size: 40, fill: TWO, weight: 700, anchor: 'middle' }));
+    klText(p, 'перевод — это сдвиг запятой', 1190, 292, m('shift'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    // 3,5 km → 3 500 m: down a step, the comma hops three places right, zeros fill the empty places.
+    const A = c21Num(p, '3500', 760, 410, 3, { hidden: [2, 3] });
+    put(A.g, { o: 0 }); show(A.g, m('ex1'));
+    const uA = c21Unit(p, 'км', A.px(2) + 26, 410, m('ex1'));
+    klRow(p, ['км → м:  ', { m: '· 1' + NB + '000', fill: TWO }], 150, 300, m('mul'), { size: 34, anchor: 'start' });
+    A.hop(3, 0, m('hop'));
+    [2, 3].forEach((i, k) => show(A.ds[i], m('zeros', k * .3), .3));
+    tw(uA, { x: A.px(0) + 26 }, m('hop', -.5), .5);
+    hide(uA, m('res1'), .3);
+    c21Unit(p, 'м', A.px(0) + 26, 410, m('res1', .2));
+    klMath(p, ['3,5 км = 3' + NB + '500 м'], 760, 515, m('res1', .4), { size: 54, fill: RULE });
+    // 750 g → 0,75 kg: up a step, the comma hops three places left; a zero comes in front, the end zero drops.
+    const B = c21Num(p, '0750', 760, 720, 0, { hidden: [0] });
+    put(B.g, { o: 0 }); show(B.g, m('ex2'));
+    const uB = c21Unit(p, 'г', B.px(0) + 26, 720, m('ex2'));
+    klRow(p, ['г → кг:  ', { m: ': 1' + NB + '000', fill: DEN }], 150, 610, m('div'), { size: 34, anchor: 'start' });
+    B.hop(0, 3, m('hop2'));
+    show(B.ds[0], m('hop2', 1.6), .3);
+    hide(B.ds[3], m('res2'), .4);
+    hide(uB, m('res2'), .3);
+    const uKg = c21Unit(p, 'кг', B.px(0) + 26, 720, m('res2'));
+    tw(uKg, { x: B.px(1) + 26 }, m('res2', .4), .6);
+    klMath(p, ['750 г = 0,75 кг'], 760, 825, m('res2', .6), { size: 54, fill: RULE });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klRow(p, ['км → м:  ', { m: '· 1' + NB + '000', fill: TWO }], 800, 200, .2, { size: 34, fill: COL.dim });
+    S.q1 = c21Num(p, '4200', 760, 360, 3, { hidden: [2, 3] });
+    S.q1u = c21Unit(p, 'км', S.q1.px(2) + 26, 360);
+    S.q1m = c21Unit(p, 'м', S.q1.px(0) + 26, 360);
+    put(S.q1m, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-km', prompt: ['Сколько метров в ', $m('4,2'), ' км?'],
+    build: blanks([{ parts: ['4,2 км = ', { box: '4200' }, ' м'], why: 'Спускаемся на ступеньку: 4,2 · 1 000 = 4 200 м, запятая прыгает на три знака вправо.',
+      hint: 'В километре 1 000 метров: умножь на 1 000, то есть сдвинь запятую на три знака вправо.',
+      fx: () => {
+        S.q1.hop(3, 0, 0, { tw: fx, prog: fxp });
+        [2, 3].forEach((i, k) => fx(S.q1.ds[i], { o: 1 }, 1.5 + k * .2, .3));
+        fx(S.q1u, { o: 0 }, 1.5, .3); fx(S.q1m, { o: 1 }, 1.8, .3);
+      } }]),
+  }], done) }],
+
+  ['compound', 'Две единицы сразу', m => {
+    const p = panel(0);
+    klTitle(p, 'Две единицы сразу');
+    const U = 520, X0 = 150, Y = 250, H = 80;   // one metre = 520 px
+    const bars = [0, 1].map(k => c21Bar(p, X0 + k * U, Y, U, H, { label: '1 м', tick: U / 10, t0: m('two', k * .3) }));
+    const piece = c21Bar(p, X0 + 2 * U, Y, U / 20, H, { fill: NUM, op: .9, t0: m('five') });
+    klText(p, '5 см', X0 + 2 * U + 13, Y - 18, m('five', .2), { size: 30, fill: NUM, weight: 700, anchor: 'middle' });
+    bars.forEach((b, k) => { hide(b.label, m('cm', k * .2), .3); klText(p, '100 см', X0 + k * U + U / 2, Y + H / 2 + 12, m('cm', .3 + k * .2), { size: 32, weight: 600, anchor: 'middle' }); });
+    pulse(piece.g, m('cm', .9), 1.05);
+    const A = ['2 м 5 см'], wA = mathW(A, 60);
+    klMath(p, A, X0, 480, .3, { size: 60, anchor: 'start' });
+    klMath(p, [' = 200 см + 5 см = 205 см'], X0 + wA, 480, m('sum'), { size: 60, anchor: 'start' });
+    klMath(p, [' = 2,05 м'], X0 + wA, 590, m('m'), { size: 60, anchor: 'start', fill: RULE });
+    klText(p, '0,05 м', X0 + 2 * U + 13, Y + H + 40, m('hund'), { size: 30, fill: NUM, weight: 700, anchor: 'middle' });
+    klMath(p, ['1 см = 0,01 м'], 980, 590, m('hund', .3), { size: 48, anchor: 'start', fill: NUM });
+    // The trap: 2,5 m adds fifty centimetres, a piece ten times longer than the five we have.
+    klMath(p, ['2 м 5 см = 2,5 м'], X0, 750, m('trap'), { size: 60, anchor: 'start', fill: COL.dim });
+    const ghost = path(p, `M${X0 + 2 * U} ${Y}h${U / 2}v${H}h${-U / 2}`, { stroke: COL.bad, 'stroke-width': 3.5, 'stroke-dasharray': '10 8' }, { d: 0 });
+    draw(ghost, m('long'), .8);
+    klText(p, '50 см', X0 + 2 * U + U / 4 + 26, Y - 18, m('long', .5), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klMath(p, ['2,5 м = 2 м 50 см'], 980, 750, m('long', .3), { size: 48, anchor: 'start', fill: COL.bad });
+    klStrike(p, X0 - 10, 764, X0 + mathW(['2 м 5 см = 2,5 м'], 60) + 10, 712, m('strike'));
+    klText(p, 'ошибка!', X0 + 180, 820, m('strike', .3), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const U = 280, X0 = 200, Y = 230, H = 80;
+    [0, 1, 2, 3].forEach(k => c21Bar(p, X0 + k * U, Y, U, H, { label: '1 м', tick: U / 10, t0: .2 + k * .1 }));
+    S.q2piece = c21Bar(p, X0 + 4 * U, Y, U * .08, H, { fill: NUM, op: .9, t0: .7 });
+    klText(p, '8 см', X0 + 4 * U + 11, Y - 18, .8, { size: 30, fill: NUM, weight: 700, anchor: 'middle' });
+    S.q2lab = klText(p, '0,08 м', X0 + 4 * U + 11, Y + H + 40, undefined, { size: 30, fill: NUM, weight: 700, anchor: 'middle' });
+    put(S.q2lab, { o: 0 });
+    klMath(p, ['4 м 8 см'], 800, 440, .9, { size: 60 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sostav', prompt: 'Как записать 4 м 8 см в метрах?',
+    build: choice([$m('4,8 м'), $m('4,08 м'), $m('4,008 м')], 1,
+      ['Сантиметр — одна сотая метра, значит, 8 см = 0,08 м и 4 м 8 см = ', $m('4,08'), ' м.'],
+      ['4,8 м — это 4 м 80 см: восемь десятых метра — восемьдесят сантиметров.', null, '4,008 м — это 4 м 8 мм: тысячные доли метра — миллиметры.'],
+      () => { fx(S.q2lab, { o: 1 }, 0, .4); fx(S.q2piece.g, { o: .4 }, .1, .2); fx(S.q2piece.g, { o: 1 }, .3, .3); }),
+  }], done) }],
+
+  ['time', 'Время не десятичное', m => {
+    const p = panel(0);
+    klTitle(p, 'Время не десятичное');
+    const CX = 420, CY = 510, R = 240;
+    const c = klClock(p, CX, CY, R, .2);
+    c.ticksAt(m('clock'));
+    c.sweep(m('half'), 30, 1.4);
+    const X = 820;
+    klMath(p, ['1 ч = 60 мин'], X, 300, m('clock', .6), { size: 60, anchor: 'start' });
+    const A = ['30 мин = ', F('1', '2'), ' ч'], wA = mathW(A, 60);
+    klMath(p, A, X, 430, m('half', .8), { size: 60, anchor: 'start', fill: NUM });
+    klMath(p, [' = 0,5 ч'], X + wA, 430, m('point5'), { size: 60, anchor: 'start', fill: NUM });
+    klMath(p, ['1,5 ч = 1 ч 30 мин'], X, 560, m('ex'), { size: 60, anchor: 'start', fill: RULE });
+    klMath(p, ['1,5 · 60 = 90 мин'], X, 665, m('mul'), { size: 60, anchor: 'start' });
+    const T1 = ['1 ч 30 мин'], w1 = mathW(T1, 60);
+    klMath(p, T1, X, 800, m('trap'), { size: 60, anchor: 'start', fill: COL.dim });
+    klMath(p, [' = 1,3 ч'], X + w1, 800, m('as'), { size: 60, anchor: 'start', fill: COL.dim });
+    klStrike(p, X - 10, 812, X + w1 + mathW([' = 1,3 ч'], 60) + 10, 758, m('strike'));
+    klText(p, 'ошибка!', X + w1 + mathW([' = 1,3 ч'], 60) + 30, 800, m('strike', .3), { size: 30, fill: COL.bad, weight: 700 });
+  }],
+
+  ['minutes', 'Минуты в часы', m => {
+    const p = panel(0);
+    klTitle(p, 'Минуты в часы');
+    klText(p, 'минуты делим на 60 и сокращаем', 100, 162, m('div60'), { size: 27, fill: DEN, weight: 600 });
+    const XS = [300, 800, 1300], CY = 310, R = 110;
+    const cs = XS.map((x, i) => { const c = klClock(p, x, CY, R, .3 + i * .5); c.ticksAt(.6 + i * .5); return c; });
+    const col = (i, mn, fr, dec, t1, t2, t3) => {
+      cs[i].sweep(t1, mn, 1.2);
+      klMath(p, [mn + ' мин = ', F(mn, '60'), ' ч'], XS[i], 540, t1 + .3, { size: 46 });
+      const e = klMath(p, ['= ', F(fr[0], fr[1]), ' ч'], XS[i], 640, t2, { size: 46, fill: NUM });
+      if (!dec) { pulse(e, m('keep', 2.6), 1.3); draw(path(p, `M${XS[i] - 70} 625a70 46 0 1 0 140 0a70 46 0 1 0 -140 0`, { stroke: RULE, 'stroke-width': 3.5 }, { d: 0 }), m('keep', 3), .6); }
+      if (dec) klMath(p, ['= ' + dec + ' ч'], XS[i], 725, t3, { size: 46, fill: RULE });
+    };
+    col(0, '15', ['1', '4'], '0,25', m('q15'), m('cut15'), m('d15'));
+    col(1, '45', ['3', '4'], '0,75', m('q45'), m('q45', 1.4), m('d45'));
+    col(2, '20', ['1', '3'], '', m('q20'), m('q20', 1.4));
+    klText(p, 'ровно десятичной', XS[2], 715, m('keep'), { size: 26, fill: COL.dim, anchor: 'middle' });
+    klText(p, 'не записать', XS[2], 748, m('keep'), { size: 26, fill: COL.dim, anchor: 'middle' });
+    const A = ['2 ч 15 мин = 2', F('1', '4'), ' ч'], B = [' = 2,25 ч'], wA = mathW(A, 50), x0 = 800 - (wA + mathW(B, 50)) / 2;
+    klMath(p, A, x0, 840, m('mix'), { size: 50, anchor: 'start' });
+    klMath(p, B, x0 + wA, 840, m('mixd'), { size: 50, anchor: 'start', fill: RULE });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3 = [20, 12, 15].map((mn, i) => { const c = klClock(p, 400 + i * 400, 320, 140, .2 + i * .1); c.ticksAt(.4); c.sweep(.9, mn, 1); return c; });
+    S.q3lab = klText(p, '12 мин = 0,2 ч', 800, 515, undefined, { size: 32, fill: RULE, weight: 700, anchor: 'middle' });
+    put(S.q3lab, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-chasy', prompt: ['На каких часах прошло ', $m('0,2'), ' часа? Нажми на них.'],
+    build: pickEls(S.q3.map((c, i) => ({ el: c.g, box: [260 + i * 400, 180, 280, 280], label: ['20 мин', '12 мин', '15 мин'][i] })), 1,
+      ['0,2 · 60 = 12: две десятых часа — это 12 минут.'],
+      i => i === 0 ? 'Здесь 20 минут. В часе 60 минут, а не 100: 0,2 ч = 0,2 · 60 мин.' : 'Здесь 15 минут — четверть часа, 0,25 ч. А 0,2 ч = 0,2 · 60 мин.',
+      () => fx(S.q3lab, { o: 1 }, 0, .4)),
+  }], done) }],
+
+  ['speed', 'Скорость', m => {
+    const p = panel(0);
+    klTitle(p, 'Скорость: путь и время отдельно');
+    const RY = 330;
+    draw(path(p, `M100 ${RY}H1500`, { stroke: COL.dim, 'stroke-width': 4 }, { d: 0 }), .2, .6);
+    const car = c21Car(p, 170, RY, .3);
+    [['км/ч', 1180, 1.6], ['м/с', 1380, 3.3]].forEach(([u, x, t]) => hide(klMath(p, [u], x, 245, t, { size: 48, fill: COL.dim }), m('path'), .4));
+    klMath(p, ['72 км/ч'], 120, 245, m('car'), { size: 52, anchor: 'start', fill: RULE });
+    tw(car, { x: 620 }, m('car', .3), 2.6);
+    klText(p, 'путь', 420, 420, m('sep'), { size: 30, fill: COL.dim, weight: 600, anchor: 'middle' });
+    klText(p, 'время', 1150, 420, m('sep', .4), { size: 30, fill: COL.dim, weight: 600, anchor: 'middle' });
+    const down = (x, y1, y2, lab, col, t) => { klArrow(p, x, y1, x, y2, (y1 + y2) / 2, col, t, .4); klText(p, lab, x + 22, (y1 + y2) / 2 + 10, t + .2, { size: 30, fill: col, weight: 600 }); };
+    klMath(p, ['72 км'], 420, 490, m('path'), { size: 56 });
+    down(420, 510, 565, '· 1' + NB + '000', TWO, m('path', .5));
+    klMath(p, ['72' + NB + '000 м'], 420, 620, m('path', 1), { size: 56 });
+    klMath(p, ['1 ч'], 1150, 490, m('time'), { size: 56 });
+    down(1150, 510, 565, '· 60', TWO, m('time', .5));
+    klMath(p, ['60 мин'], 1150, 620, m('time', 1), { size: 56 });
+    down(1150, 640, 695, '· 60', TWO, m('sec'));
+    klMath(p, ['3' + NB + '600 с'], 1150, 750, m('sec', .5), { size: 56 });
+    klMath(p, ['72' + NB + '000 м : 3' + NB + '600 с'], 420, 760, m('div'), { size: 52 });
+    const res = klMath(p, ['= 20 м/с'], 420, 850, m('res'), { size: 60, fill: RULE });
+    pulse(res, m('each'), 1.15);
+    [0, 1, 2].forEach(k => {
+      const a = 620 + k * 200, b = a + 200, t = m('each', .3 + k * .8);
+      prog(q => put(car, { x: a + (b - a) * q, y: RY - Math.sin(Math.PI * q) * 40 }), t, .6);
+      draw(path(p, `M${a} ${RY - 74}Q${(a + b) / 2} ${RY - 130} ${b} ${RY - 74}`, { stroke: TWO, 'stroke-width': 2.5, 'stroke-dasharray': '7 7' }, { d: 0, o: .8 }), t, .6);
+      klText(p, '1 с', (a + b) / 2, RY - 122, t + .3, { size: 26, fill: TWO, weight: 600, anchor: 'middle' });
+      klText(p, '20 м', (a + b) / 2, RY + 40, t + .3, { size: 26, fill: COL.chalk, weight: 600, anchor: 'middle' });
+      draw(path(p, `M${a} ${RY - 10}v20`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), t, .2);
+    });
+    draw(path(p, `M1220 ${RY - 10}v20`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), m('each', 2.5), .2);
+  }],
+
+  ['area', 'Площадь', m => {
+    const p = panel(0);
+    klTitle(p, 'Площадь: шаг умножается сам на себя');
+    const H = klHundred(p, { x: 130, y: 220, c: 44, t0: .2 });
+    const side1 = klText(p, '1 м', 350, 715, m('sq'), { size: 34, weight: 600, anchor: 'middle' });
+    const side2 = klText(p, '1 м = 10 дм', 350, 715, m('sq', 2.4), { size: 34, weight: 600, anchor: 'middle' });
+    hide(side1, m('sq', 2.2), .2);
+    bracketH(p, 130, 570, 680, '', COL.chalk, m('sq'));
+    for (let j = 1; j < 10; j++) draw(path(p, `M${130 + j * 44} 680v-10`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), m('sq', 2.4 + j * .1), .15);
+    hide(side2, m('cm', .2), .3);
+    klText(p, '1 м = 100 см', 350, 715, m('cm', .4), { size: 34, weight: 600, anchor: 'middle', fill: COL.chalk });
+    for (let i = 0; i < 10; i++) show(H.cell(i, 0, 10, 1, NUM), m('row', i * .12), .25);
+    klCount(p, Array.from({ length: 10 }, (_, j) => [130 + 22 + j * 44, 210]), m('rows'), { step: .1, size: 26 });
+    klText(p, '1 дм²', 590, 252, m('rows', 1), { size: 30, fill: NUM, weight: 700 });
+    const A = ['1 м² = '], B = ['10 · 10'], C = [' = 100 дм²'], wA = mathW(A, 52), wB = mathW(B, 52);
+    klMath(p, A, 720, 330, m('all'), { size: 52, anchor: 'start' });
+    const ten = klMath(p, B, 720 + wA, 330, m('all'), { size: 52, anchor: 'start', fill: TWO });
+    klMath(p, C, 720 + wA + wB, 330, m('all'), { size: 52, anchor: 'start', fill: RULE });
+    klText(p, 'шаг лестницы 10, у площади — 10 · 10', 720, 400, m('step'), { size: 28, fill: COL.dim });
+    pulse(ten, m('step', 1.6), 1.2);
+    const A2 = ['1 м² = '], B2 = ['100 · 100'], wA2 = mathW(A2, 52);
+    klMath(p, A2, 720, 520, m('cm'), { size: 52, anchor: 'start' });
+    klMath(p, [' = 10' + NB + '000 см²'], 720 + wA2 + mathW(B2, 52), 520, m('cm', .4), { size: 52, anchor: 'start' });
+    klMath(p, B2, 720 + wA2, 520, m('cm', 3.6), { size: 52, anchor: 'start', fill: TWO });
+    const A3 = ['1 л = 1 дм³'];
+    klMath(p, A3, 720, 660, m('vol'), { size: 46, anchor: 'start' });
+    klMath(p, [' = 10 · 10 · 10 = 1' + NB + '000 см³'], 720 + mathW(A3, 46), 660, m('vol', 2.6), { size: 46, anchor: 'start' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const H = klHundred(p, { x: 630, y: 130, c: 34, t0: .2 });
+    S.q4 = Array.from({ length: 10 }, (_, i) => H.cell(i, 0, 10, 1, NUM));
+    klText(p, '1 дм = 10 см', 800, 520, .4, { size: 32, weight: 600, anchor: 'middle' });
+    klText(p, '1 см²', 990, 155, .5, { size: 28, fill: COL.dim, weight: 600 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-ploshad', prompt: 'Сколько квадратных сантиметров в одном квадратном дециметре?',
+    build: blanks([{ parts: ['1 дм² = ', { box: '100' }, ' см²'], why: 'Сторона — 10 см: 10 рядов по 10 клеток, 10 · 10 = 100 см².',
+      hint: 'Шаг лестницы 10, но у площади он умножается сам на себя: 10 · 10.',
+      fx: () => S.q4.forEach((r, i) => fx(r, { o: 1 }, i * .08, .25)) }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'К мелким единицам — умножаем, к крупным — делим',
+    ['Длина и масса — сдвиг запятой:  ', { m: '3,5 км = 3' + NB + '500 м' }],
+    ['В часе 60 минут:  ', { m: ['15 мин = ', F('1', '4'), ' ч = 0,25 ч'] }],
+    ['Составную — в одну единицу:  ', { m: '2 м 5 см = 2,05 м' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-perevod', prompt: 'Переведи величины.',
+    build: blanks([
+      { parts: ['3,7 км = ', { box: '3700' }, ' м'], why: '3,7 · 1 000 = 3 700: запятая прыгает на три знака вправо.', hint: 'Километры в метры — вниз на ступеньку: умножь на 1 000.' },
+      { parts: ['3 т 50 кг = ', { box: '3050' }, ' кг'], why: '3 т = 3 000 кг, и ещё 50 кг: 3 050 кг.', hint: '1 т = 1 000 кг. Переведи тонны в килограммы и прибавь 50.' },
+      { parts: ['250 г = ', { box: '0,25' }, ' кг'], why: '250 : 1 000 = 0,25: запятая прыгает на три знака влево.', hint: 'Граммы в килограммы — вверх на ступеньку: раздели на 1 000.' },
+      { parts: ['6 м 7 см = ', { box: '6,07' }, ' м'], why: '7 см — семь сотых метра: 6,07 м.', hint: '1 см = 0,01 м. Не 6,7: это 6 м 70 см.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-chasy', prompt: 'Переведи время.',
+    build: blanks([
+      { parts: ['2,5 ч = ', { box: '150' }, ' мин'], why: '2,5 · 60 = 150 мин: два часа и ещё половина часа.', hint: 'Часы в минуты — умножь на 60.' },
+      { parts: ['1 ч 45 мин = ', { box: '1,75' }, ' ч'], why: ['45 мин = ', $m(F('45', '60')), ' ч = ', $m(F('3', '4')), ' ч = 0,75 ч, всего 1,75 ч.'], hint: ['45 минут — это ', $m(F('45', '60')), ' часа. Сократи дробь.'] },
+      { parts: ['20 мин = ', { box: '1/3', lowest: true }, ' ч'], why: [$m(F('20', '60'), ' = ', F('1', '3')), ': двадцать минут — треть часа.'], hint: 'Раздели на 60 и сократи дробь.' },
+    ]),
+  }, {
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['1,5 ч = 1 ч 30 мин'], ans: ['y'], why: 'Половина часа — 30 минут.' },
+      { parts: ['1 ч 30 мин = 1,3 ч'], ans: ['n'], why: '30 минут — половина часа: 1 ч 30 мин = 1,5 ч.' },
+      { parts: ['0,1 ч = 10 мин'], ans: ['n'], why: '0,1 · 60 = 6: одна десятая часа — 6 минут.' },
+      { parts: ['45 мин = 0,75 ч'], ans: ['y'], why: '45/60 = 3/4 = 0,75.' },
+    ], [['y', 'верно', null, '1'], ['n', 'неверно', null, '2']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-skorost', prompt: 'Скорость 54 км/ч. Сколько это метров в секунду?',
+    build: blanks([{ parts: ['54 км/ч = ', { box: '15' }, ' м/с'], why: '54 км = 54 000 м, 1 ч = 3 600 с: 54 000 : 3 600 = 15 м/с.', hint: 'Переведи отдельно путь в метры и время в секунды, затем раздели путь на время.' }]),
+  }, {
+    id: 'p-bolshe', prompt: 'Что больше: 1,2 ч или 1 ч 15 мин?',
+    build: choice([$m('1,2 ч'), $m('1 ч 15 мин'), 'поровну'], 1, '1,2 ч = 1 ч 12 мин (0,2 · 60 = 12), а здесь 15 минут.',
+      ['1,2 ч — это не 1 ч 20 мин: 0,2 · 60 = 12, так что 1,2 ч = 1 ч 12 мин.', null, '1,2 ч = 1 ч 12 мин, а это меньше, чем 1 ч 15 мин.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
