@@ -24,6 +24,8 @@
   --green: #1b7f45;
   --green-soft: rgba(27, 127, 69, 0.09);
   --shade: #7f97f0;
+  /* Цвета частей диаграмм: проверены на различимость, в том числе при нарушениях цветового зрения */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
   --f-display: "Unbounded", "Golos Text", system-ui, sans-serif;
   --f-body: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --f-hand: "Caveat", "Segoe Print", "Comic Sans MS", cursive;
@@ -35,12 +37,14 @@
     --paper: #11151d; --grid: rgba(130, 155, 225, 0.075); --card: #181d28; --ink: #e5e9f2; --muted: #9aa3b6;
     --line: #2a3142; --pen: #8ea6ff; --pen-soft: rgba(142, 166, 255, 0.10); --red: #ff8273; --red-soft: rgba(255, 130, 115, 0.09);
     --green: #63d396; --green-soft: rgba(99, 211, 150, 0.10); --shade: #5d76d8; color-scheme: dark;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
   }
 }
 :root[data-theme="dark"] {
   --paper: #11151d; --grid: rgba(130, 155, 225, 0.075); --card: #181d28; --ink: #e5e9f2; --muted: #9aa3b6;
   --line: #2a3142; --pen: #8ea6ff; --pen-soft: rgba(142, 166, 255, 0.10); --red: #ff8273; --red-soft: rgba(255, 130, 115, 0.09);
   --green: #63d396; --green-soft: rgba(99, 211, 150, 0.10); --shade: #5d76d8; color-scheme: dark;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
 }
 
 * { box-sizing: border-box; }
@@ -235,17 +239,18 @@ footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
   <footer>Математика 5–6 класса коротко и по-простому. Прогресс сохраняется только в этом браузере.</footer>
 </div>
 
-<script src="js/visuals.js?v=5"></script>
-<script src="js/core.js?v=5"></script>
-<script src="js/ch1-natural.js?v=5"></script>
-<script src="js/ch2-divisibility.js?v=5"></script>
-<script src="js/ch3-fractions.js?v=5"></script>
-<script src="js/ch4-decimals.js?v=5"></script>
-<script src="js/ch5-ratio.js?v=5"></script>
-<script src="js/ch6-negative.js?v=5"></script>
-<script src="js/ch7-geometry.js?v=5"></script>
-<script src="js/ch8-problems.js?v=5"></script>
-<script src="js/exams.js?v=5"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/visuals.js?v=6"></script>
+<script src="js/core.js?v=6"></script>
+<script src="js/ch1-natural.js?v=6"></script>
+<script src="js/ch2-divisibility.js?v=6"></script>
+<script src="js/ch3-fractions.js?v=6"></script>
+<script src="js/ch4-decimals.js?v=6"></script>
+<script src="js/ch5-ratio.js?v=6"></script>
+<script src="js/ch6-negative.js?v=6"></script>
+<script src="js/ch7-geometry.js?v=6"></script>
+<script src="js/ch8-problems.js?v=6"></script>
+<script src="js/ch9-data.js?v=6"></script>
+<script src="js/exams.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>

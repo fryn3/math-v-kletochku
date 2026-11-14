@@ -142,5 +142,135 @@
     return fig(`<div class="wide">${svg(list.length * cell, 140, s, 'виды углов')}</div>`, o.cap);
   }
 
-  window.V = { bar, pie, line, plane, cells, box, angles, svg, fig, fmt };
+  const P = (x, y) => `${(+x).toFixed(1)},${(+y).toFixed(1)}`;
+  const dir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); return [dx / L, dy / L]; };
+
+  // Многоугольники в ряд, у каждого своя подпись. items: [{ pts: [[x, y], …], t: 'подпись',
+  // ticks: [[сторона, штрихов]] — равные стороны, right: вершина с прямым углом, arc: вершина с отмеченным углом }].
+  // Сторона k соединяет вершины k и k + 1. Координаты в пикселях, ширина рисунка o.w.
+  function shapes(items, o = {}) {
+    const W = o.w || 150;
+    return `<div class="row">${items.map(it => {
+      const p = it.pts, n = p.length, H = Math.max(...p.map(q => q[1])) + 8;
+      let s = `<path d="M${p.map(q => P(q[0], q[1])).join(' L')} Z" ${st('var(--pen-soft)', 'var(--ink)', 2)} stroke-linejoin="round"/>`;
+      (it.ticks || []).forEach(([k, cnt]) => {
+        const a = p[k], b = p[(k + 1) % n], [ux, uy] = dir(a, b), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        for (let j = 0; j < cnt; j++) {
+          const off = (j - (cnt - 1) / 2) * 5, cx = mx + ux * off, cy = my + uy * off;
+          s += `<path d="M${P(cx - uy * 6, cy + ux * 6)} L${P(cx + uy * 6, cy - ux * 6)}" ${st('none', 'var(--ink)', 2)}/>`;
+        }
+      });
+      const corner = i => [p[i], dir(p[i], p[(i + n - 1) % n]), dir(p[i], p[(i + 1) % n])];
+      if (it.right != null) {
+        const [c, a, b] = corner(it.right), r = 12;
+        s += `<path d="M${P(c[0] + a[0] * r, c[1] + a[1] * r)} L${P(c[0] + (a[0] + b[0]) * r, c[1] + (a[1] + b[1]) * r)} L${P(c[0] + b[0] * r, c[1] + b[1] * r)}" ${st('none', 'var(--pen)', 2)}/>`;
+      }
+      if (it.arc != null) {
+        const [c, a, b] = corner(it.arc), r = 16, sweep = a[0] * b[1] - a[1] * b[0] > 0 ? 1 : 0;
+        s += `<path d="M${P(c[0] + a[0] * r, c[1] + a[1] * r)} A${r},${r} 0 0 ${sweep} ${P(c[0] + b[0] * r, c[1] + b[1] * r)}" ${st('none', 'var(--pen)', 2)}/>`;
+      }
+      return fig(svg(W, H, s, it.t || 'многоугольник'), it.t);
+    }).join('')}</div>`;
+  }
+
+  // Клетчатая бумага w × h клеток с фигурами: o.polys = [{ pts: [[x, y], …], fill: true, dash: true }]; y идёт сверху вниз.
+  function grid(w, h, o = {}) {
+    const u = o.u || 26, pad = 4, X = v => pad + v * u, gl = 'style="stroke:var(--muted);stroke-opacity:.4;stroke-width:1"';
+    let s = `<rect x="${X(0)}" y="${X(0)}" width="${w * u}" height="${h * u}" ${st('var(--card)')}/>`;
+    for (let i = 0; i <= w; i++) s += `<line x1="${X(i)}" y1="${X(0)}" x2="${X(i)}" y2="${X(h)}" ${gl}/>`;
+    for (let j = 0; j <= h; j++) s += `<line x1="${X(0)}" y1="${X(j)}" x2="${X(w)}" y2="${X(j)}" ${gl}/>`;
+    (o.polys || []).forEach(f => {
+      s += `<path d="M${f.pts.map(([x, y]) => P(X(x), X(y))).join(' L')} Z" style="fill:${f.fill ? 'var(--shade)' : 'none'};fill-opacity:.55;stroke:var(--${f.dash ? 'pen' : 'ink'});stroke-width:2"${f.dash ? ' stroke-dasharray="6 4"' : ''} stroke-linejoin="round"/>`;
+    });
+    return fig(svg(2 * pad + w * u, 2 * pad + h * u, s, o.label || 'фигура на клетчатой бумаге'), o.cap);
+  }
+
+  // Многогранники каркасом, у каждого своя подпись. items: [{ v: [[x, y], …] — вершины, e: [[i, j], …] — видимые рёбра,
+  // h: [[i, j], …] — невидимые (пунктиром), f: [[i, j, k, …]] — закрашенные грани, t: 'подпись' }].
+  function wire(items) {
+    return `<div class="row">${items.map(it => {
+      const v = it.v, W = Math.max(...v.map(q => q[0])) + 12, H = Math.max(...v.map(q => q[1])) + 8;
+      const edge = ([i, j], look) => `<line x1="${v[i][0]}" y1="${v[i][1]}" x2="${v[j][0]}" y2="${v[j][1]}" ${look}/>`;
+      let s = (it.f || []).map(f => `<path d="M${f.map(i => P(v[i][0], v[i][1])).join(' L')} Z" ${st('var(--pen-soft)')}/>`).join('');
+      s += (it.h || []).map(e => edge(e, `${st('none', 'var(--ink)', 1.5)} stroke-dasharray="5 4" opacity=".5"`)).join('');
+      s += (it.e || []).map(e => edge(e, `${st('none', 'var(--ink)', 2)} stroke-linecap="round"`)).join('');
+      s += v.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.5" ${st('var(--pen)')}/>`).join('');
+      return fig(svg(W, H, s, it.t || 'многогранник'), it.t);
+    }).join('')}</div>`;
+  }
+
+  // Развёртка из квадратов: cells = [[столбец, строка, подпись], …].
+  function net(cells, o = {}) {
+    const u = o.u || 38, pad = 3, cols = Math.max(...cells.map(c => c[0])) + 1, rows = Math.max(...cells.map(c => c[1])) + 1;
+    const s = cells.map(([c, r, t]) => `<rect x="${pad + c * u}" y="${pad + r * u}" width="${u}" height="${u}" ${st('var(--card)', 'var(--ink)', 2)}/>`
+      + (t ? `<text x="${pad + c * u + u / 2}" y="${pad + r * u + u / 2 + 6}" text-anchor="middle" font-size="17" font-weight="700">${t}</text>` : '')).join('');
+    return fig(svg(2 * pad + cols * u, 2 * pad + rows * u, s, o.label || 'развёртка куба'), o.cap);
+  }
+
+  // Столбчатая диаграмма одного ряда: data = [{ t: 'подпись', v: число }]. Значения читают по шкале, поэтому
+  // на столбцах их нет (в aria-label они есть). o.max — верх шкалы, o.step — шаг сетки, o.every — шаг подписей,
+  // o.from — начало шкалы (0, если не задано).
+  function columns(data, o = {}) {
+    const from = o.from || 0, max = o.max, step = o.step || 1, every = o.every || step;
+    const ph = o.h || 150, slot = o.slot || 60, bw = 24, left = 38, top = 10, base = top + ph, W = left + data.length * slot + 8;
+    const Y = v => top + (max - v) / (max - from) * ph;
+    let s = '';
+    for (let v = from; v <= max + 1e-9; v += step) {
+      const y = Y(v), k = (v - from) / every;
+      s += `<line x1="${left}" y1="${y.toFixed(1)}" x2="${W - 4}" y2="${y.toFixed(1)}" style="stroke:var(--muted);stroke-opacity:.3;stroke-width:1"/>`;
+      if (Math.abs(k - Math.round(k)) < 1e-9) s += `<text x="${left - 7}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="12" style="fill:var(--muted)">${fmt(v)}</text>`;
+    }
+    data.forEach((d, i) => {
+      const x = left + i * slot + (slot - bw) / 2, y = Y(d.v), r = Math.min(4, base - y);
+      s += `<path d="M${x},${base} V${(y + r).toFixed(1)} Q${x},${y.toFixed(1)} ${x + r},${y.toFixed(1)} H${x + bw - r} Q${x + bw},${y.toFixed(1)} ${x + bw},${(y + r).toFixed(1)} V${base} Z" style="fill:var(--series-1)"/>`;
+      s += `<text x="${x + bw / 2}" y="${base + 19}" text-anchor="middle" font-size="13">${d.t}</text>`;
+    });
+    s += `<path d="M${left},${top} V${base} H${W - 4}" ${st('none', 'var(--muted)', 1)}/>`;
+    const label = `${o.label || 'столбчатая диаграмма'}: ${data.map(d => `${d.t} — ${fmt(d.v)}`).join(', ')}`;
+    return fig(svg(W, base + 28, s, label), o.cap);
+  }
+
+  // Круговая диаграмма: data = [{ t: 'подпись', v: процент }], не больше трёх частей (цвета --series-1…3).
+  // Части разделены зазором цвета бумаги; проценты подписаны и на секторах, и в легенде.
+  function sectors(data, o = {}) {
+    const R = o.r || 62, C = R + 4, lx = 2 * C + 18, at = (a, r) => P(C + r * Math.cos(a), C + r * Math.sin(a));
+    let s = '', a0 = -Math.PI / 2;
+    data.forEach((d, i) => {
+      const a1 = a0 + d.v / 100 * 2 * Math.PI, am = (a0 + a1) / 2, col = `var(--series-${i + 1})`, y = 20 + i * 27;
+      s += `<path d="M${C},${C} L${at(a0, R)} A${R},${R} 0 ${d.v > 50 ? 1 : 0} 1 ${at(a1, R)} Z" style="fill:${col};stroke:var(--paper);stroke-width:2;stroke-linejoin:round"/>`;
+      const [tx, ty] = at(am, 0.6 * R).split(',');
+      s += `<text x="${tx}" y="${(+ty + 5).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" style="fill:#fff">${fmt(d.v)} %</text>`;
+      s += `<rect x="${lx}" y="${y - 11}" width="14" height="14" rx="3" style="fill:${col}"/>`;
+      s += `<text x="${lx + 22}" y="${y + 1}" font-size="14">${d.t} — ${fmt(d.v)} %</text>`;
+      a0 = a1;
+    });
+    const W = Math.ceil(lx + 28 + Math.max(...data.map(d => `${d.t} — ${d.v} %`.length)) * 7.8);
+    return fig(svg(W, 2 * C, s, `${o.label || 'круговая диаграмма'}: ${data.map(d => `${d.t} — ${fmt(d.v)} %`).join(', ')}`), o.cap);
+  }
+
+  // Дерево вариантов: levels = [['белая', 'синяя'], ['чёрные', 'серые', 'зелёные']]. Каждая ветка до конца — один вариант,
+  // справа ветки пронумерованы.
+  function tree(levels, o = {}) {
+    const row = 28, top = 6, cw = 7.8, leaves = levels.reduce((m, l) => m * l.length, 1), wide = l => Math.max(...l.map(t => t.length)) * cw;
+    const xs = [44];
+    levels.forEach((l, k) => xs.push(xs[k] + wide(l) + 52));
+    const xEnd = xs[levels.length - 1] + wide(levels[levels.length - 1]) + 18;
+    let s = '', num = 0;
+    const draw = (k, first, span, from) => {
+      const sub = span / levels[k].length;
+      levels[k].forEach((t, i) => {
+        const y = top + (first + (i + 0.5) * sub) * row, x = xs[k];
+        s += `<path d="M${P(from[0], from[1])} L${P(x - 7, y)}" ${st('none', 'var(--muted)', 1.5)}/>`;
+        s += `<text x="${x}" y="${(y + 5).toFixed(1)}" font-size="14">${t}</text>`;
+        if (k + 1 < levels.length) draw(k + 1, first + i * sub, sub, [x + t.length * cw + 6, y]);
+        else s += `<text x="${xEnd}" y="${(y + 5).toFixed(1)}" font-size="12" style="fill:var(--muted)">${++num}</text>`;
+      });
+    };
+    const yRoot = top + leaves * row / 2;
+    s += `<circle cx="10" cy="${yRoot}" r="4.5" ${st('var(--pen)')}/>`;
+    draw(0, 0, leaves, [15, yRoot]);
+    return fig(svg(Math.ceil(xEnd + 22), 2 * top + leaves * row, s, o.label || 'дерево вариантов'), o.cap);
+  }
+
+  window.V = { bar, pie, line, plane, cells, box, angles, shapes, grid, wire, net, columns, sectors, tree, svg, fig, fmt };
 })();

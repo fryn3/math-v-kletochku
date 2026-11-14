@@ -12,6 +12,9 @@
 /* Лист для печати: белая бумага, чёрный текст, одна работа на страницу, ключ ответов отдельно. */
 :root {
   --paper: #ffffff; --soft: #f5f7fb; --ink: #1b2130; --muted: #586174; --line: #d3d9e4; --pen: #2747c4;
+  /* для рисунков из visuals.js: те же цвета, что у светлой темы сайта */
+  --card: #ffffff; --shade: #7f97f0; --pen-soft: rgba(39, 71, 196, 0.075);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -63,6 +66,10 @@ a { color: var(--pen); }
 .fr > span { padding: 0 0.18em; }
 .fr > span:first-child { border-bottom: 1.5px solid currentColor; }
 .mix { white-space: nowrap; }
+figure { margin: 8px 0 0; }
+figure svg { display: block; max-width: 100%; height: auto; }
+figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
 
 .is-hidden { display: none !important; }
 .no-keys .keys { display: none; }
@@ -110,17 +117,18 @@ a { color: var(--pen); }
   <section class="keys" id="keys" aria-label="Ответы"></section>
 </div>
 
-<script src="js/visuals.js?v=5"></script>
-<script src="js/core.js?v=5"></script>
-<script src="js/ch1-natural.js?v=5"></script>
-<script src="js/ch2-divisibility.js?v=5"></script>
-<script src="js/ch3-fractions.js?v=5"></script>
-<script src="js/ch4-decimals.js?v=5"></script>
-<script src="js/ch5-ratio.js?v=5"></script>
-<script src="js/ch6-negative.js?v=5"></script>
-<script src="js/ch7-geometry.js?v=5"></script>
-<script src="js/ch8-problems.js?v=5"></script>
-<script src="js/exam-parents.js?v=5"></script>
-<script src="js/parents.js?v=5"></script>
+<script src="js/visuals.js?v=6"></script>
+<script src="js/core.js?v=6"></script>
+<script src="js/ch1-natural.js?v=6"></script>
+<script src="js/ch2-divisibility.js?v=6"></script>
+<script src="js/ch3-fractions.js?v=6"></script>
+<script src="js/ch4-decimals.js?v=6"></script>
+<script src="js/ch5-ratio.js?v=6"></script>
+<script src="js/ch6-negative.js?v=6"></script>
+<script src="js/ch7-geometry.js?v=6"></script>
+<script src="js/ch8-problems.js?v=6"></script>
+<script src="js/ch9-data.js?v=6"></script>
+<script src="js/exam-parents.js?v=6"></script>
+<script src="js/parents.js?v=6"></script>
 </body>
 </html>
