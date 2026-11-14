@@ -59,21 +59,32 @@
 </main>
 
 <script>
-// Units are the chapters (главы) of the reference site, chapters are its topics (темы). Folders keep the topic's
-// place in the whole course (3.1 is the 13th topic, ch13), and each card shows the topic's own number. Every unit
-// names its number and first folder ({ unit, chapter }), so a unit may be listed before the ones ahead of it are made.
-// Add a lesson here when it is ready, and set the previous lesson's CHAPTER.next.
+// The whole course: units are the chapters (главы) of the reference site, chapters are its topics (темы). A topic's
+// folder is its place in the course (3.1 is the 13th topic: ch13) and its card shows the topic's own number (3.1).
+// [unit, title, colour, first folder, [[topic, minutes], ...]]; minutes 0 = the lesson is not made yet.
+// A unit is listed once all its lessons are made: the engine numbers a unit's cards in a row from its first folder.
+// When a lesson is made: its minutes here, the previous lesson's CHAPTER.next.
+const COURSE = [
+  [1, 'Числа и действия', '#86c9e8', 1, [['Позиционная запись', 0], ['Законы арифметики', 0], ['Порядок действий', 0], ['Деление с остатком', 0],
+    ['Степень', 0], ['Буквы и формулы', 0], ['Простые уравнения', 0], ['Римские цифры', 0]]],
+  [2, 'Делимость', '#f3c95c', 9, [['Делители и кратные', 0], ['Признаки делимости', 0], ['Простые множители, НОД и НОК', 0], ['Чётные и нечётные числа', 0]]],
+  [3, 'Обыкновенные дроби', '#f4a48c', 13, [['Дробь — это деление', 7], ['Основное свойство дроби', 8], ['Сложение и вычитание дробей', 7], ['Умножение и деление дробей', 8]]],
+  [4, 'Десятичные дроби и проценты', '#8fd6b0', 17, [['Десятичные дроби', 0], ['Умножение и деление десятичных дробей', 0], ['Проценты', 0],
+    ['Среднее арифметическое', 0], ['Единицы измерения', 0]]],
+  [5, 'Отношения и пропорции', '#e8a0c8', 22, [['Отношение и пропорция', 0], ['Прямая и обратная пропорциональность', 0]]],
+  [6, 'Положительные и отрицательные числа', '#bba8ee', 24, [['Координатная прямая и модуль', 0], ['Сложение и вычитание', 0], ['Умножение и деление', 0],
+    ['Скобки и подобные слагаемые', 0], ['Уравнения', 0]]],
+  [7, 'Геометрия', '#f0b45a', 29, [['Углы и прямые', 0], ['Треугольник', 0], ['Площадь и объём', 0], ['Многогранники и развёртки', 0],
+    ['Окружность и круг', 0], ['Координаты и симметрия', 0]]],
+  [8, 'Текстовые задачи', '#c7d98a', 35, [['Движение, работа, покупки', 0], ['Части и решение с конца', 0], ['Логические задачи', 0]]],
+  [9, 'Диаграммы, перебор, вероятность', '#d9b38c', 38, [['Таблицы и диаграммы', 0], ['Перебор вариантов', 0], ['Вероятность', 0]]],
+];
+const READY = COURSE.filter(([, , , , topics]) => topics.every(([, min]) => min > 0));
+window.UNIT_ART = READY.map(([n]) => (window.UNIT_ART_BY_UNIT || {})[n] || '');   // the sketches follow the units shown
 Contents.book({
-  start: { unit: 3, chapter: 13 },
-  units: [   // [unit title, [[lesson title, minutes, { chapter: number shown }], ...]]
-    ['Обыкновенные дроби', [
-      ['Дробь — это деление', 7, { chapter: '3.1' }],
-      ['Основное свойство дроби', 8, { chapter: '3.2' }],
-      ['Сложение и вычитание дробей', 7, { chapter: '3.3' }],
-      ['Умножение и деление дробей', 8, { chapter: '3.4' }],
-    ], { unit: 3, chapter: 13 }],
-  ],
-  hues: ['#f4a48c', '#86c9e8', '#f3c95c', '#e8a0c8', '#8fd6b0', '#bba8ee', '#f0b45a'],   // one colour per unit, cycling
+  start: { unit: 1, chapter: 1 },
+  units: READY.map(([n, title, , first, topics]) => [title, topics.map(([t, min], i) => [t, min, { chapter: `${n}.${i + 1}` }]), { unit: n, chapter: first }]),
+  hues: READY.map(([, , hue]) => hue),
 });
 
 // The engine's Russian words count «главы» in «разделах»; this book follows the reference site: темы in главы.

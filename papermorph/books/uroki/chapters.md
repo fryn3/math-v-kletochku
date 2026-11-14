@@ -4,14 +4,50 @@
 
 | # | Тема | Справочник (id) | Минуты | Статус |
 |---|---|---|---|---|
-| ch13 | 3.1 Дробь — это деление | `drob` | 7 | ready (пилот, образец для остальных) |
-| ch14 | 3.2 Основное свойство дроби | `osnovnoe-svojstvo` | 8 | ready |
-| ch15 | 3.3 Сложение и вычитание дробей | `slozhenie-drobej` | 7 | ready |
-| ch16 | 3.4 Умножение и деление дробей | `umnozhenie-drobej` | 8 | ready |
+| ch01 | 1.1 Позиционная запись | `pozicionnaya` |  | in progress |
+| ch02 | 1.2 Законы арифметики | `zakony` |  | in progress |
+| ch03 | 1.3 Порядок действий | `poryadok` |  | in progress |
+| ch04 | 1.4 Деление с остатком | `ostatok` |  | in progress |
+| ch05 | 1.5 Степень | `stepen` |  | in progress |
+| ch06 | 1.6 Буквы и формулы | `formuly` |  | in progress |
+| ch07 | 1.7 Простые уравнения | `prostye-uravneniya` |  | planned |
+| ch08 | 1.8 Римские цифры | `rimskie` |  | planned |
+| ch09 | 2.1 Делители и кратные | `deliteli` |  | planned |
+| ch10 | 2.2 Признаки делимости | `priznaki` |  | planned |
+| ch11 | 2.3 Простые множители, НОД и НОК | `prostye` |  | planned |
+| ch12 | 2.4 Чётные и нечётные числа | `chetnost` |  | planned |
+| ch13 | 3.1 Дробь — это деление | `drob` | 7 | user-approved (пилот, образец для остальных) |
+| ch14 | 3.2 Основное свойство дроби | `osnovnoe-svojstvo` | 8 | user-approved |
+| ch15 | 3.3 Сложение и вычитание дробей | `slozhenie-drobej` | 7 | user-approved |
+| ch16 | 3.4 Умножение и деление дробей | `umnozhenie-drobej` | 8 | user-approved |
+| ch17 | 4.1 Десятичные дроби | `desyatichnye` |  | planned |
+| ch18 | 4.2 Умножение и деление десятичных дробей | `desyatichnye-umnozhenie` |  | planned |
+| ch19 | 4.3 Проценты | `procenty` |  | planned |
+| ch20 | 4.4 Среднее арифметическое | `srednee` |  | planned |
+| ch21 | 4.5 Единицы измерения | `edinicy` |  | planned |
+| ch22 | 5.1 Отношение и пропорция | `proporciya` |  | planned |
+| ch23 | 5.2 Прямая и обратная пропорциональность | `proporcionalnost` |  | planned |
+| ch24 | 6.1 Координатная прямая и модуль | `otricatelnye` |  | planned |
+| ch25 | 6.2 Сложение и вычитание | `slozhenie-otricatelnyh` |  | planned |
+| ch26 | 6.3 Умножение и деление | `umnozhenie-otricatelnyh` |  | planned |
+| ch27 | 6.4 Скобки и подобные слагаемые | `podobnye` |  | planned |
+| ch28 | 6.5 Уравнения | `uravneniya` |  | planned |
+| ch29 | 7.1 Углы и прямые | `ugly` |  | planned |
+| ch30 | 7.2 Треугольник | `treugolnik` |  | planned |
+| ch31 | 7.3 Площадь и объём | `ploshchad-obem` |  | planned |
+| ch32 | 7.4 Многогранники и развёртки | `mnogogranniki` |  | planned |
+| ch33 | 7.5 Окружность и круг | `okruzhnost` |  | planned |
+| ch34 | 7.6 Координаты и симметрия | `koordinaty` |  | planned |
+| ch35 | 8.1 Движение, работа, покупки | `dvizhenie` |  | planned |
+| ch36 | 8.2 Части и решение с конца | `chasti` |  | planned |
+| ch37 | 8.3 Логические задачи | `logika` |  | planned |
+| ch38 | 9.1 Таблицы и диаграммы | `diagrammy` |  | planned |
+| ch39 | 9.2 Перебор вариантов | `perebor` |  | planned |
+| ch40 | 9.3 Вероятность | `veroyatnost` |  | planned |
 
-Остальные главы справочника (1, 2, 4–9; 36 тем) — после того как автор посмотрит пилот.
+Пилот (глава 3) одобрен 2026-11-14 («Да, делай остальные»); остальные 36 тем делаются по образцу, по одному исполнителю на тему (задание: `worker-brief.md`).
 
-Статус ready: урок собран, проверен (lint, check.py в Chromium и Firefox, check_blank, e2e в обоих браузерах) и ждёт просмотра автором; после одобрения — user-approved.
+Статусы: planned → in progress → ready (урок собран, проверен (lint, check.py в Chromium и Firefox, check_blank, e2e в обоих браузерах) и ждёт просмотра автором) → user-approved.
 
 ## Кандидаты в общую библиотеку
 
