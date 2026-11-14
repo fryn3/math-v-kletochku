@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Прямая и обратная пропорциональность · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 5.2 «Прямая и обратная пропорциональность» (6 класс). Beat ids match papermorph/content/uroki/ch23/narration.ru.json.
+const CHAPTER = { number: 23, label: '5.2', title: 'Прямая и обратная пропорциональность', minutes: 7, language: 'ru', next: '../ch24/' };
+
+// Meanings in this lesson: the first quantity (x: mass, speed, workers, time) in XC, the second (y: cost, time, days,
+// path) in YC, what stays the same (the price, the product, the rule) in RULE, worker-days in CELL.
+const XC = KL.DEN, YC = KL.NUM, RULE = KL.RULE, CELL = KL.TWO;
+const RX0 = 260, KM = 9;                         // the road: x of 0 km, pixels per kilometre
+const c23X = km => RX0 + km * KM;
+
+// A table of two quantities: names at hx (rows ys[0], ys[1]), a rule under the first row and after the names.
+function c23Table(p, { hx = 130, vx, x1, ys, heads, t0 }) {
+  const g = G(p, { o: 0 });
+  heads.forEach((s, i) => T(g, s, { x: hx, y: ys[i], size: 30, fill: i ? YC : XC, weight: 600 }));
+  path(g, `M${hx - 20} ${(ys[0] + ys[1]) / 2 - 12}H${x1}M${vx} ${ys[0] - 52}V${ys[1] + 26}`, { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-opacity': .6 });
+  show(g, t0);
+  return g;
+}
+// A number in a table cell (no t0: hidden, for an answer effect).
+const c23Val = (p, s, x, y, col, t0) => {
+  const e = klMath(p, [s], x, y, t0, { size: 52, fill: col });
+  if (t0 === undefined) put(e, { o: 0 });
+  return e;
+};
+// A curved arrow from x1 to x2 at height y, bowing up (over a row) or down (under it), with its label (· 2, : 2).
+// No t0: built hidden, for c23ArcFx.
+function c23Arc(p, x1, x2, y, up, col, label, t0) {
+  const mx = (x1 + x2) / 2, cy = y + (up ? -60 : 60);
+  const line = path(p, `M${x1} ${y}Q${mx} ${cy} ${x2} ${y}`, { stroke: col, 'stroke-width': 3.5, fill: 'none', 'stroke-linecap': 'round' }, { d: 0 });
+  const a = Math.atan2(y - cy, x2 - mx), L = 16;
+  const pt = da => `${(x2 - L * Math.cos(a + da)).toFixed(1)} ${(y - L * Math.sin(a + da)).toFixed(1)}`;
+  const head = path(p, `M${pt(.45)}L${x2} ${y}L${pt(-.45)}`, { stroke: col, 'stroke-width': 3.5, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, { o: 0 });
+  const lab = T(p, label, { x: mx, y: up ? y - 42 : y + 64, size: 34, fill: col, font: MATH, anchor: 'middle', weight: 600, o: 0 });
+  if (t0 !== undefined) { draw(line, t0, .5); show(head, t0 + .42, .2); show(lab, t0 + .3); }
+  return { line, head, lab };
+}
+const c23ArcFx = (a, d) => { fx(a.line, { d: 1 }, d, .5); fx(a.head, { o: 1 }, d + .42, .2); fx(a.lab, { o: 1 }, d + .3, .3); };
+// A straight vertical arrow at x from y1 to y2 (the head at y2), drawn on at t0.
+function c23VArrow(p, x, y1, y2, col, t0) {
+  draw(path(p, `M${x} ${y1}V${y2}`, { stroke: col, 'stroke-width': 4, 'stroke-linecap': 'round' }, { d: 0 }), t0, .45);
+  const k = y2 > y1 ? -1 : 1;
+  const head = path(p, `M${x - 12} ${y2 + k * 16}L${x} ${y2}L${x + 12} ${y2 + k * 16}`, { stroke: col, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, { o: 0 });
+  show(head, t0 + .4, .2);
+}
+// A rounded frame w × h centred on (x, y) drawn round a row or a cell to point at it, gone again after `hold` s.
+function c23Ring(p, x, y, w, h, t0, hold = 1.6, col = RULE) {
+  const e = path(p, `M${x - w / 2 + 14} ${y - h / 2}H${x + w / 2 - 14}Q${x + w / 2} ${y - h / 2} ${x + w / 2} ${y - h / 2 + 14}V${y + h / 2 - 14}Q${x + w / 2} ${y + h / 2} ${x + w / 2 - 14} ${y + h / 2}H${x - w / 2 + 14}Q${x - w / 2} ${y + h / 2} ${x - w / 2} ${y + h / 2 - 14}V${y - h / 2 + 14}Q${x - w / 2} ${y - h / 2} ${x - w / 2 + 14} ${y - h / 2}Z`, { stroke: col, 'stroke-width': 3.5, fill: 'none' }, { d: 0 });
+  draw(e, t0, .5);
+  if (hold) hide(e, t0 + .5 + hold, .4);
+  return e;
+}
+// A chalk car whose front bumper is at (x, y), wheels on y (from ch06's c06Car).
+function c23Car(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  path(g, 'M-150 -16V-44Q-150 -50 -142 -50H-112L-88 -78H-36L-14 -50H-6Q0 -50 0 -42V-16Z', { fill: COL.chalk, 'fill-opacity': .22, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+  path(g, 'M-104 -50L-84 -72H-66V-50ZM-58 -50V-72H-40L-22 -50Z', { fill: KL.DEN, 'fill-opacity': .35 });
+  [-118, -34].forEach(cx => mk('circle', { cx, cy: -15, r: 14, fill: COL.board, stroke: COL.chalk, 'stroke-width': 4 }, g));
+  return g;
+}
+// The road at height y: a line from 0 to 120 km with labelled ticks every `step` km, and «км».
+function c23Road(p, y, step, t0) {
+  const g = G(p, { o: 0 });
+  path(g, `M${c23X(0) - 40} ${y}H${c23X(120) + 30}`, { stroke: COL.chalk, 'stroke-width': 4, 'stroke-linecap': 'round' });
+  for (let k = 0; k <= 120; k += step) {
+    path(g, `M${c23X(k)} ${y - 12}V${y + 12}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+    T(g, String(k), { x: c23X(k), y: y + 54, size: 34, fill: COL.chalk, font: MATH, anchor: 'middle' });
+  }
+  T(g, 'км', { x: c23X(120) + 52, y: y + 54, size: 30, fill: COL.dim });
+  show(g, t0);
+  return g;
+}
+// The car drives from km a to km b in n equal hops of `per` seconds (one hop = one hour), each hop leaving an arc
+// above the car with its number. The arcs and numbers go into group g.
+function c23Drive(g, car, a, b, n, y, t0, per = .6) {
+  const step = (b - a) / n;
+  for (let i = 0; i < n; i++) {
+    const xa = c23X(a + i * step), xb = c23X(a + (i + 1) * step), t = t0 + i * per;
+    prog(q => put(car, { x: xa + (xb - xa) * q }), t, per, i ? lin : (q => q * q));
+    draw(path(g, `M${xa + 4} ${y}Q${(xa + xb) / 2} ${y - 56} ${xb - 4} ${y}`, { stroke: YC, 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '8 7' }, { d: 0 }), t, per);
+    klText(g, (i + 1) + ' ч', (xa + xb) / 2, y - 38, t + per * .7, { size: 28, fill: YC, weight: 700, anchor: 'middle' });
+  }
+}
+// A stack block «80» (one kilogram's cost) centred on x with its top at y.
+function c23Block(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { x: -62, y: 0, width: 124, height: 42, rx: 6, fill: YC, 'fill-opacity': .28, stroke: YC, 'stroke-width': 2.5 }, g);
+  T(g, '80', { x: 0, y: 31, size: 28, fill: COL.chalk, font: MATH, anchor: 'middle' });
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Прямая и обратная пропорциональность', (m, D) => klIntro(m, D, {
+    unit: 'Глава 5 · Отношения и пропорции · Тема 5.2',
+    title: 'Прямая и обратная пропорциональность',
+    sub: 'Как одна величина меняется вслед за другой',
+    art: (g, t0) => {
+      klRow(g, [{ m: 'x · 2', fill: XC }, '   →   ', { m: 'y · 2', fill: YC }], 560, 640, t0 + 2.4, { size: 34, msize: 54 });
+      klRow(g, [{ m: 'x · 2', fill: XC }, '   →   ', { m: 'y : 2', fill: YC }], 1040, 640, t0 + 3.6, { size: 34, msize: 54 });
+      klText(g, 'прямая', 560, 710, t0 + 2.6, { size: 28, fill: COL.dim, anchor: 'middle' });
+      klText(g, 'обратная', 1040, 710, t0 + 3.8, { size: 28, fill: COL.dim, anchor: 'middle' });
+    },
+  })],
+
+  ['direct', 'Прямая пропорциональность', m => {
+    const p = panel(0);
+    klTitle(p, 'Цена одна — масса разная', 'яблоки: 80 ₽ за килограмм');
+    const CX = [480, 700, 1010], Y1 = 300, Y2 = 400, BOT = 840;
+    c23Table(p, { hx: 140, vx: 380, x1: 1100, ys: [Y1, Y2], heads: ['масса, кг', 'стоимость, ₽'], t0: .2 });
+    const at = (i, k) => BOT - (k + 1) * 46;
+    // 1 kg: one block; 2 kg: two copies of it; 6 kg: three copies of the 2-kg stack.
+    c23Val(p, '1', CX[0], Y1, XC, m('k1'));
+    c23Val(p, '80', CX[0], Y2, YC, m('k1', .8));
+    const b0 = c23Block(p, CX[0], at(0, 0), 0); show(b0, m('k1', .8));
+    c23Arc(p, CX[0] + 30, CX[1] - 30, Y1 - 45, true, XC, '· 2', m('k2'));
+    c23Val(p, '2', CX[1], Y1, XC, m('k2', .5));
+    c23Arc(p, CX[0] + 40, CX[1] - 40, Y2 + 20, false, YC, '· 2', m('c2'));
+    const s2 = [0, 1].map(k => { const b = c23Block(p, CX[0], at(0, 0), 0); show(b, m('c2', .2 + k * .3), .2); tw(b, { x: CX[1], y: at(1, k) }, m('c2', .2 + k * .3), .7, io); return b; });
+    c23Val(p, '160', CX[1], Y2, YC, m('c2', 1.1));
+    c23Arc(p, CX[1] + 40, CX[2] - 40, Y1 - 45, true, XC, '· 3', m('k6'));
+    c23Val(p, '6', CX[2], Y1, XC, m('k6', .5));
+    c23Arc(p, CX[1] + 50, CX[2] - 50, Y2 + 20, false, YC, '· 3', m('c6'));
+    const s6 = [0, 1, 2, 3, 4, 5].map(k => {
+      const t = m('c6', .2 + (k >> 1) * .35), b = c23Block(p, CX[1], at(1, k & 1), 0);
+      show(b, t, .2); tw(b, { x: CX[2], y: at(2, k) }, t, .75, io); return b;
+    });
+    c23Val(p, '480', CX[2], Y2, YC, m('c6', 1.5));
+    klText(p, 'прямо пропорциональны', 1500, 112, m('name'), { size: 34, fill: RULE, weight: 700, anchor: 'end' });
+    // The price is the same in every column: every block says 80.
+    [b0, ...s2, ...s6].forEach((b, i) => pulse(b, m('k', .1 + i * .06), 1.12));
+    klRow(p, [{ m: '160 : 2 = ' }, { m: '80', fill: RULE }], 1340, 610, m('k', .4), { size: 30, msize: 46 });
+    klRow(p, [{ m: '480 : 6 = ' }, { m: '80', fill: RULE }], 1340, 690, m('k', 1.1), { size: 30, msize: 46 });
+    klText(p, 'цена не меняется', 1340, 760, m('k', 1.8), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    klMath(p, ['y'], 112, Y2, m('rule'), { size: 44, fill: YC });
+    klMath(p, ['x'], 112, Y1, m('rule'), { size: 44, fill: XC });
+    klRow(p, [{ m: 'y', fill: YC }, { m: ' = ' }, { m: 'k', fill: RULE }, { m: ' · ' }, { m: 'x', fill: XC }], 1340, 300, m('rule', .3), { size: 40, msize: 80 });
+    klText(p, 'k — цена', 1340, 380, m('rule', .9), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const CX = [620, 880, 1180], Y1 = 290, Y2 = 390;
+    c23Table(p, { hx: 240, vx: 520, x1: 1280, ys: [Y1, Y2], heads: ['тетради, шт.', 'стоимость, ₽'], t0: .2 });
+    c23Val(p, '2', CX[0], Y1, XC, .3); c23Val(p, '4', CX[1], Y1, XC, .3); c23Val(p, '12', CX[2], Y1, XC, .3);
+    c23Val(p, '60', CX[1], Y2, YC, .3);
+    S.q1q = [CX[0], CX[2]].map(x => c23Val(p, '?', x, Y2, COL.dim, .3));
+    S.q1a = [c23Val(p, '30', CX[0], Y2, YC), c23Val(p, '180', CX[2], Y2, YC)];
+    c23Arc(p, CX[1] - 30, CX[0] + 30, Y1 - 45, true, XC, ': 2', .5);
+    c23Arc(p, CX[1] + 40, CX[2] - 40, Y1 - 45, true, XC, '· 3', .7);
+    S.q1arcs = [c23Arc(p, CX[1] - 40, CX[0] + 40, Y2 + 20, false, YC, ': 2'), c23Arc(p, CX[1] + 50, CX[2] - 50, Y2 + 20, false, YC, '· 3')];
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-tetradi', prompt: 'Сколько стоят 12 тетрадей и 2 тетради?',
+    build: blanks([
+      { parts: ['12 тетрадей — ', { box: '180' }, ' ₽'], why: 'Тетрадей в 3 раза больше — стоимость в 3 раза больше: 60 · 3 = 180.',
+        hint: 'Тетрадей в 3 раза больше, значит, и стоимость во столько же раз больше.', fx: () => { fx(S.q1q[1], { o: 0 }, 0, .2); c23ArcFx(S.q1arcs[1], 0); fx(S.q1a[1], { o: 1 }, .5, .3); } },
+      { parts: ['2 тетради — ', { box: '30' }, ' ₽'], why: 'Тетрадей вдвое меньше — стоимость вдвое меньше: 60 : 2 = 30.',
+        hint: 'Тетрадей вдвое меньше, значит, и стоимость вдвое меньше.', fx: () => { fx(S.q1q[0], { o: 0 }, 0, .2); c23ArcFx(S.q1arcs[0], 0); fx(S.q1a[0], { o: 1 }, .5, .3); } },
+    ]),
+  }], done) }],
+
+  ['inverse', 'Обратная пропорциональность', m => {
+    const p = panel(0);
+    klTitle(p, 'Одна дорога — разные скорости');
+    const CX = [580, 820, 1080], Y1 = 300, Y2 = 400, RY = 690, AY = 592;
+    c23Table(p, { hx: 140, vx: 470, x1: 1170, ys: [Y1, Y2], heads: ['скорость, км/ч', 'время, ч'], t0: .2 });
+    c23Road(p, RY, 30, m('road'));
+    const car = c23Car(p, c23X(0), RY - 3, 0);
+    const runs = [[30, 4, 'v30', 't4'], [60, 2, 'v60', 't2'], [120, 1, 'v120', 't1']];
+    runs.forEach(([v, n, mv, mt], i) => {
+      c23Val(p, String(v), CX[i], Y1, XC, m(mv, i ? .5 : 0));
+      if (i) {
+        c23Arc(p, CX[i - 1] + 40, CX[i] - 40, Y1 - 45, true, XC, '· 2', m(mv));
+        hide(car, m(mv), .3);
+        tw(car, { x: c23X(0) }, m(mv, .35), .05);
+      }
+      show(car, m(mv, i ? .45 : 0), .3);
+      const arcs = G(p);
+      c23Drive(arcs, car, 0, 120, n, AY, m(mt));
+      if (i < 2) hide(arcs, m(runs[i + 1][2]), .35);
+      if (i) c23Arc(p, CX[i - 1] + 40, CX[i] - 40, Y2 + 20, false, YC, ': 2', m(mt, .3));
+      c23Val(p, String(n), CX[i], Y2, YC, m(mt, n * .6));
+    });
+    klText(p, 'обратно пропорциональны', 1500, 112, m('name'), { size: 34, fill: RULE, weight: 700, anchor: 'end' });
+    klText(p, 'одна больше во столько раз, во сколько другая меньше', 1500, 160, m('name', 2.6), { size: 26, fill: COL.dim, anchor: 'end' });
+    c23Ring(p, 830, Y1 - 16, 640, 70, m('name', 3.4), 1.4, XC);
+    c23Ring(p, 830, Y2 - 16, 640, 70, m('name', 5.4), 1.4, YC);
+    // The product is the road's length every time.
+    [['30 · 4 = '], ['60 · 2 = '], ['120 · 1 = ']].forEach((s, i) => klRow(p, [{ m: s }, { m: '120', fill: RULE }], 1370, 290 + i * 66, m('prod', .2 + i * .45), { size: 30, msize: 44 }));
+    klBrace(p, c23X(0), c23X(120), RY + 84, '120 км — всегда', m('prod', 1.6), { up: false, fill: RULE, size: 32 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const RY = 470;
+    klRow(p, ['при ', { m: '40', fill: XC }, ' км/ч дорога занимает ', { m: '3', fill: YC }, ' ч'], 800, 230, .2, { size: 34, msize: 48 });
+    c23Road(p, RY, 20, .3);
+    S.q2car = c23Car(p, c23X(0), RY - 3);
+    const arcs = G(p);
+    c23Drive(arcs, S.q2car, 0, 120, 3, RY - 98, .5, .4);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-doroga', prompt: 'Сколько часов в пути при 20 км/ч и при 120 км/ч?',
+    build: blanks([
+      { parts: ['20 км/ч — ', { box: '6' }, ' ч'], why: 'Скорость вдвое меньше — времени вдвое больше: 3 · 2 = 6 ч. Проверка: 20 · 6 = 120.',
+        hint: 'Обратная пропорциональность: скорость вдвое меньше — времени вдвое больше.',
+        fx: () => { fxp(q => put(S.q2car, { x: c23X(120 * q) }), 0, 2.4, lin); floatText('20 · 6 = 120', 800, 330, RULE); } },
+      { parts: ['120 км/ч — ', { box: '1' }, ' ч'], why: 'Скорость в 3 раза больше — времени в 3 раза меньше: 3 : 3 = 1 ч. Проверка: 120 · 1 = 120.',
+        hint: 'Скорость в 3 раза больше — времени во столько же раз меньше.',
+        fx: () => { fxp(q => put(S.q2car, { x: c23X(120 * q) }), 0, .4, lin); floatText('120 · 1 = 120', 800, 330, RULE); } },
+    ]),
+  }], done) }],
+
+  ['solve', 'Задача на прямую пропорциональность', m => {
+    const p = panel(0);
+    klTitle(p, 'Пропорция для прямой зависимости', 'поезд: 210 км за 3 ч; сколько за 5 ч с той же скоростью?');
+    const HY = 300, R1 = 390, R2 = 480, CX = [270, 540];
+    const tb = G(p, { o: 0 });
+    T(tb, 'время, ч', { x: CX[0], y: HY, size: 30, fill: XC, weight: 600, anchor: 'middle' });
+    T(tb, 'путь, км', { x: CX[1], y: HY, size: 30, fill: YC, weight: 600, anchor: 'middle' });
+    path(tb, `M140 ${HY + 26}H680M405 ${HY - 40}V${R2 + 26}`, { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-opacity': .6 });
+    show(tb, m('task'));
+    c23Val(p, '3', CX[0], R1, XC, m('task', .3)); c23Val(p, '210', CX[1], R1, YC, m('task', .3));
+    c23Val(p, '5', CX[0], R2, XC, m('task', 4.6));
+    const xv = c23Val(p, 'x', CX[1], R2, YC, m('task', 5));
+    // Hours of the journey as blocks: three for 210 km, then two more.
+    const BX = 130, BW = 130, BY = 650;
+    const blk = i => { const g = G(p, { o: 0 }); mk('rect', { x: BX + i * BW + 3, y: BY, width: BW - 6, height: 50, rx: 6, fill: XC, 'fill-opacity': .25, stroke: XC, 'stroke-width': 2.5 }, g); T(g, '1 ч', { x: BX + (i + .5) * BW, y: BY + 35, size: 26, fill: COL.chalk, anchor: 'middle' }); return g; };
+    [0, 1, 2].forEach(i => show(blk(i), m('task', .9 + i * .15)));
+    [3, 4].forEach(i => { const e = mk('rect', { x: BX + i * BW + 3, y: BY, width: BW - 6, height: 50, rx: 6, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '8 7' }, p); put(e, { o: 0 }); show(e, m('task', 5 + (i - 3) * .2)); });
+    const b210 = G(p); klBrace(b210, BX, BX + 3 * BW, BY - 18, '210 км', m('task', 1.4), { fill: YC, size: 30 });
+    [3, 4].forEach(i => { const g = blk(i); put(g, { x: 60 }); tw(g, { o: 1, x: 0 }, m('dir', .3 + (i - 3) * .3), .5); });
+    c23VArrow(p, CX[0] + 60, R1 - 40, R2 + 5, XC, m('dir', 4.3));
+    c23VArrow(p, CX[1] + 85, R1 - 40, R2 + 5, YC, m('dir', 4.7));
+    klText(p, 'в одну сторону', 410, 570, m('dir', 5.2), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    klExpr(p, [{ f: ['3', '5'], num: XC, den: XC }, { s: '=' }, { f: ['210', 'x'], num: YC, den: YC }], 1150, 380, { size: 80, anchor: 'middle', t0: m('prop') });
+    klText(p, 'отношения в одном порядке', 1150, 530, m('prop', 1.5), { size: 28, fill: COL.dim, anchor: 'middle' });
+    klExpr(p, [{ s: 'x', fill: YC }, { s: '=' }, { f: ['210 · 5', '3'], num: YC, den: XC }, { s: '=', t: m('ans') }, { s: '350', fill: RULE, t: m('ans') }], 1190, 680, { size: 70, anchor: 'middle', t0: m('x') });
+    hide(xv, m('ans', .3), .3);
+    c23Val(p, '350', CX[1], R2, RULE, m('ans', .5));
+    klBrace(p, BX, BX + 5 * BW, BY + 66, '350 км', m('ans', .8), { up: false, fill: RULE, size: 30 });
+  }],
+
+  ['workers', 'Задача на обратную пропорциональность', m => {
+    const p = panel(0);
+    klTitle(p, 'Пропорция для обратной зависимости', '6 рабочих делают работу за 10 дней; за сколько дней её сделают 12 рабочих?');
+    // The work: 6 rows (workers) of 10 cells (days); the right half moves under the left: 12 rows of 5.
+    const C = 38, GX = 160, GY = 270;
+    const halves = [0, 1].map(h => {
+      const g = G(p);
+      for (let r = 0; r < 6; r++) for (let c = 0; c < 5; c++) {
+        const e = mk('rect', { x: GX + (h * 5 + c) * C + 2, y: GY + r * C + 2, width: C - 4, height: C - 4, rx: 4, fill: CELL, 'fill-opacity': .6 }, g);
+        put(e, { o: 0 }); show(e, m('grid', (h * 5 + c) * .07), .25);
+      }
+      return g;
+    });
+    const top10 = G(p); klBrace(top10, GX, GX + 10 * C, GY - 14, '10 дней', m('grid', .7), { fill: YC, size: 30 });
+    const w6 = klText(p, '6 рабочих', GX + 10 * C + 20, GY + 3 * C + 10, m('grid', 1), { size: 30, fill: XC, weight: 600 });
+    tw(halves[1], { x: -5 * C, y: 6 * C }, m('move', .2), 1.1, io);
+    hide(top10, m('move'), .3); hide(w6, m('move'), .3);
+    const top5 = G(p); klBrace(top5, GX, GX + 5 * C, GY - 14, '5 дней', m('move', 1.3), { fill: YC, size: 30 });
+    klText(p, '12 рабочих', GX + 5 * C + 20, GY + 6 * C + 10, m('move', 1.3), { size: 30, fill: XC, weight: 600 });
+    klMath(p, ['6 · 10 = 12 · 5 = 60'], 420, 800, m('same'), { size: 46, fill: RULE });
+    // The record and the proportion on the right.
+    const HY = 300, R1 = 390, R2 = 480, CX = [880, 1140];
+    const tb = G(p, { o: 0 });
+    T(tb, 'рабочие', { x: CX[0], y: HY, size: 30, fill: XC, weight: 600, anchor: 'middle' });
+    T(tb, 'дни', { x: CX[1], y: HY, size: 30, fill: YC, weight: 600, anchor: 'middle' });
+    path(tb, `M760 ${HY + 26}H1260M1010 ${HY - 40}V${R2 + 26}`, { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-opacity': .6 });
+    show(tb, .3);
+    c23Val(p, '6', CX[0], R1, XC, m('task', .2)); c23Val(p, '10', CX[1], R1, YC, m('task', .8));
+    c23Val(p, '12', CX[0], R2, XC, m('task', 4));
+    const xv = c23Val(p, 'x', CX[1], R2, YC, m('task', 4.6));
+    c23VArrow(p, CX[0] + 70, R1 - 40, R2 + 5, XC, m('dir'));
+    c23VArrow(p, CX[1] + 70, R2 + 5, R1 - 40, YC, m('dir', .5));
+    klText(p, 'в разные стороны', 1010, 570, m('dir', .9), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    // 6/12 = 10/x, then the second ratio turns over: x/10.
+    const e = klExpr(p, [{ f: ['6', '12'], num: XC, den: XC }, { s: '=' }, { f: ['10', 'x'], num: YC, den: YC }], 1010, 680, { size: 70, anchor: 'middle', t0: m('flip') });
+    const fr = e[2].fr;
+    tw(fr.num, { y: 70 * .55 }, m('flip', 1.4), .8, io);
+    tw(fr.den, { y: -70 * .55 }, m('flip', 1.4), .8, io);
+    klText(p, 'переворачиваем', e.x1 + 30, 692, m('flip', 1.4), { size: 28, fill: RULE, weight: 600 });
+    klExpr(p, [{ s: 'x', fill: YC }, { s: '=' }, { f: ['10 · 6', '12'], num: YC, den: XC }, { s: '=' }, { s: '5', fill: RULE }], 1300, 820, { size: 50, anchor: 'middle', t0: m('ans') });
+    hide(xv, m('ans', .3), .3);
+    c23Val(p, '5', CX[1], R2, RULE, m('ans', .5));
+    c23Ring(p, CX[1], R2 - 16, 90, 70, m('ans', 2.6), 0);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Сначала реши: прямая или обратная', 'Подсказки из урока:');
+    klText(p, 'прямая — отношения в одном порядке', 110, 300, .3, { size: 30, fill: COL.dim });
+    klExpr(p, [{ f: ['3', '5'], num: XC, den: XC }, { s: '=' }, { f: ['210', 'x'], num: YC, den: YC }], 110, 420, { size: 60, t0: .4 });
+    klText(p, 'обратная — одно отношение перевёрнуто', 110, 580, .5, { size: 30, fill: COL.dim });
+    klExpr(p, [{ f: ['6', '12'], num: XC, den: XC }, { s: '=' }, { f: ['x', '10'], num: YC, den: YC }], 110, 700, { size: 60, t0: .6 });
+  }, { ask: done => quiz({ x: 760, y: 220, w: 760, cls: 'side' }, [{
+    id: 'c-zadachi', prompt: 'Реши задачи. 1) 5 кг яблок стоят 400 ₽. Сколько стоят 3 кг? 2) 3 трубы наполняют бак за 8 ч. За сколько часов его наполнят 6 таких труб?',
+    build: blanks([
+      { parts: ['1)   3 кг — ', { box: '240' }, ' ₽'], why: 'Прямая пропорциональность: 5/3 = 400/x, x = 400 · 3 : 5 = 240.', hint: 'Массы меньше — и стоимость меньше: это прямая пропорциональность.' },
+      { parts: ['2)   6 труб — ', { box: '4' }, ' ч'], why: 'Обратная пропорциональность: 3/6 = x/8, x = 8 · 3 : 6 = 4.', hint: 'Труб больше — времени меньше: одно отношение нужно перевернуть.' },
+    ]),
+  }], done) }],
+
+  ['trap', 'Частые ошибки', m => {
+    const p = panel(0);
+    klTitle(p, 'Две частые ошибки');
+    path(p, 'M800 240V650', { stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '8 8' });
+    // Left: age and height grow, but not in the same ratio.
+    const L = [470, 660], R = [1150, 1360], Y1 = 330, Y2 = 430;
+    c23Table(p, { hx: 110, vx: 370, x1: 740, ys: [Y1, Y2], heads: ['возраст, лет', 'рост, см'], t0: .2 });
+    c23Val(p, '1', L[0], Y1, XC, m('age')); c23Val(p, '75', L[0], Y2, YC, m('age', 1.2));
+    c23Arc(p, L[0] + 30, L[1] - 30, Y1 - 45, true, XC, '· 10', m('age', 3.4));
+    c23Val(p, '10', L[1], Y1, XC, m('age', 3.8));
+    c23Arc(p, L[0] + 40, L[1] - 50, Y2 + 20, false, COL.dim, '· 10', m('age', 5));
+    c23Val(p, '750', L[1], Y2, COL.dim, m('age', 5.5));
+    klStrike(p, L[1] - 60, Y2 + 10, L[1] + 60, Y2 - 50, m('no1'));
+    klStrike(p, L[0] + 40, Y2 + 96, L[1] - 40, Y2 + 30, m('no1', .2));
+    klText(p, 'растёт, но не в 10 раз', 430, 572, m('no1', 2.6), { size: 28, fill: COL.dim, anchor: 'middle' });
+    klRow(p, ['на самом деле около ', { m: '140', fill: YC }], 430, 620, m('real'), { size: 30, msize: 44 });
+    // Right: more workers — fewer days, not more.
+    c23Table(p, { hx: 860, vx: 1060, x1: 1460, ys: [Y1, Y2], heads: ['рабочие', 'дни'], t0: .3 });
+    c23Val(p, '6', R[0], Y1, XC, .4); c23Val(p, '10', R[0], Y2, YC, .4);
+    c23Arc(p, R[0] + 30, R[1] - 30, Y1 - 45, true, XC, '· 2', m('w2'));
+    c23Val(p, '12', R[1], Y1, XC, m('w2', .4));
+    c23Arc(p, R[0] + 40, R[1] - 40, Y2 + 20, false, COL.dim, '· 2', m('no2'));
+    c23Val(p, '20', R[1], Y2, COL.dim, m('no2', .3));
+    klStrike(p, R[1] - 50, Y2 + 10, R[1] + 50, Y2 - 50, m('no2', 1.4));
+    klStrike(p, R[0] + 50, Y2 + 96, R[1] - 50, Y2 + 30, m('no2', 1.6));
+    klRow(p, ['рабочих больше — дней меньше: ', { m: '5', fill: YC }], 1160, 620, m('no2', 3), { size: 30, msize: 44 });
+    klText(p, 'Сначала реши: вторая величина растёт или уменьшается?', 800, 740, m('rule'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'И проверь: во столько же ли раз?', 800, 800, m('rule', 3.8), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'Как узнать:', 110, 250, .2, { size: 32, fill: COL.dim, weight: 600 });
+    klRow(p, [{ m: 'x · 2', fill: XC }, '  →  ', { m: 'y · 2', fill: YC }, '   прямая'], 110, 360, .3, { size: 32, msize: 48, anchor: 'start' });
+    klRow(p, [{ m: 'x · 2', fill: XC }, '  →  ', { m: 'y : 2', fill: YC }, '   обратная'], 110, 470, .5, { size: 32, msize: 48, anchor: 'start' });
+    klRow(p, [{ m: 'x · 2', fill: XC }, '  →  ', { m: 'y · 4', fill: COL.dim }, '   нет'], 110, 580, .7, { size: 32, msize: 48, anchor: 'start' });
+    klText(p, 'иначе — не пропорциональны', 110, 650, .8, { size: 28, fill: COL.dim });
+  }, { ask: done => quiz({ x: 760, y: 180, w: 760, cls: 'side' }, [{
+    id: 'c-vid', prompt: 'Какая это зависимость?',
+    build: grid([
+      { parts: ['стоимость и число одинаковых тетрадей'], ans: ['pr'], why: 'Тетрадей вдвое больше — стоимость вдвое больше.' },
+      { parts: ['число рабочих и время одной и той же работы'], ans: ['ob'], why: 'Рабочих вдвое больше — времени вдвое меньше.' },
+      { parts: ['возраст человека и его рост'], ans: ['no'], why: 'Рост увеличивается, но не во столько же раз, во сколько возраст.' },
+      { parts: ['сторона квадрата и его площадь'], ans: ['no'], why: 'Сторона вдвое больше — площадь в 4 раза больше: растёт, но не пропорционально.' },
+    ], [['pr', 'прямая', null, '1'], ['ob', 'обратная', null, '2'], ['no', 'нет', null, '3']], { multi: false, text: true }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Прямая:  ', { m: 'y', fill: YC }, { m: ' = k · ' }, { m: 'x', fill: XC }, '  — частное постоянно'],
+    ['Обратная:  ', { m: 'x', fill: XC }, { m: ' · ' }, { m: 'y', fill: YC }, { m: ' = k' }, '  — произведение постоянно'],
+    'В пропорции для обратной одно отношение переворачивают',
+    'Не всякая растущая пара пропорциональна',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-poezd', prompt: 'Поезд прошёл 180 км за 3 ч. Сколько километров он пройдёт за 5 ч с той же скоростью?',
+    build: blanks([{ parts: [{ box: '300' }, ' км'], why: 'Прямая пропорциональность: 3/5 = 180/x, x = 180 · 5 : 3 = 300 км.', hint: 'Времени больше — и путь больше: составь пропорцию, отношения в одном порядке.' }]),
+  }, {
+    id: 'p-nasos', prompt: '4 насоса откачивают воду за 6 ч. За сколько часов это сделают 8 таких насосов?',
+    build: blanks([{ parts: [{ box: '3' }, ' ч'], why: 'Насосов вдвое больше — времени вдвое меньше: 6 : 2 = 3 ч.', hint: 'Обратная пропорциональность: насосов больше — времени меньше.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-summa', prompt: 'На одну и ту же сумму покупают товар. Как связаны цена товара и его количество?',
+    build: choice(['прямая пропорциональность', 'обратная пропорциональность', 'не пропорциональны'], 1,
+      'Цена вдвое больше — купить можно вдвое меньше; произведение (сумма) постоянно.',
+      ['Если цена растёт, на ту же сумму товара получится меньше, а не больше.', null, 'Произведение цены и количества равно сумме и не меняется — это обратная пропорциональность.']),
+  }, {
+    id: 'p-tablica', prompt: ['Величина ', $m('y'), ' обратно пропорциональна ', $m('x'), '. При ', $m('x = 2'), ' значение ', $m('y = 18'), '. Найди ', $m('y'), '.'],
+    build: blanks([
+      { parts: ['x = 4,   y = ', { box: '9' }], why: '2 · 18 = 36, значит, y = 36 : 4 = 9.', hint: 'Произведение x · y не меняется: 2 · 18 = 36.' },
+      { parts: ['x = 6,   y = ', { box: '6' }], why: '36 : 6 = 6.', hint: 'Произведение x · y равно 36.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-tkan', prompt: 'За 3 м ткани заплатили 450 ₽. Сколько стоят 4 м такой же ткани?',
+    build: blanks([{ parts: [{ box: '600' }, ' ₽'], why: 'Один метр стоит 450 : 3 = 150 ₽, четыре метра — 150 · 4 = 600 ₽.', hint: 'Прямая пропорциональность: найди цену одного метра.' }]),
+  }, {
+    id: 'p-rabochie', prompt: '10 рабочих выполняют заказ за 6 дней. За сколько дней его выполнят 15 рабочих?',
+    build: blanks([{ parts: [{ box: '4' }, ' дня'], why: 'Обратная пропорциональность: 10/15 = x/6, x = 6 · 10 : 15 = 4 дня.', hint: 'Рабочих больше — дней меньше; произведение 10 · 6 = 60 не меняется.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отношение и пропорция · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 5.1 «Отношение и пропорция» (6 класс). Beat ids match papermorph/content/uroki/ch22/narration.ru.json.
+const CHAPTER = { number: 22, label: '5.1', title: 'Отношение и пропорция', minutes: 8, language: 'ru', next: '../ch23/' };
+
+// Meanings: the first term of a ratio (a in a : b, the numerator) in NUM, the second term (b, the denominator) in DEN,
+// the unknown x (a closed box) in UNK, the cross products and the rules in RULE.
+const NUM = KL.NUM, DEN = KL.DEN, UNK = KL.TWO, RULE = KL.RULE, NUT = '#c99a63';
+const NB = ' ';
+
+// A strip of equal cells, cell i filled in cols[i]; dark lines between cells (so they show on any fill), chalk frame.
+// Returns { g, cells, x, y, w, h, cw, n, frame }; the coordinates are the stage's, so moving g moves the whole strip.
+function c22Strip(p, { x, y, w, h = 90, cols, t0, op = .85 }) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), n = cols.length, cw = w / n;
+  const cells = cols.map((c, i) => mk('rect', { x: x + i * cw, y, width: cw, height: h, fill: c, 'fill-opacity': op }, g));
+  for (let i = 1; i < n; i++) path(g, `M${x + i * cw} ${y}V${y + h}`, { stroke: COL.board, 'stroke-width': 3 });
+  const frame = mk('rect', { x, y, width: w, height: h, rx: 4, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, g);
+  if (t0 !== undefined) show(g, t0);
+  return { g, cells, x, y, w, h, cw, n, frame };
+}
+// Cut every cell of a c22Strip into k equal pieces (dark lines under the frame), one cell after another from t0.
+function c22Split(s, k, t0) {
+  for (let i = 0; i < s.n; i++) for (let j = 1; j < k; j++) {
+    const e = path(s.g, `M${s.x + (i + j / k) * s.cw} ${s.y}V${s.y + s.h}`, { stroke: COL.board, 'stroke-width': 3 }, { d: 0 });
+    s.g.insertBefore(e, s.frame);
+    draw(e, t0 + i * .1, .35);
+  }
+}
+// Thick chalk dividers across a strip after every `per` cells, drawn on from t0 (t0 undefined: built hidden for fx).
+function c22Divs(p, s, per, t0) {
+  const out = [];
+  for (let k = per; k < s.n; k += per) {
+    const e = path(p, `M${s.x + k * s.cw} ${s.y - 10}V${s.y + s.h + 10}`, { stroke: COL.chalk, 'stroke-width': 7, 'stroke-linecap': 'round' }, t0 === undefined ? { o: 0 } : { d: 0 });
+    if (t0 !== undefined) draw(e, t0 + out.length * .15, .4);
+    out.push(e);
+  }
+  return out;
+}
+// A closed box of width w centred on (x, y) with «x» on it (as c07Box). open(v, t0) lifts the lid and shows the
+// number inside; fxOpen(v, delay) does the same on the question clock.
+function c22Box(p, x, y, w = 64) {
+  const g = G(p, { x, y });
+  mk('rect', { x: -w / 2, y: -w / 2, width: w, height: w, rx: 6, fill: mix(COL.board, UNK, .16), stroke: UNK, 'stroke-width': 3.5 }, g);
+  const lid = G(g, { x: -w / 2 - 5, y: -w / 2 });
+  path(lid, `M0 0H${w + 10}`, { stroke: UNK, 'stroke-width': 7, 'stroke-linecap': 'round' });
+  const lab = M(g, ['x'], { y: w * .2, size: w * .66, fill: UNK });
+  const num = v => M(g, [String(v)], { y: w * .22, size: w * (String(v).length > 1 ? .52 : .66), fill: UNK, o: 0 });
+  g.open = (v, t0) => { tw(lid, { r: -38, y: -w / 2 - 6 }, t0, .5, back); hide(lab, t0, .3); show(num(v), t0 + .3, .3); };
+  g.fxOpen = (v, d = 0) => { fx(lid, { r: -38, y: -w / 2 - 6 }, d, .5); fx(lab, { o: 0 }, d, .3); fx(num(v), { o: 1 }, d + .3, .3); };
+  return g;
+}
+// A fraction centred on its bar at (x, y) where one term may be the box (null): { g, box }.
+function c22BoxFrac(p, top, bot, x, y, t0, size = 100) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  const bw = size * .72, tw_ = v => v === null ? bw : textW(String(v), size);
+  const w = Math.max(tw_(top), tw_(bot)) + size * .36;
+  path(g, `M${-w / 2} 0H${w / 2}`, { stroke: COL.chalk, 'stroke-width': size * .06, 'stroke-linecap': 'round' });
+  const part = (v, cy, fill) => v === null ? c22Box(g, 0, cy, bw) : T(g, String(v), { x: 0, y: cy + size * .35, size, fill, font: MATH, anchor: 'middle' });
+  const a = part(top, -size * .6, NUM), b = part(bot, size * .6, DEN);
+  if (t0 !== undefined) show(g, t0);
+  return { g, box: top === null ? a : bot === null ? b : null, w };
+}
+// A row of math tokens: an item { t, fill, from: [x, baseline], s0, at } flies in from a number already on the board
+// (scaled from s0), the others fade in at their own `at` or `fade` s after t0 (as c07Fly).
+function c22Fly(p, items, x, y, t0, { size = 64, anchor = 'middle', fade = .8 } = {}) {
+  const row = tokens(p, items, { x, y, size, anchor, o: 0 });
+  row.forEach((e, k) => {
+    const it = items[k], at = (typeof it === 'object' && it.at !== undefined) ? it.at : undefined;
+    if (it.from) {
+      put(e, { x: it.from[0], y: it.from[1], s: it.s0 ?? 1 });
+      show(e, at ?? t0, .15);
+      tw(e, { x: e._px, y, s: 1 }, at ?? t0, .9, io);
+    } else show(e, at ?? t0 + fade, .3);
+  });
+  return row;
+}
+// One worked line aligned on its «=» at xEq: L (ending left of it) and R (starting right of it) are c22Fly items.
+function c22Line(p, L, R, y, xEq, tL, tEq, tR, size = 64) {
+  const gap = size * .45;
+  const l = c22Fly(p, L, xEq - gap, y, tL, { size, anchor: 'end', fade: 0 });
+  const eq = c22Fly(p, ['='], xEq, y, tEq, { size, fade: 0 });
+  const r = c22Fly(p, R, xEq + gap, y, tR, { size, anchor: 'start', fade: 0 });
+  return { l, eq, r };
+}
+// A straight arrow from (x1, y1) to (x2, y2), drawn on at t0 (klArrow with its bend on the line).
+function c22Diag(p, x1, y1, x2, y2, col, t0, dur = .6) { return klArrow(p, x1, y1, x2, y2, (y1 + y2) / 2, col, t0, dur); }
+// A nut: a small round piece centred on its group's origin.
+function c22Nut(p, x, y) {
+  const g = G(p, { x, y });
+  mk('circle', { r: 12, fill: NUT, stroke: COL.board, 'stroke-width': 2 }, g);
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Отношение и пропорция', (m, D) => klIntro(m, D, {
+    unit: 'Глава 5 · Отношения и пропорции · Тема 5.1',
+    title: 'Отношение и пропорция',
+    sub: 'Как сравнивать величины отношением и решать пропорции',
+    art: (g, t0) => {
+      c22Strip(g, { x: 560, y: 560, w: 400, h: 60, cols: [NUM, NUM, DEN, DEN, DEN], t0 });
+      klRow(g, [{ m: '2', fill: NUM }, { m: ' : ' }, { m: '3', fill: DEN }], 1080, 607, t0 + 3.2, { size: 46 });
+    },
+  })],
+
+  ['ratio', 'Сколько на сколько', m => {
+    const p = panel(0);
+    klTitle(p, 'Отношение: сколько на сколько');
+    const s = c22Strip(p, { x: 300, y: 260, w: 1000, h: 110, cols: [NUM, NUM, DEN, DEN, DEN], t0: .3 });
+    s.cells.forEach((c, i) => { put(c, { o: 0 }); show(c, m('parts', i < 2 ? i * .2 : 1.3 + (i - 2) * .2), .3); });
+    klBrace(p, 300, 700, 240, 'сок', m('parts', .3), { fill: NUM, size: 34 });
+    klBrace(p, 700, 1300, 240, 'вода', m('parts', 1.6), { fill: DEN, size: 34 });
+    klCount(p, [0, 1].map(i => [300 + (i + .5) * 200, 328]), m('ratio'), { step: .3, size: 40, fill: COL.board });
+    klCount(p, [2, 3, 4].map(i => [300 + (i + .5) * 200, 328]), m('ratio', 1.2), { step: .3, size: 40, fill: COL.board });
+    const a = klMath(p, ['2'], 420, 580, m('two'), { size: 120, fill: NUM });
+    const b = klMath(p, ['3'], 580, 580, m('two', .7), { size: 120, fill: DEN });
+    const colon = klMath(p, [':'], 500, 580, m('write'), { size: 120 });
+    pulse(colon, m('write', .3), 1.5);
+    klText(p, 'читают: «два к трём»', 500, 660, m('write', 1.2), { size: 30, fill: COL.dim, anchor: 'middle' });
+    klText(p, 'члены отношения', 500, 740, m('terms'), { size: 32, weight: 600, anchor: 'middle' });
+    pulse(a, m('terms', .3), 1.3); pulse(b, m('terms', .9), 1.3);
+    klMath(p, ['='], 690, 580, m('frac'), { size: 120 });
+    klFrac(p, 2, 3, 800, 542, m('ftwo'), { size: 110 });
+    // «Сока — две третьих воды»: the three cups of water and then the two cups of juice fly down side by side.
+    const fly = (i, col, tx, t) => {
+      const g = G(p, { x: 300 + i * 200, y: 260, s: 200 / 130, o: 0 });
+      mk('rect', { x: 0, y: 0, width: 130, height: 80, fill: col, 'fill-opacity': .92, stroke: COL.board, 'stroke-width': 2.5 }, g);
+      show(g, t, .2); tw(g, { x: tx, y: 500, s: 1 }, t, .9, io);
+    };
+    [2, 3, 4].forEach((i, k) => fly(i, DEN, 1010 + k * 130, m('mean', k * .15)));
+    show(put(mk('rect', { x: 1010, y: 500, width: 390, height: 80, rx: 4, fill: 'none', stroke: COL.chalk, 'stroke-width': 3 }, p), { o: 0 }), m('mean', .6));
+    [0, 1].forEach(i => fly(i, NUM, 1010 + i * 130, m('mean', 1 + i * .15)));
+    klRow(p, ['сок  =  ', { m: F('2', '3'), fill: NUM }, '  воды'], 1205, 680, m('mean', 2), { size: 34, msize: 54 });
+  }],
+
+  ['simplify', 'Упрощаем, как дробь', m => {
+    const p = panel(0);
+    klTitle(p, 'Отношение упрощают, как дробь');
+    const CW = 56;
+    const g = c22Strip(p, { x: 200, y: 250, w: 12 * CW, h: 70, cols: Array(12).fill(NUM), t0: .3 });
+    const b = c22Strip(p, { x: 200, y: 390, w: 8 * CW, h: 70, cols: Array(8).fill(DEN), t0: .5 });
+    klRow(p, [{ m: '12', fill: NUM }, ' девочек'], 920, 298, m('show'), { size: 34, anchor: 'start' });
+    klRow(p, [{ m: '8', fill: DEN }, ' мальчиков'], 696, 438, m('show', 1.3), { size: 34, anchor: 'start' });
+    c22Divs(p, g, 4, m('group'));
+    c22Divs(p, b, 4, m('group', .4));
+    klCount(p, [0, 1, 2].map(k => [200 + (k + .5) * 4 * CW, 236]), m('count'), { step: .3, size: 34, fill: NUM });
+    klCount(p, [0, 1].map(k => [200 + (k + .5) * 4 * CW, 376]), m('count', 1.2), { step: .3, size: 34, fill: DEN });
+    const e = klExpr(p, [
+      { s: '12', fill: NUM, t: m('frac') }, { s: ':', t: m('frac') }, { s: '8', fill: DEN, t: m('frac') },
+      { s: '=', t: m('frac', .5) }, { f: [12, 8], t: m('frac', .8) },
+      { s: '=', t: m('res') }, { f: [3, 2], t: m('res', .3) },
+      { s: '=', t: m('res', 1.4) }, { s: '3', fill: NUM, t: m('res', 1.6) }, { s: ':', t: m('res', 1.6) }, { s: '2', fill: DEN, t: m('res', 1.6) },
+    ], 800, 640, { size: 80, anchor: 'middle' });
+    klArrow(p, e[4].c, 556, e[6].c, 556, 500, RULE, m('frac', 1.6));
+    klText(p, ': 4', (e[4].c + e[6].c) / 2, 504, m('frac', 2), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'члены отношения можно делить или умножать на одно и то же число', 800, 800, m('rule'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'это основное свойство дроби', 800, 856, m('base'), { size: 30, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const a = c22Strip(p, { x: 300, y: 200, w: 8 * 40, h: 70, cols: Array(8).fill(NUM), t0: .2 });
+    const b = c22Strip(p, { x: 300, y: 340, w: 20 * 40, h: 70, cols: Array(20).fill(DEN), t0: .3 });
+    klMath(p, ['8'], 250, 255, .2, { size: 56, fill: NUM });
+    klMath(p, ['20'], 240, 395, .3, { size: 56, fill: DEN });
+    S.q1divs = [...c22Divs(p, a, 4), ...c22Divs(p, b, 4)];
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-uprosti', prompt: 'Упрости отношение: раздели оба члена на одно и то же число, пока можно.',
+    build: blanks([{ parts: ['8 : 20 = ', { box: '2' }, ' : ', { box: '5' }],
+      why: 'Оба числа делятся на 4: 8 : 4 = 2, 20 : 4 = 5. Получилось 2 : 5 — группы по четыре клетки.',
+      hint: 'Найди число, на которое делятся и 8, и 20, — лучше наибольшее.',
+      fx: () => S.q1divs.forEach((d, i) => fx(d, { o: 1 }, i * .1, .3)) }]),
+  }], done) }],
+
+  ['divide', 'Делим в отношении', m => {
+    const p = panel(0);
+    klTitle(p, 'Делим тридцать в отношении два к трём');
+    const nuts = Array.from({ length: 30 }, (_, i) => c22Nut(p, 150 + (i % 10) * 34, 230 + Math.floor(i / 10) * 34));
+    nuts.forEach((n, i) => { put(n, { o: 0 }); show(n, .2 + i * .015, .2); });
+    hide(klText(p, '30 орехов', 303, 340, .4, { size: 30, fill: COL.dim, anchor: 'middle' }), m('deal', 2), .4);
+    const s = c22Strip(p, { x: 250, y: 400, w: 1100, h: 150, cols: [NUM, NUM, DEN, DEN, DEN], op: .3, t0: .3 });
+    klBrace(p, 250, 690, 576, 'Аня', m('parts'), { up: false, fill: NUM, size: 34 });
+    klBrace(p, 690, 1350, 576, 'Боря', m('parts', 1.4), { up: false, fill: DEN, size: 34 });
+    klRow(p, [{ m: '2 + 3 = 5' }, ' частей'], 1050, 250, m('sum'), { size: 34, msize: 52 });
+    klRow(p, ['одна часть:  ', { m: '30 : 5 = 6', fill: RULE }], 1050, 330, m('one'), { size: 34, msize: 52 });
+    // Cell c receives the nuts 6c … 6c + 5: two rows of three.
+    nuts.forEach((n, i) => {
+      const c = Math.floor(i / 6), k = i % 6;
+      tw(n, { x: 250 + c * 220 + 55 + (k % 3) * 55, y: 400 + 48 + Math.floor(k / 3) * 54 }, m('deal', c * .5 + k * .06), .7, io);
+    });
+    [0, 1, 2, 3, 4].forEach(c => klText(p, '6', 250 + c * 220 + 110, 388, m('deal', c * .5 + .7), { size: 30, fill: RULE, weight: 700, anchor: 'middle' }));
+    const glow = (i, t) => { tw(s.cells[i], { 'a_fill-opacity': .6 }, t, .3); tw(s.cells[i], { 'a_fill-opacity': .3 }, t + .9, .4); };
+    [0, 1].forEach(i => glow(i, m('anya', i * .15)));
+    [2, 3, 4].forEach(i => glow(i, m('borya', (i - 2) * .15)));
+    klMath(p, ['2 · 6 = 12'], 470, 700, m('anya', .4), { size: 56, fill: NUM });
+    klMath(p, ['3 · 6 = 18'], 1020, 700, m('borya', .4), { size: 56, fill: DEN });
+    klRow(p, ['вместе  ', { m: '12 + 18 = 30' }], 560, 815, m('check'), { size: 32, msize: 48 });
+    klRow(p, [{ m: '12 : 18 = 2 : 3' }], 1060, 815, m('check', 1.8), { size: 32, msize: 48 });
+    klMark(p, 1290, 800, m('check', 2.8), true, .8);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const s = c22Strip(p, { x: 300, y: 250, w: 1000, h: 110, cols: [NUM, NUM, NUM, DEN, DEN, DEN, DEN, DEN], t0: .2 });
+    klBrace(p, 300, 1300, 226, '40', .3, { size: 44 });
+    S.q2lab = s.cells.map((c, i) => T(p, '5', { x: 300 + (i + .5) * 125, y: 320, size: 40, fill: COL.board, font: MATH, weight: 700, anchor: 'middle', o: 0 }));
+    S.q2sum = [T(p, '15', { x: 487, y: 430, size: 50, fill: NUM, font: MATH, anchor: 'middle', o: 0 }),
+      T(p, '25', { x: 987, y: 430, size: 50, fill: DEN, font: MATH, anchor: 'middle', o: 0 })];
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-delim', prompt: 'Раздели 40 в отношении 3 : 5.',
+    build: blanks([
+      { parts: ['одна часть:  ', { box: '5' }], why: 'Всего 3 + 5 = 8 частей, одна часть 40 : 8 = 5.', hint: 'Сначала сложи части: 3 + 5. Потом раздели 40 на это число.',
+        fx: () => S.q2lab.forEach((e, i) => fx(e, { o: 1 }, i * .08, .3)) },
+      { parts: ['3 части: ', { box: '15' }, ',  5 частей: ', { box: '25' }], why: '3 · 5 = 15, 5 · 5 = 25; вместе 40.', hint: 'Умножь одну часть на 3 и на 5.',
+        fx: () => S.q2sum.forEach((e, i) => fx(e, { o: 1 }, i * .3, .4)) },
+    ]),
+  }], done) }],
+
+  ['proportion', 'Пропорция', m => {
+    const p = panel(0);
+    klTitle(p, 'Пропорция — два равных отношения');
+    const cols = [NUM, NUM, DEN, DEN, DEN];
+    c22Strip(p, { x: 200, y: 230, w: 800, h: 90, cols, t0: .3 });
+    const L1 = tokens(p, [{ t: '2', fill: NUM }, ' : ', { t: '3', fill: DEN }], { x: 1200, y: 297, size: 64, anchor: 'middle', o: 0 });
+    L1.forEach(e => show(e, .4));
+    // Twice the drink: a copy of the strip slides down and every cup becomes two.
+    const s2 = c22Strip(p, { x: 200, y: 230, w: 800, h: 90, cols });
+    put(s2.g, { o: 0 }); show(s2.g, m('double'), .2); tw(s2.g, { y: 160 }, m('double'), .9, io);
+    c22Split(s2, 2, m('split'));
+    const L2 = tokens(p, [{ t: '4', fill: NUM }, ' : ', { t: '6', fill: DEN }], { x: 1200, y: 457, size: 64, anchor: 'middle', o: 0 });
+    L2.forEach(e => show(e, m('split', 1.4)));
+    klGuide(p, 520, 210, 500, m('same'), RULE);
+    klText(p, 'доля сока та же', 520, 545, m('same', .4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    // The two labels move down into one line: 2 : 3 = 4 : 6.
+    const R = tokens(p, [{ t: '2', fill: NUM }, ' : ', { t: '3', fill: DEN }, '  =  ', { t: '4', fill: NUM }, ' : ', { t: '6', fill: DEN }], { x: 560, y: 700, size: 90, anchor: 'middle', o: 0 });
+    [...L1, null, ...L2].forEach((e, k) => { if (e) tw(e, { x: R[k]._px, y: 700, s: 90 / 64 }, m('eq', .2 + (k > 3 ? .3 : 0)), .9, io); });
+    show(R[3], m('eq', 1.3), .3);
+    // «записать и дробями»: the two colons, which become fraction bars.
+    const k0 = 90 / 64;
+    [L1[1], L2[1]].forEach((e, k) => { tw(e, { s: k0 * 1.7 }, m('frac', k * .4), .25, out); tw(e, { s: k0 }, m('frac', .25 + k * .4), .4); });
+    klBrace(p, R[0]._px - R[0]._w / 2, R[6]._px + R[6]._w / 2, 740, 'пропорция', m('name'), { up: false, fill: RULE, size: 36 });
+    klExpr(p, [{ f: [2, 3], t: m('frac') }, { s: '=', t: m('ff', .8) }, { f: [4, 6], t: m('ff', 1.5) }], 1220, 670, { size: 80, anchor: 'middle' });
+  }],
+
+  ['cross', 'Крест-накрест', m => {
+    const p = panel(0);
+    klTitle(p, 'Проверка крест-накрест');
+    const P = klExpr(p, [{ f: [2, 3] }, { s: '=' }, { f: [4, 6] }], 400, 400, { size: 120, anchor: 'middle', t0: .3 });
+    const a = P[0].c, c = P[2].c, top = 400 - 24, bot = 400 + 108;
+    c22Diag(p, a + 34, 345, c - 34, 455, RULE, m('c1'));
+    c22Line(p, [{ t: '2', fill: NUM, from: [a, top], s0: 1.5, at: m('c1') }, ' · ', { t: '6', fill: DEN, from: [c, bot], s0: 1.5, at: m('c1') }],
+      [{ t: '12', fill: RULE }], 350, 1120, m('c1', .8), m('c1', 1.1), m('c1', 1.8), 80);
+    c22Diag(p, a + 34, 455, c - 34, 345, RULE, m('c2'));
+    c22Line(p, [{ t: '3', fill: DEN, from: [a, bot], s0: 1.5, at: m('c2') }, ' · ', { t: '4', fill: NUM, from: [c, top], s0: 1.5, at: m('c2') }],
+      [{ t: '12', fill: RULE }], 490, 1120, m('c2', .8), m('c2', 1.1), m('c2', 2), 80);
+    klMark(p, 1360, 410, m('eq'), true);
+    klText(p, 'произведения равны — пропорция верна', 1120, 590, m('eq', .4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    const Q = klExpr(p, [{ f: [2, 3] }, { s: '?', fill: COL.dim }, { f: [3, 5] }], 400, 760, { size: 80, anchor: 'middle', t0: m('no') });
+    const ne = klExpr(p, [{ s: '≠', fill: COL.bad }], Q[1].c, 760, { size: 80, anchor: 'middle' });
+    put(ne[0].g, { o: 0 });
+    hide(Q[1].g, m('nums', 3.4), .3); show(ne[0].g, m('nums', 3.5), .3);
+    klRow(p, [{ m: '2 · 5 = 10' }, ',    ', { m: '3 · 3 = 9' }], 1060, 790, m('nums'), { size: 34, msize: 52 });
+    klRow(p, [{ m: '10 ≠ 9', fill: COL.bad }], 1400, 790, m('nums', 3.2), { size: 34, msize: 52 });
+  }],
+
+  ['why', 'Откуда крест-накрест', m => {
+    const p = panel(0);
+    klTitle(p, 'Почему произведения равны');
+    const T1 = klEq(p, [{ f: [2, 3] }], [{ f: [4, 6] }], 250, .3, { xEq: 800, size: 72 });
+    const L = klEq(p, [{ f: [2, 3] }, { s: '·' }, { s: '3', fill: DEN }, { s: '·' }, { s: '6', fill: DEN }],
+      [{ f: [4, 6] }, { s: '·' }, { s: '3', fill: DEN }, { s: '·' }, { s: '6', fill: DEN }], 450, m('mult'), { xEq: 800, size: 72 });
+    const sd = (cx, t) => klStrike(p, cx - 22, 450 + 64, cx + 22, 450 + 14, t, .3);   // a denominator
+    const sm = (cx, t) => klStrike(p, cx - 20, 450 + 22, cx + 20, 450 - 26, t, .3);   // a factor
+    sd(L.l[0].c, m('cancel')); sm(L.l[2].c, m('cancel', .4));
+    sd(L.r[0].c, m('cancel', 1.4)); sm(L.r[4].c, m('cancel', 1.8));
+    klEq(p, [{ s: '2', fill: NUM }, { s: '·' }, { s: '6', fill: DEN }], [{ s: '4', fill: NUM }, { s: '·' }, { s: '3', fill: DEN }], 630, m('left'), { xEq: 800, size: 72 });
+    // «Это и есть крест-накрест»: the diagonals of the first line.
+    const a = T1.l[0].c, c = T1.r[0].c;
+    c22Diag(p, a + 24, 214, c - 24, 288, RULE, m('cr'));
+    c22Diag(p, a + 24, 288, c - 24, 214, RULE, m('cr', .4));
+    const g = G(p, { o: 0 });
+    mk('rect', { x: 400, y: 720, width: 800, height: 140, rx: 18, fill: COL.chalk, 'fill-opacity': .04, stroke: RULE, 'stroke-width': 3 }, g);
+    klRow(g, [{ m: [F('a', 'b'), ' = ', F('c', 'd')] }], 600, 808, m('rule', .3), { size: 36, msize: 60, fill: RULE });
+    klRow(g, ['→      ', { m: 'a · d = b · c' }], 920, 808, m('rd'), { size: 36, msize: 60, fill: RULE });
+    show(g, m('rule'));
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'Подсказка:', 120, 250, .2, { size: 30, fill: COL.dim });
+    klExpr(p, [{ f: ['a', 'b'] }, { s: '=' }, { f: ['c', 'd'] }], 380, 390, { size: 100, anchor: 'middle', t0: .2 });
+    c22Diag(p, 300, 340, 460, 440, RULE, .4); c22Diag(p, 300, 440, 460, 340, RULE, .6);
+    S.q3rule = klMath(p, ['a · d = b · c'], 380, 600, .7, { size: 56, fill: RULE });
+  }, { ask: done => quiz({ x: 720, y: 170, w: 800, cls: 'side' }, [{
+    id: 'c-proverka', prompt: 'Проверь крест-накрест: верна ли пропорция?',
+    build: grid([
+      { parts: [F('3', '4'), ' = ', F('9', '12')], ans: ['yes'], why: '3 · 12 = 36 и 4 · 9 = 36: произведения равны.', fx: () => pulseFx(S.q3rule) },
+      { parts: [F('2', '5'), ' = ', F('4', '9')], ans: ['no'], why: '2 · 9 = 18, а 5 · 4 = 20: 18 ≠ 20.' },
+      { parts: [F('6', '8'), ' = ', F('9', '12')], ans: ['yes'], why: '6 · 12 = 72 и 8 · 9 = 72: обе дроби равны 3/4.', fx: () => pulseFx(S.q3rule) },
+    ], [['yes', 'верна', null, '1'], ['no', 'неверна', null, '2']], { multi: false }),
+  }], done) }],
+
+  ['unknown', 'Неизвестный член', m => {
+    const p = panel(0);
+    klTitle(p, 'Неизвестный член пропорции');
+    const X = c22BoxFrac(p, null, 5, 300, 420, .3, 110);
+    klExpr(p, [{ s: '=' }], 420, 420, { size: 110, anchor: 'middle', t0: .3 });
+    const Y = klFrac(p, 12, 20, 560, 420, .3, { size: 110 });
+    pulse(X.g, m('eq', .2), 1.2); pulse(Y.g, m('eq', 1.6), 1.2);
+    const top = 420 - 22, bot = 420 + 99;
+    c22Diag(p, 340, 366, 510, 474, RULE, m('cross'));
+    c22Diag(p, 340, 474, 510, 366, RULE, m('cross', .6));
+    c22Line(p, [{ t: '20', fill: DEN, from: [560, bot], s0: 110 / 64, at: m('p1') }, ' · ', { t: 'x', fill: UNK, from: [300, 386], s0: 1.4, at: m('p1') }],
+      [{ t: '5', fill: DEN, from: [300, bot], s0: 110 / 64, at: m('p2') }, { t: ' · ', at: m('p2', .5) }, { t: '12', fill: NUM, from: [560, top], s0: 110 / 64, at: m('p2') },
+        { t: ' = ', at: m('p2', 2.2) }, { t: '60', fill: RULE, at: m('p2', 2.5) }], 300, 1000, m('p1', .6), m('p2', -.1), m('p2'), 64);
+    c22Line(p, [{ t: 'x', fill: UNK }], ['60', ' : ', { t: '20', fill: DEN }], 440, 1000, m('div'), m('div'), m('div', .4), 64);
+    c22Line(p, [{ t: 'x', fill: UNK }], [{ t: '3', fill: UNK }], 580, 1000, m('open'), m('open'), m('open', .2), 64);
+    X.box.open(3, m('open'));
+    klRow(p, ['проверка:   ', { m: [F('12', '20'), ' = ', F('3', '5')] }], 800, 790, m('check'), { size: 32, msize: 56 });
+    klMark(p, 1080, 770, m('check', 3), true, .8);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const X = c22BoxFrac(p, 4, null, 660, 330, .2, 110);
+    klExpr(p, [{ s: '=' }], 800, 330, { size: 110, anchor: 'middle', t0: .2 });
+    klFrac(p, 6, 9, 940, 330, .2, { size: 110 });
+    c22Diag(p, 700, 276, 900, 384, COL.dim, .4); c22Diag(p, 700, 384, 900, 276, COL.dim, .6);
+    S.q4box = X.box;
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-neizv', prompt: 'Найди x крест-накрест.',
+    build: blanks([
+      { parts: ['6 · x = 4 · 9 = ', { box: '36' }], why: 'По диагоналям: 6 · x и 4 · 9 = 36.', hint: 'Перемножь числа на диагонали без x: 4 и 9.' },
+      { parts: ['x = ', { box: '6' }], why: 'x = 36 : 6 = 6. Проверка: 4/6 = 6/9, обе дроби равны 2/3.', hint: 'Неизвестный множитель: раздели 36 на 6.',
+        fx: () => S.q4box.fxOpen(6) },
+    ]),
+  }], done) }],
+
+  ['trap', 'Две ловушки', m => {
+    const p = panel(0);
+    klTitle(p, 'Две частые ошибки');
+    // Left: the units must be the same.
+    klRow(p, [{ m: '50', fill: NUM }, ' см  :  ', { m: '2', fill: DEN }, ' м'], 420, 300, m('units'), { size: 40, msize: 60 });
+    const w1 = klRow(p, [{ m: '50 : 2 = 25' }], 420, 420, m('wrong1'), { size: 40, msize: 60, fill: COL.dim });
+    klStrike(p, 420 - w1._w / 2 - 14, 428, 420 + w1._w / 2 + 14, 382, m('wrong1', 1.2));
+    klText(p, 'разные единицы!', 420, 480, m('wrong1', 1.4), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klRow(p, [{ m: '2' }, ' м  =  ', { m: '200' }, ' см'], 420, 590, m('right1', 1), { size: 36, msize: 54, fill: COL.dim });
+    klRow(p, [{ m: '50 : 200 = 1 : 4' }], 420, 700, m('res1'), { size: 40, msize: 60, fill: RULE });
+    klMark(p, 720, 680, m('res1', 1.6), true, .8);
+    path(p, 'M800 240V820', { stroke: COL.faint, 'stroke-width': 2 });
+    // Right: cross, not straight across.
+    c22BoxFrac(p, null, 5, 1040, 330, m('wrong2', -.6), 90);
+    klExpr(p, [{ s: '=' }], 1150, 330, { size: 90, anchor: 'middle', t0: m('wrong2', -.6) });
+    klFrac(p, 12, 20, 1270, 330, m('wrong2', -.6), { size: 90 });
+    const hz = (y, t) => draw(path(p, `M1080 ${y}H1220`, { stroke: COL.bad, 'stroke-width': 3.5, 'stroke-dasharray': '9 7' }, { d: 0 }), t, .5);
+    hz(278, m('wrong2', .4)); hz(398, m('wrong2', .8));
+    const w2 = klRow(p, [{ m: 'x · 12 = 5 · 20' }], 1155, 540, m('wrong2', 1.2), { size: 40, msize: 56, fill: COL.dim });
+    klStrike(p, 1155 - w2._w / 2 - 14, 548, 1155 + w2._w / 2 + 14, 504, m('wrong2', 2.6));
+    c22Diag(p, 1076, 290, 1230, 380, RULE, m('right2'));
+    c22Diag(p, 1076, 380, 1230, 290, RULE, m('right2', .3));
+    klRow(p, [{ m: '20 · x = 5 · 12', fill: RULE }], 1155, 680, m('right2', .6), { size: 40, msize: 56 });
+    klMark(p, 1440, 662, m('right2', 1.2), true, .8);
+  }],
+
+  ['scale', 'Масштаб', m => {
+    const p = panel(0);
+    klTitle(p, 'Масштаб — тоже отношение');
+    const CM = 120, HX = 230, SX = HX + 3 * CM, RY = 470;
+    // The map: a card with faint streets, a house and a school.
+    const map = G(p, { o: 0 });
+    mk('rect', { x: 120, y: 220, width: 640, height: 380, rx: 16, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.dim, 'stroke-width': 2.5 }, map);
+    ['M120 330H760', 'M400 220V600', 'M120 560H760', 'M690 220V600'].forEach(d => path(map, d, { stroke: COL.faint, 'stroke-width': 10, fill: 'none' }));
+    path(map, `M${HX - 26} ${RY}V${RY - 34}L${HX} ${RY - 58}L${HX + 26} ${RY - 34}V${RY}Z`, { fill: NUM, 'fill-opacity': .8, stroke: COL.chalk, 'stroke-width': 2.5 });
+    path(map, `M${SX - 40} ${RY}V${RY - 50}H${SX + 40}V${RY}Z M${SX} ${RY - 50}V${RY - 84}L${SX + 22} ${RY - 76}L${SX} ${RY - 68}`, { fill: DEN, 'fill-opacity': .8, stroke: COL.chalk, 'stroke-width': 2.5 });
+    T(map, 'дом', { x: HX, y: RY + 40, size: 24, fill: COL.dim, anchor: 'middle' });
+    T(map, 'школа', { x: SX, y: RY + 40, size: 24, fill: COL.dim, anchor: 'middle' });
+    show(map, .3);
+    klRow(p, ['масштаб  ', { m: '1', fill: NUM }, { m: ' : ' }, { m: `50${NB}000`, fill: DEN }], 760, 200, m('scale'), { size: 28, msize: 40, anchor: 'end' });
+    // The ruler under the map: one centimetre first, then three under the road.
+    const cell = (i, t) => {
+      const g = G(p, { o: 0 });
+      mk('rect', { x: HX + i * CM, y: 630, width: CM, height: 54, fill: NUM, 'fill-opacity': .3, stroke: COL.chalk, 'stroke-width': 2.5 }, g);
+      T(g, '1 см', { x: HX + (i + .5) * CM, y: 667, size: 26, anchor: 'middle' });
+      show(g, t, .3);
+    };
+    cell(0, m('cm'));
+    const o = { size: 32, msize: 46, anchor: 'start' }, LX = 860;
+    const r1 = klRow(p, [{ m: '1', fill: NUM }, ' см  →  '], LX, 350, m('cm', .4), o);
+    const r2 = klRow(p, [{ m: `50${NB}000`, fill: DEN }, ' см'], LX + r1._w, 350, m('ground'), o);
+    klRow(p, ['  =  ', { m: '500', fill: DEN }, ' м'], LX + r1._w + r2._w, 350, m('m500'), o);
+    draw(path(p, `M${HX} ${RY + 12}H${SX}`, { stroke: RULE, 'stroke-width': 7, 'stroke-linecap': 'round' }, { d: 0 }), m('road'), 1);
+    cell(1, m('road', .8)); cell(2, m('road', 1.2));
+    [0, 1, 2].forEach(i => klText(p, '500 м', HX + (i + .5) * CM, 730, i ? m('mult', i * .3) : m('m500', .3), { size: 26, fill: DEN, weight: 600, anchor: 'middle' }));
+    klRow(p, [{ m: '3', fill: NUM }, ' см  →  ', { m: `3 · 50${NB}000 = 150${NB}000`, fill: DEN }, ' см'], LX, 470, m('mult', .3), o);
+    klRow(p, [{ m: `150${NB}000` }, ' см  =  ', { m: `1${NB}500` }, ' м  =  ', { m: '1,5', fill: RULE }, ' км'], LX, 590, m('km'), o);
+    klBrace(p, HX, SX, 760, '1,5 км', m('km', 1.2), { up: false, fill: RULE, size: 34 });
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Отношение — это частное:  ', { m: ['a : b = ', F('a', 'b')] }],
+    'Члены отношения делят или умножают на одно число',
+    ['Пропорция ', { m: [F('a', 'b'), ' = ', F('c', 'd')] }, '  верна, если  ', { m: 'a · d = b · c' }],
+    ['Делим в отношении ', { m: 'm : n' }, ':  всего ', { m: 'm + n' }, ' равных частей'],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-x1', prompt: ['Найди x: ', $m('x : 6 = 10 : 15')],
+    build: blanks([{ parts: ['x = ', { box: '4' }], why: '15 · x = 6 · 10 = 60, x = 60 : 15 = 4.', hint: 'Запиши дробями и перемножь крест-накрест: 15 · x = 6 · 10.' }]),
+  }, {
+    id: 'p-x2', prompt: ['Найди x: ', $m(F('3', 'x'), ' = ', F('9', '12'))],
+    build: blanks([{ parts: ['x = ', { box: '4' }], why: '9 · x = 3 · 12 = 36, x = 36 : 9 = 4.', hint: 'Крест-накрест: 9 · x = 3 · 12.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-sok', prompt: `Сок и вода смешаны в отношении 1 : 4. Сколько миллилитров сока в 2${NB}000 мл напитка?`,
+    build: blanks([{ parts: [{ box: '400' }, ' миллилитров'], why: `Всего 1 + 4 = 5 частей, одна часть 2${NB}000 : 5 = 400 мл — это и есть сок.`, hint: 'Сколько всего частей? 1 + 4. Сок — одна часть.' }]),
+  }, {
+    id: 'p-delim', prompt: 'Раздели 35 в отношении 3 : 4.',
+    build: blanks([{ parts: ['три части:  ', { box: '15' }, ',   четыре части:  ', { box: '20' }], why: '3 + 4 = 7 частей, одна часть 35 : 7 = 5; 3 · 5 = 15, 4 · 5 = 20.', hint: 'Сложи части, раздели 35 на их число, потом умножь.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-masshtab', prompt: `Масштаб карты 1 : 200${NB}000, расстояние на карте 4 см. Сколько это километров?`,
+    build: blanks([{ parts: [{ box: '8' }, ' километров'], why: `4 · 200${NB}000 = 800${NB}000 см = 8${NB}000 м = 8 км.`, hint: `1 см на карте — это 200${NB}000 см на местности. В 1 км — 100${NB}000 см.` }]),
+  }, {
+    id: 'p-edinicy', prompt: 'Найди отношение 40 см к 2 м и запиши его несократимой дробью.',
+    build: blanks([{ parts: [{ box: '1/5', lowest: true }], why: '2 м = 200 см; 40 : 200 = 40/200 = 1/5.', hint: 'Сначала переведи метры в сантиметры: 2 м = 200 см.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
