@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Площадь и объём · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 7.3 «Площадь и объём» (5 класс). Beat ids match papermorph/content/uroki/ch31/narration.ru.json.
+const CHAPTER = { number: 31, label: '7.3', title: 'Площадь и объём', minutes: 7, language: 'ru', next: '../ch32/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, RULE = KL.RULE;
+const NB = ' ', COS30 = Math.cos(Math.PI / 6);
+
+/* ---------- cells ---------- */
+// One unit square of side c at (x, y): the measure of area (KL.NUM).
+function c31Cell(g, x, y, c, fill = NUM) {
+  return mk('rect', { x, y, width: c, height: c, fill, 'fill-opacity': .8, stroke: COL.chalk, 'stroke-width': 2 }, g);
+}
+// Faint cell lines over cols × rows cells of side c from (x, y), shown at t0 (none: at once). Returns the path.
+function c31Grid(p, x, y, cols, rows, c, t0, { col = COL.faint, width = 2 } = {}) {
+  let d = '';
+  for (let i = 0; i <= cols; i++) d += `M${x + i * c} ${y}V${y + rows * c}`;
+  for (let j = 0; j <= rows; j++) d += `M${x} ${y + j * c}H${x + cols * c}`;
+  const e = path(p, d, { stroke: col, 'stroke-width': width }, { o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) show(e, t0);
+  return e;
+}
+// A closed polygon through the points [[x, y], …].
+function c31Poly(p, pts, attrs, o = {}) {
+  return path(p, 'M' + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L') + 'Z', attrs, o);
+}
+// The border of a polygon traced on in col (a perimeter walked round) from t0.
+function c31Border(p, pts, col, t0, dur = 1.4) {
+  return draw(c31Poly(p, pts, { stroke: col, 'stroke-width': 7, fill: 'none', 'stroke-linejoin': 'round' }, { d: 0 }), t0, dur);
+}
+// A vertical bracket left of x from y1 to y2 with its label (the side of a rectangle), drawn on at t0.
+function c31VBrace(p, x, y1, y2, label, t0, { size = 34, fill = COL.chalk } = {}) {
+  draw(path(p, `M${x} ${y1}H${x - 14}V${y2}H${x}`, { stroke: fill, 'stroke-width': 3, fill: 'none' }, { d: 0 }), t0, .5);
+  return klText(p, label, x - 26, (y1 + y2) / 2 + size * .35, t0 + .3, { size, fill, weight: 600, anchor: 'end' });
+}
+
+/* ---------- unit cubes in isometric view (after ch05 c05Slab) ---------- */
+// A colour between c and the board: k = 1 is c itself.
+function c31Mix(c, k) {
+  const a = parseInt(c.slice(1), 16), b = parseInt(COL.board.slice(1), 16);
+  const ch = s => Math.round(((a >> s) & 255) * k + ((b >> s) & 255) * (1 - k));
+  return '#' + [16, 8, 0].map(s => ch(s).toString(16).padStart(2, '0')).join('');
+}
+// The screen point of the corner (i, j, z) of a box of unit cubes of edge s whose corner (0, 0, 0) is at (cx, cy).
+const c31P = (cx, cy, s) => (i, j, z) => [cx + (i - j) * s * COS30, cy + (i + j) * s * .5 - z * s];
+// A block of unit cubes i0…i1 × j0…j1 × z0…z1: the top face and the two front faces, with the lines between the cubes.
+// Blocks behind (smaller j, smaller i) and below are drawn first, so each new block covers what it hides.
+function c31Block(p, cx, cy, s, [i0, i1], [j0, j1], [z0, z1], { fill = NUM, line = 2.5 } = {}) {
+  const P = c31P(cx, cy, s), q = (...a) => { const [x, y] = P(...a); return `${x.toFixed(1)} ${y.toFixed(1)}`; };
+  const g = G(p), edge = { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-linejoin': 'round' };
+  path(g, `M${q(i0, j1, z0)}L${q(i1, j1, z0)}L${q(i1, j1, z1)}L${q(i0, j1, z1)}Z`, { fill: c31Mix(fill, .62), ...edge });
+  path(g, `M${q(i1, j0, z0)}L${q(i1, j1, z0)}L${q(i1, j1, z1)}L${q(i1, j0, z1)}Z`, { fill: c31Mix(fill, .42), ...edge });
+  path(g, `M${q(i0, j0, z1)}L${q(i1, j0, z1)}L${q(i1, j1, z1)}L${q(i0, j1, z1)}Z`, { fill: c31Mix(fill, .9), ...edge });
+  let d = '';
+  for (let k = i0 + 1; k < i1; k++) d += `M${q(k, j0, z1)}L${q(k, j1, z1)}M${q(k, j1, z0)}L${q(k, j1, z1)}`;
+  for (let k = j0 + 1; k < j1; k++) d += `M${q(i0, k, z1)}L${q(i1, k, z1)}M${q(i1, k, z0)}L${q(i1, k, z1)}`;
+  for (let k = z0 + 1; k < z1; k++) d += `M${q(i0, j1, k)}L${q(i1, j1, k)}M${q(i1, j0, k)}L${q(i1, j1, k)}`;
+  if (d) path(g, d, { stroke: COL.board, 'stroke-width': line });
+  return g;
+}
+// The dashed outline of a whole a × b × c box (where its cubes will go).
+function c31Ghost(p, cx, cy, s, a, b, c) {
+  const P = c31P(cx, cy, s), q = (...v) => P(...v).map(n => n.toFixed(1)).join(' ');
+  return path(p, `M${q(0, b, 0)}L${q(a, b, 0)}L${q(a, 0, 0)}L${q(a, 0, c)}L${q(0, 0, c)}L${q(0, b, c)}ZM${q(a, b, 0)}L${q(a, b, c)}L${q(0, b, c)}M${q(a, b, c)}L${q(a, 0, c)}`,
+    { stroke: COL.faint, 'stroke-width': 2.5, 'stroke-dasharray': '8 8', fill: 'none', 'stroke-linejoin': 'round' }, { o: 0 });
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Площадь и объём', (m, D) => klIntro(m, D, {
+    unit: 'Глава 7 · Геометрия · Тема 7.3',
+    title: 'Площадь и объём',
+    sub: 'Сколько места занимает фигура на плоскости и тело в пространстве',
+    art: (g, t0) => {
+      const a = G(g, { o: 0 });
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) c31Cell(a, 560 + c * 40, 590 + r * 40, 40);
+      show(a, t0);
+      const b = G(g, { o: 0 });
+      c31Block(b, 960, 600, 30, [0, 3], [0, 2], [0, 2]);
+      show(b, t0 + .3);
+    },
+  })],
+
+  ['cells', 'Площадь — это клетки', m => {
+    const p = panel(0);
+    klTitle(p, 'Площадь: сколько квадратиков помещается внутри');
+    const C = 90, X0 = 170, Y0 = 300, A = 5, B = 3, UX = 860, UY = 250;
+    const frame = put(mk('rect', { x: X0, y: Y0, width: A * C, height: B * C, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 3.5 }, p), { o: 0 });
+    show(frame, .2);
+    // The measure: one square 1 cm by 1 cm.
+    const unit = put(c31Cell(p, UX, UY, C), { o: 0 });
+    show(unit, m('unit'));
+    draw(path(p, `M${UX} ${UY}H${UX + C}`, { stroke: RULE, 'stroke-width': 7, 'stroke-linecap': 'round' }, { d: 0 }), m('unit', 2.8), .5);
+    tw(frame, { 'a_stroke-width': 7, c_stroke: RULE }, m('row', .8), .3); tw(frame, { 'a_stroke-width': 3.5, c_stroke: COL.chalk }, m('row', 1.6), .4);
+    klText(p, '1 см', UX + C / 2, UY - 14, m('unit', 3), { size: 26, fill: COL.dim, anchor: 'middle' });
+    klRow(p, [{ m: '1 см²', fill: NUM }, '  — квадратный сантиметр'], UX + C + 24, UY + C / 2 + 12, m('unit', 4.6), { size: 32, msize: 44, anchor: 'start' });
+    // The first row: five copies of the measure slide into the rectangle one by one.
+    for (let j = 0; j < A; j++) {
+      const c = put(c31Cell(p, X0 + j * C, Y0, C), { x: UX - X0 - j * C, y: UY - Y0, o: 0 });
+      show(c, m('row', 1.2 + j * .35), .2);
+      tw(c, { x: 0, y: 0 }, m('row', 1.2 + j * .35), .6, io);
+    }
+    klBrace(p, X0, X0 + A * C, Y0 - 20, '5 см', m('row', 3.4), { size: 32 });
+    // The row is copied down: three rows.
+    for (let r = 1; r < B; r++) {
+      const g = G(p, { o: 0 }), t = m('rows', (r - 1) * .45);
+      for (let j = 0; j < A; j++) c31Cell(g, X0 + j * C, Y0, C);
+      show(g, t, .15);
+      tw(g, { y: r * C }, t + .1, .55, io);
+    }
+    c31VBrace(p, X0 - 10, Y0, Y0 + B * C, '3 см', m('rows', 1));
+    [5, 10, 15].forEach((v, r) => klText(p, String(v), X0 + A * C + 44, Y0 + (r + .5) * C + 12, m('count', r * .6), { size: 36, fill: r === 2 ? COL.chalk : COL.dim, weight: 600, anchor: 'middle' }));
+    const s1 = klMath(p, ['S = 15 см²'], X0 + A * C / 2, 660, m('count', 3.4), { size: 60 });
+    const ring = put(mk('rect', { x: X0 - 4, y: Y0 - 4, width: A * C + 8, height: C + 8, fill: 'none', stroke: RULE, 'stroke-width': 6, rx: 4 }, p), { o: 0 });
+    show(ring, m('rule', 1.2), .3); hide(ring, m('rule', 4.2), .4);
+    hide(s1, m('rule', 2.2), .3);
+    klMath(p, ['S = 5 · 3 = 15 см²'], X0 + A * C / 2, 660, m('rule', 2.5), { size: 60 });
+    klText(p, 'в ряду  ·  рядов', X0 + A * C / 2 - 30, 720, m('rule', 2.8), { size: 26, fill: COL.dim, anchor: 'middle' });
+    // The rule for any rectangle, and the square.
+    klMath(p, ['S = a · b'], UX, 480, m('gen'), { size: 96, fill: RULE, anchor: 'start' });
+    klText(p, 'a — длина,  b — ширина', UX, 545, m('gen', .8), { size: 30, fill: COL.dim });
+    const sq = G(p, { o: 0 });
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) c31Cell(sq, 1330 + c * 42, 640 + r * 42, 42);
+    klText(sq, 'a', 1393, 800, undefined, { size: 30, fill: COL.dim, anchor: 'middle' });
+    show(sq, m('sq'));
+    klRow(p, ['квадрат:  ', { m: 'S = a · a = a²' }], UX, 715, m('sq', 1), { size: 34, msize: 52, anchor: 'start' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = 55, X0 = 800 - 3.5 * C, Y0 = 250;
+    put(mk('rect', { x: X0, y: Y0, width: 7 * C, height: 4 * C, fill: COL.chalk, 'fill-opacity': .05 }, p), {});
+    c31Grid(p, X0, Y0, 7, 4, C);
+    put(mk('rect', { x: X0, y: Y0, width: 7 * C, height: 4 * C, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, p), {});
+    klBrace(p, X0, X0 + 7 * C, Y0 - 18, '7 см', .3, { size: 32 });
+    c31VBrace(p, X0 - 10, Y0, Y0 + 4 * C, '4 см', .4);
+    S.q1rows = Array.from({ length: 4 }, (_, r) => { const g = G(p, { o: 0 }); for (let j = 0; j < 7; j++) c31Cell(g, X0 + j * C, Y0 + r * C, C); return g; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-pryamoug', prompt: 'Найди площадь прямоугольника 7 см × 4 см.',
+    build: blanks([{ parts: ['S = ', { box: '28' }, ' см²'], why: '4 ряда по 7 квадратиков: 7 · 4 = 28 см².',
+      hint: 'Сколько квадратиков в одном ряду и сколько рядов? Перемножь.',
+      fx: () => S.q1rows.forEach((g, r) => fx(g, { o: 1 }, r * .2, .35)) }]),
+  }], done) }],
+
+  ['triangle', 'Прямоугольный треугольник', m => {
+    const p = panel(0);
+    klTitle(p, 'Прямоугольный треугольник — половина прямоугольника');
+    const C = 80, X0 = 170, Y0 = 290, W = 6 * C, H = 4 * C, cx = X0 + W / 2, cy = Y0 + H / 2;
+    c31Grid(p, X0, Y0, 6, 4, C, .2);
+    const tri = c31Poly(p, [[X0, Y0], [X0, Y0 + H], [X0 + W, Y0 + H]], { fill: NUM, 'fill-opacity': .75, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' }, { o: 0 });
+    show(tri, .3);
+    path(p, `M${X0 + 24} ${Y0 + H}V${Y0 + H - 24}H${X0}`, { stroke: COL.chalk, 'stroke-width': 3, fill: 'none' });
+    klBrace(p, X0, X0 + W, Y0 + H + 20, '6', m('tri', .3), { up: false, size: 36 });
+    c31VBrace(p, X0 - 10, Y0, Y0 + H, '4', m('tri', 1), { size: 36 });
+    // The same triangle, turned half a turn about the middle of the long side, fills the rest of the rectangle.
+    const cp = G(p, { x: cx + 660, y: cy, o: 0 });
+    c31Poly(cp, [[-W / 2, -H / 2], [-W / 2, H / 2], [W / 2, H / 2]], { fill: TWO, 'fill-opacity': .6, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+    show(cp, m('copy'), .4);
+    tw(cp, { x: cx, r: 180 }, m('copy', 1.2), 1.6, io);
+    draw(path(p, `M${X0} ${Y0}H${X0 + W}V${Y0 + H}H${X0}Z`, { stroke: RULE, 'stroke-width': 6, fill: 'none' }, { d: 0 }), m('rect'), 1);
+    klMath(p, ['6 · 4 = 24'], 820, 420, m('rect', 2.2), { size: 64, anchor: 'start' });
+    tw(cp, { o: .2 }, m('half'), .6);
+    c31Border(p, [[X0, Y0], [X0, Y0 + H], [X0 + W, Y0 + H]], RULE, m('rule', .2), 1);
+    klMath(p, ['24 : 2 = 12'], 820, 520, m('half', 1.6), { size: 64, fill: NUM, anchor: 'start' });
+    klMath(p, ['S = ', F('a · b', '2')], 820, 670, m('rule', 2.6), { size: 80, fill: RULE, anchor: 'start' });
+    klText(p, 'a и b — стороны у прямого угла', 820, 770, m('rule', 4), { size: 30, fill: COL.dim });
+  }],
+
+  ['cut', 'Сложная фигура', m => {
+    const p = panel(0);
+    klTitle(p, 'Сложную фигуру режем на прямоугольники');
+    const C = 80, X0 = 180, YT = 240, YM = 480, YB = 640;
+    // Two pieces, at first one figure with a single outline.
+    const piece = (x, y, w, h, fill) => {
+      const g = G(p, { o: 0 });
+      mk('rect', { x, y, width: w, height: h, fill: COL.chalk, 'fill-opacity': .07 }, g);
+      const tint = put(mk('rect', { x, y, width: w, height: h, fill, 'fill-opacity': .55 }, g), { o: 0 });
+      c31Grid(g, x, y, w / C, h / C, C);
+      const fr = put(mk('rect', { x, y, width: w, height: h, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, g), { o: 0 });
+      show(g, .2);
+      return { g, tint, fr };
+    };
+    const top = piece(X0, YT, 3 * C, 3 * C, TWO), bot = piece(X0, YM, 6 * C, 2 * C, NUM);
+    const whole = c31Poly(p, [[X0, YT], [X0 + 3 * C, YT], [X0 + 3 * C, YM], [X0 + 6 * C, YM], [X0 + 6 * C, YB], [X0, YB]], { fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, { o: 0 });
+    show(whole, .2);
+    const seam = path(p, `M${X0} ${YM}H${X0 + 3 * C}`, { stroke: DEN, 'stroke-width': 4, 'stroke-dasharray': '12 8' }, { d: 0 });
+    draw(seam, m('cut'), .6);
+    hide(whole, m('cut', .7), .3); hide(seam, m('cut', .9), .3);
+    [top, bot].forEach(k => show(k.fr, m('cut', .7), .3));
+    tw(top.g, { y: -40 }, m('cut', .8), .6, out);
+    show(bot.tint, m('p1'), .4);
+    klMath(p, ['6 · 2 = 12'], X0 + 6 * C + 40, YM + C + 20, m('p1', .6), { size: 56, fill: NUM, anchor: 'start' });
+    show(top.tint, m('p2'), .4);
+    klMath(p, ['3 · 3 = 9'], X0 + 3 * C + 40, YT + 1.5 * C - 20, m('p2', .6), { size: 56, fill: TWO, anchor: 'start' });
+    tw(top.g, { y: 0 }, m('sum'), .6, io);
+    klMath(p, ['S = 12 + 9 = 21'], 1150, 330, m('sum', .4), { size: 72 });
+    klText(p, 'разрезали и сложили площади', 1150, 410, m('sum', 1.2), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['grid', 'Достроить до квадрата', m => {
+    const p = panel(0);
+    klTitle(p, 'Фигура на клетках: достроить и вычесть');
+    const C = 80, GX = 150, GY = 220, P = (i, j) => [GX + i * C, GY + j * C];
+    c31Grid(p, GX, GY, 6, 6, C, .1);
+    const tri = c31Poly(p, [P(1, 2), P(5, 1), P(4, 5)], { fill: NUM, 'fill-opacity': .8, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' }, { o: 0 });
+    show(tri, .3);
+    draw(c31Poly(p, [P(1, 1), P(5, 1), P(5, 5), P(1, 5)], { fill: 'none', stroke: DEN, 'stroke-width': 4, 'stroke-dasharray': '12 9' }, { d: 0 }), m('box'), .9);
+    klRow(p, ['квадрат:  ', { m: '4 · 4 = 16' }], 760, 340, m('box', 1), { size: 34, msize: 52, anchor: 'start' });
+    const extra = [[[P(1, 1), P(1, 2), P(5, 1)], '2', P(2.6, .62)], [[P(5, 1), P(5, 5), P(4, 5)], '2', P(5.45, 3.3)], [[P(1, 5), P(4, 5), P(1, 2)], '4,5', P(2, 4.1)]];
+    const marks = ['t1', 't2', 't3'];
+    const pieces = extra.map(([pts, lab, [lx, ly]], k) => {
+      const g = G(p, { o: 0 });
+      c31Poly(g, pts, { fill: TWO, 'fill-opacity': .55, stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-linejoin': 'round' });
+      show(g, m('ex', .3 + k * .35), .4);
+      const l = T(g, lab, { x: lx, y: ly + 12, size: 36, weight: 700, anchor: 'middle', o: 0 });
+      show(l, m(marks[k], .4), .3);
+      return g;
+    });
+    // S = 16 − 2 − 2 − 4,5, each part on its word; then = 7,5.
+    const parts = [['S = 16'], [' − 2'], [' − 2'], [' − 4,5']], ts = [m('box', 1.6), m('t1', 4), m('t2', 1.2), m('t3', 4)];
+    let x = 760;
+    parts.forEach((pt, k) => { klMath(p, pt, x, 470, ts[k], { size: 60, anchor: 'start', fill: k ? TWO : COL.chalk }); x += mathW(pt, 60); });
+    const halves = [[[1, 1], [5, 2], .2], [[4, 1], [5, 5], .3], [[1, 2], [4, 5], 1.6]].map(([[i0, j0], [i1, j1], dt], k) => {
+      const e = c31Poly(p, [P(i0, j0), P(i1, j0), P(i1, j1), P(i0, j1)], { fill: 'none', stroke: RULE, 'stroke-width': 4, 'stroke-dasharray': '10 8' }, { d: 0 });
+      draw(e, m(marks[k], dt), .7); hide(e, m(marks[k], dt + 2.4), .4);
+      return e;
+    });
+    pieces.forEach((g, k) => hide(g, m('res', k * .3), .5));
+    klRow(p, [{ m: '= 7,5', fill: NUM }, '  клетки'], 760 + mathW(['S '], 60), 570, m('res', 2.2), { size: 34, msize: 60, anchor: 'start' });
+    klText(p, 'достроили до квадрата и вычли лишнее', 760, 680, m('res', 3), { size: 30, fill: RULE, weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = 60, X0 = 620, Y0 = 200, YM = Y0 + 3 * C, YB = Y0 + 5 * C;
+    c31Grid(p, X0 - C, Y0 - C, 8, 7, C);
+    const pts = [[X0 + 4 * C, Y0], [X0 + 6 * C, Y0], [X0 + 6 * C, YB], [X0, YB], [X0, YM], [X0 + 4 * C, YM]];
+    c31Poly(p, pts, { fill: COL.chalk, 'fill-opacity': .12, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+    klText(p, '6', X0 + 3 * C, YB + 44, .3, { size: 34, weight: 600, anchor: 'middle' });
+    klText(p, '2', X0 - 18, YM + C + 12, .3, { size: 34, weight: 600, anchor: 'end' });
+    klText(p, '2', X0 + 5 * C, Y0 - 16, .3, { size: 34, weight: 600, anchor: 'middle' });
+    klText(p, '5', X0 + 6 * C + 20, Y0 + 2.5 * C + 12, .3, { size: 34, weight: 600 });
+    S.q2 = G(p, { o: 0 });
+    mk('rect', { x: X0, y: YM, width: 6 * C, height: 2 * C, fill: NUM, 'fill-opacity': .5 }, S.q2);
+    mk('rect', { x: X0 + 4 * C, y: Y0, width: 2 * C, height: 3 * C, fill: TWO, 'fill-opacity': .5 }, S.q2);
+    path(S.q2, `M${X0 + 4 * C} ${YM}H${X0 + 6 * C}`, { stroke: DEN, 'stroke-width': 4, 'stroke-dasharray': '12 8' });
+    T(S.q2, '12', { x: X0 + 2 * C, y: YM + C + 14, size: 40, weight: 700, anchor: 'middle' });
+    T(S.q2, '6', { x: X0 + 5 * C, y: Y0 + 1.5 * C + 14, size: 40, weight: 700, anchor: 'middle' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-figura', prompt: 'Найди площадь фигуры (в клетках).',
+    build: blanks([{ parts: ['S = ', { box: '18' }, ' клеток'], why: 'Разрежем: внизу 6 · 2 = 12, сверху 2 · 3 = 6; 12 + 6 = 18.',
+      hint: 'Разрежь фигуру на два прямоугольника и сложи их площади.',
+      fx: () => fx(S.q2, { o: 1 }, 0, .5) }]),
+  }], done) }],
+
+  ['volume', 'Объём — это кубики', m => {
+    const p = panel(0);
+    klTitle(p, 'Объём: сколько кубиков помещается внутри');
+    const s = 70, cx = 360, cy = 400, A = 4, B = 3;
+    show(c31Ghost(p, cx, cy, s, A, B, 2), .2);
+    const u = c31Block(p, 860, 250, s, [0, 1], [0, 1], [0, 1]);
+    put(u, { o: 0 }); show(u, m('unit'));
+    klRow(p, [{ m: '1 см³', fill: NUM }, '  — кубический сантиметр'], 970, 262, m('unit', 3), { size: 32, msize: 44, anchor: 'start' });
+    // The bottom layer row by row (back row first), then a whole second layer on top.
+    const drop = (g, t) => { put(g, { y: -160, o: 0 }); tw(g, { o: 1 }, t, .25); tw(g, { y: 0 }, t, .6, out); };
+    drop(c31Block(p, cx, cy, s, [0, A], [0, 1], [0, 1]), m('row', 1.2));
+    drop(c31Block(p, cx, cy, s, [0, A], [1, 2], [0, 1]), m('rows'));
+    drop(c31Block(p, cx, cy, s, [0, A], [2, 3], [0, 1]), m('rows', .5));
+    drop(c31Block(p, cx, cy, s, [0, A], [0, B], [1, 2]), m('l2', .3));
+    const ly = k => cy + A * s * .5 - (k + .5) * s + 12;
+    klMath(p, ['4 · 3 = 12'], 640, ly(0), m('rows', 1.8), { size: 40, anchor: 'start' });
+    klMath(p, ['12'], 640, ly(1), m('l2', 1), { size: 40, anchor: 'start' });
+    klMath(p, ['V = 2 · 12'], 900, 470, m('count', .3), { size: 60, anchor: 'start' });
+    klMath(p, [' = 24 см³'], 900 + mathW(['V = 2 · 12'], 60), 470, m('count', 2.6), { size: 60, anchor: 'start' });
+    klText(p, '4 см', cx - 86, cy + 222, m('rule', 1.2), { size: 32, weight: 600, anchor: 'middle' });
+    klText(p, '3 см', cx + 190, cy + 232, m('rule', 1.8), { size: 32, weight: 600, anchor: 'middle' });
+    klText(p, '2 см', cx - 3 * s * COS30 - 28, cy + 50, m('rule', 2.4), { size: 32, weight: 600, anchor: 'end' });
+    klMath(p, ['V = a · b · c'], 900, 610, m('rule', 3), { size: 80, fill: RULE, anchor: 'start' });
+    klText(p, 'длина · ширина · высота', 900, 670, m('rule', 3.6), { size: 30, fill: COL.dim });
+    klRow(p, ['куб:  ', { m: 'V = a · a · a = a³' }], 900, 790, m('cube', .4), { size: 34, msize: 52, anchor: 'start' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const s = 48, cx = 780, cy = 270;
+    S.q3 = [0, 1, 2].map(k => c31Block(p, cx, cy, s, [0, 5], [0, 4], [k, k + 1]));
+    klText(p, '5 см', cx - 92, cy + 200, .3, { size: 30, weight: 600, anchor: 'middle' });
+    klText(p, '4 см', cx + 160, cy + 210, .3, { size: 30, weight: 600, anchor: 'middle' });
+    klText(p, '3 см', cx - 4 * s * COS30 - 24, cy + 34, .3, { size: 30, weight: 600, anchor: 'end' });
+    S.q3t = klMath(p, ['5 · 4 · 3 = 60'], 1080, 300, undefined, { size: 48, anchor: 'start', fill: RULE });
+    put(S.q3t, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-korobka', prompt: 'Найди объём коробки 5 см × 4 см × 3 см.',
+    build: blanks([{ parts: ['V = ', { box: '60' }, ' см³'], why: 'В слое 5 · 4 = 20 кубиков, слоёв 3: 20 · 3 = 60 см³.',
+      hint: 'Перемножь длину, ширину и высоту.',
+      fx: () => { S.q3.forEach((g, k) => { fx(g, { y: -24 }, k * .2, .2, out); fx(g, { y: 0 }, .2 + k * .2, .3); }); fx(S.q3t, { o: 1 }, .5, .4); } }]),
+  }], done) }],
+
+  ['units', 'Квадратные и кубические единицы', m => {
+    const p = panel(0);
+    klTitle(p, 'Квадратный метр и литр');
+    const X0 = 170, Y0 = 290, W = 300;
+    show(put(mk('rect', { x: X0, y: Y0, width: W, height: W, fill: COL.chalk, 'fill-opacity': .05 }, p), { o: 0 }), .2);
+    draw(path(p, `M${X0} ${Y0}H${X0 + W}V${Y0 + W}H${X0}Z`, { stroke: COL.chalk, 'stroke-width': 3.5, fill: 'none' }, { d: 0 }), .5, 3);
+    klBrace(p, X0, X0 + W, Y0 - 20, '1 м = 100 см', m('m2', 1.2), { size: 30 });
+    c31VBrace(p, X0 - 10, Y0, Y0 + W, '100 см', m('m2', 1.8), { size: 28 });
+    // A hundred rows of a hundred small squares: the fine mesh fills in from the top.
+    const sweep = mk('rect', { x: X0, y: Y0, width: W, height: 0, fill: NUM, 'fill-opacity': .55 }, p);
+    tw(sweep, { a_height: W }, m('rows'), 2.2, io);
+    let d = '';
+    for (let k = 1; k < 100; k++) d += `M${X0 + k * 3} ${Y0}V${Y0 + W}M${X0} ${Y0 + k * 3}H${X0 + W}`;
+    show(path(p, d, { stroke: COL.board, 'stroke-width': .8 }, { o: 0 }), m('rows'), 1);
+    klText(p, '100 рядов по 100 см²', 620, 370, m('rows', .6), { size: 36, weight: 600 });
+    klMath(p, ['1 м² = 100 см²'], 620, 470, m('wrong'), { size: 52, anchor: 'start', fill: COL.dim });
+    klStrike(p, 610, 482, 610 + mathW(['1 м² = 100 см²'], 52) + 10, 442, m('wrong', .4));
+    klMath(p, ['1 м² = 100 · 100 = 10' + NB + '000 см²'], 620, 570, m('right'), { size: 52, anchor: 'start', fill: RULE });
+    const cube = c31Block(p, 320, 745, 10, [0, 10], [0, 10], [0, 10], { line: 1.2 });
+    put(cube, { o: 0 }); show(cube, m('l'));
+    klMath(p, ['1 л = 1 дм³'], 620, 730, m('l', .4), { size: 52, anchor: 'start' });
+    klMath(p, ['= 10 · 10 · 10 = 1' + NB + '000 см³'], 620 + mathW(['1 л '], 52), 810, m('l', 4), { size: 52, anchor: 'start' });
+  }],
+
+  ['perim', 'Периметр — это другое', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка: путать площадь и периметр');
+    const C = 60, SQ = [170, 240], RC = [640, 300];
+    const rect = (x, y, a, b) => {
+      put(mk('rect', { x, y, width: a * C, height: b * C, fill: COL.chalk, 'fill-opacity': .05 }, p), {});
+      const fill = G(p, { o: 0 });
+      mk('rect', { x, y, width: a * C, height: b * C, fill: NUM, 'fill-opacity': .55 }, fill);
+      c31Grid(p, x, y, a, b, C);
+      put(mk('rect', { x, y, width: a * C, height: b * C, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, p), {});
+      return { fill, pts: [[x, y], [x + a * C, y], [x + a * C, y + b * C], [x, y + b * C]] };
+    };
+    const A = rect(...SQ, 4, 4), B = rect(...RC, 8, 2);
+    klText(p, '4', SQ[0] + 2 * C, SQ[1] + 4 * C + 40, m('two'), { size: 32, weight: 600, anchor: 'middle' });
+    klText(p, '4', SQ[0] - 16, SQ[1] + 2 * C + 12, m('two'), { size: 32, weight: 600, anchor: 'end' });
+    klText(p, '8', RC[0] + 4 * C, RC[1] + 2 * C + 40, m('two', 1.4), { size: 32, weight: 600, anchor: 'middle' });
+    klText(p, '2', RC[0] - 16, RC[1] + C + 12, m('two', 1.4), { size: 32, weight: 600, anchor: 'end' });
+    show(A.fill, m('area')); show(B.fill, m('area', .3));
+    klMath(p, ['S = 16'], SQ[0] + 2 * C, 560, m('area', .8), { size: 46, fill: NUM });
+    klMath(p, ['S = 16'], RC[0] + 4 * C, 560, m('area', .8), { size: 46, fill: NUM });
+    const claim = 'Площади равны — значит, и периметры равны?', cw = klW(claim, 34);
+    klText(p, claim, 800, 760, m('claim'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    klStrike(p, 800 - cw / 2 - 10, 750, 800 + cw / 2 + 10, 742, m('strike'));
+    c31Border(p, A.pts, DEN, m('p1'), 1.8);
+    klMath(p, ['P = 4 + 4 + 4 + 4 = 16'], SQ[0] + 2 * C, 645, m('p1', 1.2), { size: 40, fill: DEN });
+    c31Border(p, B.pts, DEN, m('p2'), 1.8);
+    klMath(p, ['P = 8 + 2 + 8 + 2 = 20'], RC[0] + 4 * C, 645, m('p2', 1.2), { size: 40, fill: DEN });
+    klText(p, 'Периметр — длина границы,', 790, 850, m('rule', .3), { size: 34, fill: DEN, weight: 600, anchor: 'end' });
+    c31Border(p, A.pts, DEN, m('rule', .3), .8); c31Border(p, B.pts, DEN, m('rule', .5), .8);
+    klText(p, 'площадь — клетки внутри', 810, 850, m('rule', 2.8), { size: 34, fill: NUM, weight: 600 });
+    [A, B].forEach(r => { tw(r.fill, { o: .35 }, m('rule', 2.8), .3); tw(r.fill, { o: 1 }, m('rule', 3.2), .5); });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = 40, R = [[180, 300, 4, 3], [440, 320, 6, 2], [780, 340, 12, 1]];
+    S.q4 = R.map(([x, y, a, b]) => {
+      const g = G(p);
+      for (let r = 0; r < b; r++) for (let c = 0; c < a; c++) c31Cell(g, x + c * C, y + r * C, C);
+      klMath(p, ['S = 12'], x + a * C / 2, 480, .3, { size: 36, fill: COL.dim });
+      return { g, box: [x - 24, y - 24, a * C + 48, b * C + 48], pts: [[x, y], [x + a * C, y], [x + a * C, y + b * C], [x, y + b * C]] };
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-perimetr', prompt: 'У всех трёх прямоугольников площадь 12 клеток. У какого периметр больше? Нажми на него.',
+    build: pickEls(S.q4.map((r, i) => ({ el: r.g, box: r.box, label: ['4 × 3', '6 × 2', '12 × 1'][i] })), 2,
+      'P = 2 · (12 + 1) = 26 — длинный узкий прямоугольник. У остальных 14 и 16.',
+      i => i === 0 ? 'P = 2 · (4 + 3) = 14. Найди периметры двух других.' : 'P = 2 · (6 + 2) = 16. А у самого длинного?',
+      () => c31Border(qlayer(), S.q4[2].pts, DEN, 0, 1.2)),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Площадь прямоугольника:  ', { m: 'S = a · b' }],
+    ['Прямоугольный треугольник:  ', { m: ['S = ', F('a · b', '2')] }],
+    ['Объём коробки:  ', { m: 'V = a · b · c' }],
+    'Периметр — длина границы, площадь — клетки внутри',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-kvadrat', prompt: 'Квадрат со стороной 9 см. Найди его периметр и площадь.',
+    build: blanks([
+      { parts: ['P = ', { box: '36' }, ' см'], why: '4 стороны по 9 см: 9 · 4 = 36 см.', hint: 'Периметр — сумма длин всех четырёх сторон.' },
+      { parts: ['S = ', { box: '81' }, ' см²'], why: '9 · 9 = 81 см².', hint: 'Площадь квадрата — сторона, умноженная на себя.' },
+    ]),
+  }, {
+    id: 'p-storona', prompt: 'Площадь квадрата 49 м². Найди его сторону.',
+    build: blanks([{ parts: ['a = ', { box: '7' }, ' м'], why: '7 · 7 = 49, значит, сторона 7 м.', hint: 'Какое число, умноженное само на себя, даёт 49?' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-akvarium', prompt: 'Аквариум 40 см × 25 см × 30 см. Сколько литров воды он вмещает?',
+    build: blanks([
+      { parts: ['V = ', { box: '30000' }, ' см³'], why: '40 · 25 = 1 000, и 1 000 · 30 = 30 000 см³.', hint: 'Перемножь длину, ширину и высоту.' },
+      { parts: ['это ', { box: '30' }, ' л'], why: '1 л = 1 000 см³, а 30 000 : 1 000 = 30.', hint: 'В одном литре 1 000 см³.' },
+    ]),
+  }, {
+    id: 'p-treug', prompt: 'У прямоугольного треугольника стороны у прямого угла 10 см и 7 см. Найди его площадь.',
+    build: blanks([{ parts: ['S = ', { box: '35' }, ' см²'], why: 'Прямоугольник 10 · 7 = 70, треугольник — половина: 35 см².', hint: 'Треугольник — половина прямоугольника 10 × 7.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['1 м² = 100 см²'], ans: ['no'], why: 'В 1 м² сто рядов по сто: 10 000 см².' },
+      { parts: ['1 л = 1 дм³ = 1 000 см³'], ans: ['yes'], why: '10 · 10 · 10 = 1 000.' },
+      { parts: ['Если площади прямоугольников равны, то равны и их периметры'], ans: ['no'], why: '4 × 4 и 2 × 8: площади по 16, а периметры 16 и 20.' },
+      { parts: ['Объём куба с ребром 2 см равен 8 см³'], ans: ['yes'], why: '2 · 2 · 2 = 8.' },
+    ], [['yes', 'верно', null, '1'], ['no', 'неверно', null, '2']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

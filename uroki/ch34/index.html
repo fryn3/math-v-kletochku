@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Координаты и симметрия · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 7.6 «Координаты и симметрия» (6 класс). Beat ids match papermorph/content/uroki/ch34/narration.ru.json.
+const CHAPTER = { number: 34, label: '7.6', title: 'Координаты и симметрия', minutes: 8, language: 'ru', next: '../ch35/' };
+
+// Colours of this chapter: positive coordinates blue, negative coral (math.js POS / NEG, as in 6.1), mirrors, images
+// and axes of symmetry green, the rule amber; points themselves chalk.
+const RULE = KL.RULE, MIR = COL.irr;
+const c34Col = v => v > 0 ? POS : v < 0 ? NEG : COL.chalk;
+
+// A coordinate plane: origin at (cx, cy), u px a unit, x0…x1 by y0…y1. Parts are separate groups so a beat can build
+// it: grid (light lines), ax and ay (each axis with its arrow, ticks, labels and name), O (the origin's letter).
+// col: labels in the sign colours. No t0: shown at once. Returns { PX, PY, u, cx, cy, x0, x1, y0, y1, grid, ax, ay,
+// O, lx: { v: text }, ly, nx, ny } (nx, ny: the axis names, each in a group at its place, for pulse).
+const PL = { cx: 560, cy: 480, u: 50, x0: -7, x1: 7, y0: -5, y1: 5 };
+const AL = { cx: 520, cy: 480, u: 50, x0: -6, x1: 6, y0: -5, y1: 5 };
+const QL = { cx: 420, cy: 470, u: 48, x0: -6, x1: 6, y0: -5, y1: 5 };
+function c34Plane(p, { cx, cy, u, x0, x1, y0, y1, t0, labels = true, col = true, size = 20 } = PL) {
+  const PX = x => cx + x * u, PY = y => cy - y * u, o = t0 === undefined ? 1 : 0;
+  const grid = G(p, { o }), ax = G(p, { o }), ay = G(p, { o }), lx = {}, ly = {};
+  let d = '';
+  for (let x = x0; x <= x1; x++) if (x) d += `M${PX(x)} ${PY(y0 - .3)}V${PY(y1 + .3)}`;
+  for (let y = y0; y <= y1; y++) if (y) d += `M${PX(x0 - .3)} ${PY(y)}H${PX(x1 + .3)}`;
+  path(grid, d, { stroke: COL.chalk, 'stroke-opacity': .14, 'stroke-width': 1.5 });
+  const A = { stroke: COL.chalk, 'stroke-width': 3 }, xe = PX(x1 + .6), ye = PY(y1 + .6);
+  path(ax, `M${PX(x0 - .5)} ${cy}H${xe}M${xe - 15} ${cy - 9}L${xe} ${cy}L${xe - 15} ${cy + 9}`, A);
+  path(ay, `M${cx} ${PY(y0 - .5)}V${ye}M${cx - 9} ${ye + 15}L${cx} ${ye}L${cx + 9} ${ye + 15}`, A);
+  const nx = G(ax, { x: xe + 4, y: cy + 34 }), ny = G(ay, { x: cx - 24, y: ye + 8 });
+  T(nx, 'x', { size: 30, fill: COL.chalk, font: MATH, anchor: 'middle' }).setAttribute('font-style', 'italic');
+  T(ny, 'y', { size: 30, fill: COL.chalk, font: MATH, anchor: 'middle' }).setAttribute('font-style', 'italic');
+  for (let x = x0; x <= x1; x++) if (x) {
+    path(ax, `M${PX(x)} ${cy - 6}V${cy + 6}`, { stroke: COL.dim, 'stroke-width': 2 });
+    if (labels) lx[x] = T(ax, num(x), { x: PX(x), y: cy + 28, size, fill: col ? c34Col(x) : COL.dim, font: MATH, anchor: 'middle' });
+  }
+  for (let y = y0; y <= y1; y++) if (y) {
+    path(ay, `M${cx - 6} ${PY(y)}H${cx + 6}`, { stroke: COL.dim, 'stroke-width': 2 });
+    if (labels) ly[y] = T(ay, num(y), { x: cx - 13, y: PY(y) + 7, size, fill: col ? c34Col(y) : COL.dim, font: MATH, anchor: 'end' });
+  }
+  const O = labels ? T(p, 'O', { x: cx - 9, y: cy + 29, size: size + 4, fill: COL.chalk, font: MATH, anchor: 'end', o }) : null;
+  if (t0 !== undefined) { show(grid, t0); show(ax, t0); show(ay, t0); if (O) show(O, t0); }
+  return { PX, PY, u, cx, cy, x0, x1, y0, y1, grid, ax, ay, O, lx, ly, nx, ny };
+}
+// A point at (x, y) that pops in at t (no t: shown). Returns its group (at the point, so pulse scales it in place).
+function c34Dot(p, P, x, y, t, { fill = COL.chalk, r = 11 } = {}) {
+  const g = G(p, { x: P.PX(x), y: P.PY(y), o: t === undefined ? 1 : 0, s: t === undefined ? 1 : .3 });
+  mk('circle', { r, fill, stroke: COL.board, 'stroke-width': 3 }, g);
+  if (t !== undefined) tw(g, { o: 1, s: 1 }, t, .4, back);
+  return g;
+}
+// klRow pieces for «A(3; −2)»: the name (in its colour), then each coordinate in its sign colour.
+const c34Co = (name, x, y, fill = COL.chalk) => [{ m: name, fill }, { m: '(' }, { m: num(x), fill: c34Col(x) }, { m: '; ' }, { m: num(y), fill: c34Col(y) }, { m: ')' }];
+// The coordinates written beside a point: a klRow of c34Co at (x, y) on the stage, in a group there (for pulse).
+function c34Lab(p, name, X, Y, sx, sy, t, { size = 30, anchor = 'start', fill } = {}) {
+  const g = G(p, { x: sx, y: sy });
+  klRow(g, c34Co(name, X, Y, fill), 0, 0, t, { msize: size, anchor });
+  return g;
+}
+// One straight leg of a walk on the grid, from a to b (both [x, y], same x or same y), drawn on at t, in the sign
+// colour of its direction, with the steps counted 1, 2, 3 … beside it. Returns the time it ends.
+function c34Leg(p, P, a, b, t, { step = .4, count = true, w = 6 } = {}) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], n = Math.abs(dx + dy), col = c34Col(dx + dy);
+  draw(path(p, `M${P.PX(a[0])} ${P.PY(a[1])}L${P.PX(b[0])} ${P.PY(b[1])}`, { stroke: col, 'stroke-width': w, 'stroke-linecap': 'round' }, { d: 0 }), t, n * step, lin);
+  if (count) {
+    const pts = [];
+    for (let k = 1; k <= n; k++) {
+      const fx0 = a[0] + Math.sign(dx) * (k - .5), fy0 = a[1] + Math.sign(dy) * (k - .5);
+      pts.push(dx ? [P.PX(fx0), P.PY(a[1]) + (b[1] < 0 || a[1] < 0 ? 32 : -14)] : [P.PX(a[0]) + (a[0] < 0 ? -20 : 20), P.PY(fy0) + 9]);
+    }
+    klCount(p, pts, t + step * .6, { step, size: 24, fill: col });
+  }
+  return t + n * step;
+}
+// Dashed guides from the point (x, y) to both axes, faded in at t (to the x-axis) and t2 (to the y-axis).
+function c34Drop(p, P, x, y, t, t2 = t + .4, col = COL.dim) {
+  const s = { stroke: col, 'stroke-width': 2.5, 'stroke-dasharray': '8 7' };
+  show(path(p, `M${P.PX(x)} ${P.PY(y)}V${P.cy}`, s, { o: 0 }), t, .4);
+  show(path(p, `M${P.PX(x)} ${P.PY(y)}H${P.cx}`, s, { o: 0 }), t2, .4);
+}
+// A ring round (cx, cy), radius rx × ry, drawn on at t.
+function c34Ring(p, cx, cy, rx, ry, t, col = RULE) {
+  const e = path(p, `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`, { stroke: col, 'stroke-width': 4 }, { d: 0 });
+  draw(e, t, .5);
+  return e;
+}
+// A mirror along an axis ('x' or 'y'): a broad green band drawn on at t. Returns it.
+function c34Mirror(p, P, axis, t, o = .45) {
+  const d = axis === 'x' ? `M${P.PX(P.x0 - .4)} ${P.cy}H${P.PX(P.x1 + .4)}` : `M${P.cx} ${P.PY(P.y0 - .4)}V${P.PY(P.y1 + .4)}`;
+  const e = path(p, d, { stroke: MIR, 'stroke-width': 12, 'stroke-linecap': 'round' }, { d: 0, o });
+  draw(e, t, .7);
+  return e;
+}
+// Move a dot from grid point a to grid point b in a straight line.
+function c34Fly(dot, P, a, b, t, dur = .9) {
+  prog(q => put(dot, { x: P.PX(a[0] + (b[0] - a[0]) * q), y: P.PY(a[1] + (b[1] - a[1]) * q) }), t, dur, io);
+}
+// A closed polygon through stage points; c34Morph moves its corners from ptsA to ptsB (each corner on a straight line:
+// a fold seen from above, so at the end the shape is the mirror image).
+const c34D = pts => 'M' + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L') + 'Z';
+function c34Poly(p, pts, { fill = COL.chalk, op = .14, stroke = COL.chalk, w = 3, o = 1 } = {}) {
+  return path(p, c34D(pts), { fill, 'fill-opacity': op, stroke, 'stroke-width': w, 'stroke-linejoin': 'round' }, { o });
+}
+function c34Morph(e, A, B, t, dur = 1.2, run = prog) {
+  run(q => e.setAttribute('d', c34D(A.map(([x, y], i) => [x + (B[i][0] - x) * q, y + (B[i][1] - y) * q]))), t, dur, io);
+}
+// Reflect stage point v in the line through a and b.
+function c34Refl([x, y], [ax, ay], [bx, by]) {
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, k = ((x - ax) * dx + (y - ay) * dy) / L;
+  const fx0 = ax + k * dx, fy0 = ay + k * dy;
+  return [2 * fx0 - x, 2 * fy0 - y];
+}
+// Question: pick a grid point on a c34Plane, as math.js pickPoint but with the book's «(x; y)» cursor tag.
+// ans = [x, y]; no(x, y) explains a wrong pick; onRight runs on the right pick (and on Show answer).
+const c34Pick = (P, ans, yes, no, onRight) => (body, api) => {
+  const L = qlayer();
+  let cur = [0, 0], locked = false, tag = null;
+  const cursor = G(L, { x: P.PX(0), y: P.PY(0) });
+  mk('circle', { r: 16, fill: 'none', stroke: COL.task, 'stroke-width': 3 }, cursor);
+  const moveTo = (x, y) => {
+    cur = [Math.max(P.x0, Math.min(P.x1, x)), Math.max(P.y0, Math.min(P.y1, y))];
+    put(cursor, { x: P.PX(cur[0]), y: P.PY(cur[1]) });
+    tag?.remove();
+    tag = M(L, [`(${num(cur[0])}; ${num(cur[1])})`], { x: P.PX(cur[0]) + 22, y: P.PY(cur[1]) - 18, size: 24, fill: COL.task, anchor: 'start' });
+  };
+  const mark = (x, y, col, r = 11) => { const d = G(L, { x: P.PX(x), y: P.PY(y), s: 0, o: 0 }); mk('circle', { r, fill: col, stroke: COL.board, 'stroke-width': 2 }, d); fx(d, { s: 1, o: 1 }, 0, .4, back); return d; };
+  moveTo(0, 0);
+  const pick = () => {
+    if (locked) return;
+    const [x, y] = cur;
+    if (x === ans[0] && y === ans[1]) { mark(x, y, COL.good); onRight?.(); api.grade(true, yes); }
+    else { const d = mark(x, y, COL.bad, 9); fx(d, { o: 0 }, 1.2, .4); shakeFx(cursor); api.grade(false, no(x, y)); }
+  };
+  const hit = mk('rect', { x: P.PX(P.x0 - .5), y: P.PY(P.y1 + .5), width: (P.x1 - P.x0 + 1) * P.u, height: (P.y1 - P.y0 + 1) * P.u, fill: 'transparent' }, L);
+  L.insertBefore(hit, L.firstChild);
+  hit.style.cursor = 'crosshair';
+  hit.addEventListener('click', e => {
+    if (locked) return;
+    const s = $('stage'), pt = s.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const q = pt.matrixTransform(s.getScreenCTM().inverse());
+    moveTo(Math.round((q.x - P.cx) / P.u), Math.round((P.cy - q.y) / P.u));
+    pick();
+  });
+  return {
+    reveal() { moveTo(...ans); mark(ans[0], ans[1], COL.good); onRight?.(); return yes; },
+    lock() { locked = true; },
+    hint: [kbd('←'), kbd('↑'), kbd('↓'), kbd('→'), translate('hintMove'), kbd('Enter'), translate('hintChooseOrClickGrid')],
+    key(e) {
+      if (locked) return false;
+      const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+      if (d) { moveTo(cur[0] + d[0], cur[1] + d[1]); return true; }
+      if (e.key === 'Enter') { pick(); return true; }
+      return false;
+    },
+  };
+};
+// A walk drawn in an answer effect (on the answer clock): along x, then along y, in the sign colours.
+function c34WalkFx(q, P, x, y, d0 = 0) {
+  const a = path(q, `M${P.cx} ${P.cy}H${P.PX(x)}`, { stroke: c34Col(x), 'stroke-width': 5 }, { d: 0 });
+  const b = path(q, `M${P.PX(x)} ${P.cy}V${P.PY(y)}`, { stroke: c34Col(y), 'stroke-width': 5 }, { d: 0 });
+  fx(a, { d: 1 }, d0, .5, lin); fx(b, { d: 1 }, d0 + .6, .5, lin);
+}
+// The house of q4: a square with a roof, centred on x = c. Corners from the roof's top, clockwise.
+const c34House = c => [[c, 220], [c + 100, 330], [c + 100, 530], [c - 100, 530], [c - 100, 330]];
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Координаты и симметрия', (m, D) => klIntro(m, D, {
+    unit: 'Глава 7 · Геометрия · Тема 7.6',
+    title: 'Координаты и симметрия',
+    sub: 'Как задать точку двумя числами и как отразить точку или фигуру',
+    art: (g, t0) => {
+      const P = c34Plane(g, { cx: 800, cy: 690, u: 26, x0: -5, x1: 5, y0: -3, y1: 3, labels: false, t0 });
+      c34Leg(g, P, [0, 0], [3, 0], t0 + .4, { step: .15, count: false, w: 4 });
+      c34Leg(g, P, [3, 0], [3, 2], t0 + .9, { step: .15, count: false, w: 4 });
+      c34Dot(g, P, 3, 2, t0 + 1.2, { r: 8 });
+      c34Mirror(g, P, 'y', t0 + 1.4, .35);
+      c34Dot(g, P, -3, 2, t0 + 1.9, { r: 8, fill: MIR });
+    },
+  })],
+
+  ['plane', 'Координатная плоскость', m => {
+    const p = panel(0);
+    klTitle(p, 'Координатная плоскость');
+    const P = c34Plane(p, PL), RX = 1040;
+    put(P.grid, { o: 0 }); put(P.ay, { o: 0 }); put(P.O, { o: 0 });
+    for (const y in P.ly) P.ly[y].setAttribute('fill', COL.chalk);
+    const glow = G(p);
+    draw(path(glow, `M${P.PX(.2)} ${P.cy}H${P.PX(7.4)}`, { stroke: POS, 'stroke-width': 12 }, { d: 0, o: .45 }), m('line'), .7, lin);
+    draw(path(glow, `M${P.PX(-.2)} ${P.cy}H${P.PX(-7.4)}`, { stroke: NEG, 'stroke-width': 12 }, { d: 0, o: .45 }), m('line', 1.6), .7, lin);
+    // The second line grows from zero up and down, then takes its labels.
+    draw(path(p, `M${P.cx} ${P.cy}V${P.PY(5.6)}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), m('up', .3), .8);
+    draw(path(p, `M${P.cx} ${P.cy}V${P.PY(-5.5)}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), m('up', .3), .8);
+    show(P.ay, m('up', 1.2), .6);
+    draw(path(glow, `M${P.cx} ${P.PY(.2)}V${P.PY(5.4)}`, { stroke: POS, 'stroke-width': 12 }, { d: 0, o: .45 }), m('pos'), .7, lin);
+    for (let y = 1; y <= 5; y++) tw(P.ly[y], { c_fill: POS }, m('pos', .3 + y * .2), .3);
+    draw(path(glow, `M${P.cx} ${P.PY(-.2)}V${P.PY(-5.4)}`, { stroke: NEG, 'stroke-width': 12 }, { d: 0, o: .45 }), m('neg'), .7, lin);
+    for (let y = -1; y >= -5; y--) tw(P.ly[y], { c_fill: NEG }, m('neg', .3 - y * .2), .3);
+    hide(glow, m('grid'), .6);
+    show(P.grid, m('grid', .2), 1);
+    pulse(P.nx, m('x', .2), 1.8);
+    const hx = path(p, `M${P.PX(-7.4)} ${P.cy}H${P.PX(7.4)}`, { stroke: RULE, 'stroke-width': 6 }, { d: 0, o: .7 });
+    draw(hx, m('x'), .8, lin); hide(hx, m('y'), .5);
+    klRow(p, ['ось ', { m: 'x' }, ' — горизонтальная'], RX, 330, m('x', .3), { size: 34, anchor: 'start' });
+    pulse(P.ny, m('y', .2), 1.8);
+    const hy = path(p, `M${P.cx} ${P.PY(-5.4)}V${P.PY(5.4)}`, { stroke: RULE, 'stroke-width': 6 }, { d: 0, o: .7 });
+    draw(hy, m('y'), .8, lin); hide(hy, m('origin'), .5);
+    klRow(p, ['ось ', { m: 'y' }, ' — вертикальная'], RX, 405, m('y', .3), { size: 34, anchor: 'start' });
+    c34Ring(p, P.cx, P.cy, 26, 26, m('origin'));
+    show(P.O, m('origin', 5.4), .4);
+    klRow(p, [{ m: 'O' }, ' — начало координат'], RX, 480, m('origin', 2.6), { size: 34, anchor: 'start' });
+    klText(p, 'здесь x = 0 и y = 0', RX, 535, m('origin', 3.6), { size: 28, fill: COL.dim });
+  }],
+
+  ['point', 'Координаты точки', m => {
+    const p = panel(0);
+    klTitle(p, 'Координаты точки');
+    const P = c34Plane(p, { ...PL, t0: .1 }), RX = 1040;
+    c34Leg(p, P, [0, 0], [3, 0], m('x', 2.2), { step: .7 });
+    c34Leg(p, P, [3, 0], [3, -2], m('y', 1.4), { step: .7 });
+    const A = c34Dot(p, P, 3, -2, m('dot'));
+    klMath(p, ['A'], P.PX(3) + 18, P.PY(-2) + 34, m('dot', .2), { size: 34, anchor: 'start' });
+    pulse(A, m('dot', .4), 1.8);
+    // A(3; −2) written large, each part placed by its width so it can be ringed.
+    const S0 = 80, y0 = 330, w = s => mathW([s], S0), xa = RX + w('A('), xs = xa + w('3'), xb = xs + w('; ');
+    klMath(p, ['A('], RX, y0, m('write'), { size: S0, anchor: 'start' });
+    klMath(p, ['3'], xa, y0, m('write', 1.1), { size: S0, anchor: 'start', fill: POS });
+    klMath(p, ['; '], xs, y0, m('write', 1.6), { size: S0, anchor: 'start' });
+    klMath(p, ['−2'], xb, y0, m('write', 2.1), { size: S0, anchor: 'start', fill: NEG });
+    klMath(p, [')'], xb + w('−2'), y0, m('write', 2.1), { size: S0, anchor: 'start' });
+    c34Ring(p, xa + w('3') / 2, y0 - 26, 30, 50, m('first'), POS);
+    klRow(p, [{ m: 'x = 3', fill: POS }, '  — по горизонтали'], RX, 425, m('first', .3), { size: 30, msize: 40, anchor: 'start' });
+    c34Ring(p, xb + w('−2') / 2, y0 - 26, 52, 50, m('second'), NEG);
+    klRow(p, [{ m: 'y = −2', fill: NEG }, '  — по вертикали'], RX, 485, m('second', .3), { size: 30, msize: 40, anchor: 'start' });
+    c34Ring(p, xs + 12, y0 - 18, 18, 34, m('semi'));
+    klText(p, 'между ними — точка с запятой', RX, 545, m('semi', .3), { size: 30, fill: RULE });
+    // Reading the other way: from B to the axes.
+    const B = c34Dot(p, P, -4, 1, m('read', 1));
+    klMath(p, ['B'], P.PX(-4) - 16, P.PY(1) - 16, m('read', 1.2), { size: 34, anchor: 'end' });
+    pulse(B, m('read', 1.4), 1.8);
+    c34Drop(p, P, -4, 1, m('drop'), m('drop', .6));
+    c34Ring(p, P.PX(-4), P.cy + 21, 26, 20, m('bx'), NEG);
+    c34Ring(p, P.cx - 22, P.PY(1), 20, 20, m('by'), POS);
+    klRow(p, c34Co('B', -4, 1), RX, 660, m('by', 2.4), { msize: 64, anchor: 'start' });
+    pulse(B, m('by', 4.2), 1.8);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Отметь точку');
+    S.q1P = c34Plane(p, { ...QL, t0: .2 });
+  }, { ask: done => quiz({ x: 820, y: 220, w: 700, cls: 'side' }, [{
+    id: 'c-tochka', prompt: ['Отметь точку ', $m('C(−2; 3)'), '. Щёлкни по сетке или веди кружок стрелками и нажми Enter.'],
+    build: c34Pick(S.q1P, [-2, 3], ['Два шага влево по оси x, потом три вверх: ', $m('C(−2; 3)'), ' во второй четверти.'],
+      (x, y) => x === 3 && y === -2 ? 'Координаты поменялись местами. Первое число, −2, — сдвиг по горизонтали.'
+        : x === 2 && y === 3 ? 'x = −2 — отрицательный: от O шагай влево, а не вправо.'
+        : x === -2 && y === -3 ? 'y = 3 — положительный: поднимайся вверх, а не вниз.'
+        : 'Сначала два шага влево вдоль оси x, потом три шага вверх.',
+      () => c34WalkFx(qlayer(), S.q1P, -2, 3)),
+  }], done) }],
+
+  ['trap', 'Порядок важен', m => {
+    const p = panel(0);
+    klTitle(p, 'Порядок координат важен');
+    const P = c34Plane(p, { ...PL, t0: .1 }), RX = 1040;
+    const w1 = G(p);
+    c34Leg(w1, P, [0, 0], [2, 0], m('a', .3), { step: .35, count: false });
+    c34Leg(w1, P, [2, 0], [2, 3], m('a', 1.2), { step: .35, count: false });
+    const K = c34Dot(p, P, 2, 3, m('a', 2.4));
+    c34Lab(p, '', 2, 3, P.PX(2) - 18, P.PY(3) - 16, m('a', 2.6), { anchor: 'end' });
+    tw(w1, { o: .3 }, m('b'), .4);
+    const w2 = G(p);
+    c34Leg(w2, P, [0, 0], [3, 0], m('b', .3), { step: .35, count: false });
+    const tb = c34Leg(w2, P, [3, 0], [3, 2], m('b', 1.6), { step: .35, count: false });
+    const L2 = c34Dot(p, P, 3, 2, tb + .1);
+    c34Lab(p, '', 3, 2, P.PX(3) + 18, P.PY(2) + 10, tb + .3);
+    pulse(K, m('diff', .1), 1.8); pulse(L2, m('diff', .5), 1.8);
+    klRow(p, [...c34Co('', 2, 3), { m: '  ≠  ' }, ...c34Co('', 3, 2)], RX, 330, m('diff', .2), { msize: 60, anchor: 'start' });
+    klText(p, 'частая ошибка:', RX, 440, m('trap'), { size: 28, fill: COL.dim });
+    const bad = klRow(p, [{ m: '(2; 3) = (3; 2)' }], RX, 510, m('trap', 1), { msize: 56, fill: COL.dim, anchor: 'start' });
+    klStrike(p, RX - 10, 525, RX + bad._w + 10, 465, m('cross'));
+    klText(p, 'ошибка!', RX + bad._w + 24, 505, m('cross', .2), { size: 28, fill: COL.bad, weight: 700 });
+    // The rule, shown on the walk to (3; 2): first the corridor (along x), then the stairs (along y).
+    tw(w2, { o: .35 }, m('rule'), .3);
+    draw(path(p, `M${P.cx} ${P.cy}H${P.PX(3)}`, { stroke: RULE, 'stroke-width': 10, 'stroke-linecap': 'round' }, { d: 0, o: .85 }), m('rule', .3), 1.2, lin);
+    klRow(p, ['1)  по коридору — вдоль оси ', { m: 'x' }], RX, 630, m('rule', .3), { size: 32, fill: RULE, anchor: 'start', weight: 600 });
+    draw(path(p, `M${P.PX(3)} ${P.cy}V${P.PY(2)}`, { stroke: RULE, 'stroke-width': 10, 'stroke-linecap': 'round' }, { d: 0, o: .85 }), m('rule', 2.2), 1, lin);
+    klRow(p, ['2)  по лестнице — вдоль оси ', { m: 'y' }], RX, 690, m('rule', 2.2), { size: 32, fill: RULE, anchor: 'start', weight: 600 });
+    pulse(L2, m('rule2', 1), 1.6);
+  }],
+
+  ['quarters', 'Четверти', m => {
+    const p = panel(0);
+    klTitle(p, 'Координатные четверти');
+    const P = c34Plane(p, { ...PL, t0: .1 }), RX = 1040;
+    // Quarters I…IV (counter-clockwise from the upper right): sign of x, sign of y.
+    const Q = [[1, 1, 'I'], [-1, 1, 'II'], [-1, -1, 'III'], [1, -1, 'IV']], rects = [];
+    Q.forEach(([sx, sy], i) => {
+      const x = sx > 0 ? P.cx : P.PX(P.x0 - .3), y = sy > 0 ? P.PY(P.y1 + .3) : P.cy;
+      const r = mk('rect', { x, y, width: 7.3 * P.u, height: 5.3 * P.u, fill: i % 2 ? MIR : COL.chalk, 'fill-opacity': i % 2 ? .07 : .08, opacity: 0 }, p);
+      p.insertBefore(r, p.firstChild);
+      tw(r, { o: 1 }, m('q', i * .2), .5);
+      rects.push(r);
+    });
+    const qn = Q.map(([sx, sy, n], i) => klText(p, n, P.PX(sx * 4.6), P.PY(sy * 3.2) + 20, m('n', 4.6 + i * .75), { size: 56, weight: 700, anchor: 'middle', fill: COL.chalk }));
+    // The counter-clockwise arrow round the origin.
+    const r0 = 1.6 * P.u, pt = a => [P.cx + r0 * Math.cos(a), P.cy - r0 * Math.sin(a)], [ax0, ay0] = pt(Math.PI / 6), [ax1, ay1] = pt(-Math.PI / 3);
+    draw(path(p, `M${ax0} ${ay0}A${r0} ${r0} 0 1 0 ${ax1} ${ay1}`, { stroke: RULE, 'stroke-width': 3.5 }, { d: 0 }), m('n', .2), 2.2, lin);
+    const dx = .866, dy = -.5, hd = path(p, `M${ax1 - 16 * dx - 9 * dy} ${ay1 - 16 * dy + 9 * dx}L${ax1} ${ay1}L${ax1 - 16 * dx + 9 * dy} ${ay1 - 16 * dy - 9 * dx}`, { stroke: RULE, 'stroke-width': 3.5 }, { o: 0 });
+    show(hd, m('n', 2.3), .2);
+    const sg = v => v > 0 ? { m: '+', fill: POS } : { m: '−', fill: NEG };
+    Q.forEach(([sx, sy], i) => {
+      const k = m('s' + (i + 1));
+      // «(+; −)» written in two steps: the sign of x, then (when the voice gets to y) the sign of y.
+      const parts = ['(', sx > 0 ? '+' : '−', '; ', sy > 0 ? '+' : '−', ')'], ws = parts.map(t => mathW([t], 44));
+      let xx = P.PX(sx * 4.6) - ws.reduce((a, b) => a + b) / 2;
+      parts.forEach((t, j) => {
+        klMath(p, [t], xx, P.PY(sy * 3.2) + 72, j < 3 ? k : k + 1.9, { size: 44, anchor: 'start', fill: j === 1 ? c34Col(sx) : j === 3 ? c34Col(sy) : COL.chalk });
+        xx += ws[j];
+      });
+      tw(rects[i], { 'fill-opacity': .22 }, k, .3); tw(rects[i], { 'fill-opacity': i % 2 ? .07 : .08 }, k + 1.6, .5);
+    });
+    const A = c34Dot(p, P, 3, -2, m('ex', .8));
+    c34Lab(p, 'A', 3, -2, P.PX(3) - 18, P.PY(-2) + 10, m('ex', 1), { anchor: 'end' });
+    pulse(A, m('ex', 1.4), 1.8);
+    klRow(p, [...c34Co('A', 3, -2), '  — в IV четверти'], RX, 340, m('ex', 1.2), { size: 32, msize: 48, anchor: 'start' });
+    tw(rects[3], { 'fill-opacity': .25 }, m('ex', 3.2), .4); pulse(qn[3], m('ex', 3.6), 1.4);
+    [[5, 0], [0, 3]].forEach(([x, y], i) => { c34Dot(p, P, x, y, m('axis', .4 + i * .4)); c34Ring(p, P.PX(x), P.PY(y), 22, 22, m('axis', .6 + i * .4), MIR); });
+    klText(p, 'точка на оси —', RX, 450, m('axis', .9), { size: 32, fill: MIR, weight: 600 });
+    klText(p, 'ни в одной четверти', RX, 500, m('axis', 1.3), { size: 32, fill: MIR, weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Где лежит точка?');
+    const P = c34Plane(p, { cx: 800, cy: 390, u: 42, x0: -7, x1: 7, y0: -4, y1: 4, t0: .2 });
+    S.q2P = P;
+    [[1, 1, 'I'], [-1, 1, 'II'], [-1, -1, 'III'], [1, -1, 'IV']].forEach(([sx, sy, n], i) => klText(p, n, P.PX(sx * 4.5), P.PY(sy * 2) + 18, .4 + i * .1, { size: 48, weight: 700, anchor: 'middle', fill: COL.dim }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-chetvert', prompt: ['В какой четверти лежит точка ', $m('D(−5; −2)'), '? Нажми на эту четверть.'],
+    build: (() => {
+      const P = S.q2P, w = 6.6 * P.u, h = 3.7 * P.u;
+      const box = (sx, sy) => [sx > 0 ? P.PX(.3) : P.PX(-6.9), sy > 0 ? P.PY(3.95) : P.PY(-.25), w, h];
+      return pickEls([[1, 1, 'I'], [-1, 1, 'II'], [-1, -1, 'III'], [1, -1, 'IV']].map(([sx, sy, n]) => ({ el: P.grid, box: box(sx, sy), label: n + ' четверть' })), 2,
+        ['Обе координаты отрицательные, ', $m('(−; −)'), ': это третья четверть.'],
+        i => ['Здесь обе координаты положительные, а у D обе отрицательные.', 'Во второй четверти y положительный, а у D y = −2.', '', 'В четвёртой четверти x положительный, а у D x = −5.'][i],
+        () => { const q = qlayer(); c34WalkFx(q, P, -5, -2); const d = c34Dot(q, P, -5, -2); put(d, { o: 0 }); fx(d, { o: 1 }, 1.1, .3); });
+    })(),
+  }], done) }],
+
+  ['axsym', 'Симметрия относительно осей', m => {
+    const p = panel(0);
+    klTitle(p, 'Симметрия относительно осей');
+    const P = c34Plane(p, { ...AL, t0: .1 }), RX = 930, pts = G(p);
+    const A = c34Dot(pts, P, 3, 2, m('a', -.3));
+    klMath(pts, ['A'], P.PX(3) + 16, P.PY(2) - 16, m('a'), { size: 32, anchor: 'start' });
+    klRow(p, c34Co('A', 3, 2), RX, 300, m('a', .3), { msize: 56, anchor: 'start' });
+    const mx = c34Mirror(p, P, 'x', m('mx'));
+    klText(p, 'зеркало', P.PX(-5.8), P.cy - 18, m('mx', .4), { size: 26, fill: MIR, weight: 600 });
+    // The image flies straight across the mirror and lands as far below as A is above.
+    show(path(pts, `M${P.PX(3)} ${P.PY(2)}V${P.PY(-2)}`, { stroke: MIR, 'stroke-width': 2.5, 'stroke-dasharray': '8 7' }, { o: 0 }), m('fly', .3), .4);
+    const A1 = c34Dot(pts, P, 3, 2, m('fly', .3), { fill: MIR });
+    c34Fly(A1, P, [3, 2], [3, -2], m('fly', .8), 1.2);
+    [1, -1].forEach((y, i) => show(path(pts, `M${P.PX(3) - 10} ${P.PY(y) - 4}H${P.PX(3) + 10}M${P.PX(3) - 10} ${P.PY(y) + 4}H${P.PX(3) + 10}`, { stroke: MIR, 'stroke-width': 3 }, { o: 0 }), m('fly', 2.4 + i * .3), .3));
+    klMath(pts, ['A₁'], P.PX(3) + 16, P.PY(-2) + 34, m('a1'), { size: 32, anchor: 'start', fill: MIR });
+    const S0 = 56, w = s => mathW([s], S0);
+    klRow(p, c34Co('A₁', 3, -2, MIR), RX, 385, m('a1', .3), { msize: S0, anchor: 'start' });
+    c34Ring(p, RX + w('A₁(3; ') + w('−2') / 2, 366, 40, 36, m('ysign'), NEG);
+    klText(p, 'x тот же, у y другой знак', RX, 440, m('ysign', .3), { size: 28, fill: COL.dim });
+    tw(mx, { o: .15 }, m('my'), .4);
+    const my = c34Mirror(p, P, 'y', m('my', .2));
+    show(path(pts, `M${P.PX(3)} ${P.PY(2)}H${P.PX(-3)}`, { stroke: MIR, 'stroke-width': 2.5, 'stroke-dasharray': '8 7' }, { o: 0 }), m('my', 1.2), .4);
+    const A2 = c34Dot(pts, P, 3, 2, m('my', 1.2), { fill: MIR });
+    c34Fly(A2, P, [3, 2], [-3, 2], m('my', 1.6), 1.2);
+    klMath(pts, ['A₂'], P.PX(-3) - 16, P.PY(2) - 16, m('a2'), { size: 32, anchor: 'end', fill: MIR });
+    klRow(p, c34Co('A₂', -3, 2, MIR), RX, 520, m('a2', .3), { msize: S0, anchor: 'start' });
+    c34Ring(p, RX + w('A₂(') + w('−3') / 2, 501, 40, 36, m('xsign'), NEG);
+    klText(p, 'у x другой знак, y тот же', RX, 575, m('xsign', .3), { size: 28, fill: COL.dim });
+    // A figure: every corner crosses the mirror the same way, so the triangle turns over onto the other side.
+    hide(pts, m('fig'), .4);
+    const T0 = [[1, 1], [5, 1], [2, 4]], px = ([x, y]) => [P.PX(x), P.PY(y)];
+    c34Poly(p, T0.map(px), { o: 0 }); show(p.lastChild, m('fig', .3), .4);
+    const img = c34Poly(p, T0.map(px), { fill: MIR, op: .25, stroke: MIR, o: 0 });
+    show(img, m('flip'), .2);
+    c34Morph(img, T0.map(px), T0.map(([x, y]) => px([-x, y])), m('flip', .3), 2);
+    T0.forEach(([x, y], i) => show(path(p, `M${P.PX(x)} ${P.PY(y)}H${P.PX(-x)}`, { stroke: MIR, 'stroke-width': 2, 'stroke-dasharray': '6 7' }, { o: 0 }), m('flip', 2.4 + i * .2), .3));
+    klText(p, 'форма и размер — те же', RX, 680, m('same', .3), { size: 32, fill: MIR, weight: 600 });
+  }],
+
+  ['center', 'Симметрия относительно начала координат', m => {
+    const p = panel(0);
+    klTitle(p, 'Симметрия относительно точки O');
+    const P = c34Plane(p, { ...AL, t0: .1 }), RX = 930;
+    c34Dot(p, P, 3, 2, .3);
+    klMath(p, ['A'], P.PX(3) + 16, P.PY(2) - 16, .4, { size: 32, anchor: 'start' });
+    klRow(p, c34Co('A', 3, 2), RX, 300, .5, { msize: 56, anchor: 'start' });
+    c34Ring(p, P.cx, P.cy, 24, 24, m('o', .2));
+    // Half a turn about O: a spoke from O to A swings round, counter-clockwise, and leaves A₃ opposite A.
+    const r = Math.hypot(3, 2) * P.u;
+    draw(path(p, `M${P.PX(3)} ${P.PY(2)}A${r} ${r} 0 0 0 ${P.PX(-3)} ${P.PY(-2)}`, { stroke: COL.dim, 'stroke-width': 2.5 }, { d: 0 }), m('turn', .6), 2.2);
+    const spin = G(p, { x: P.cx, y: P.cy, o: 0 });
+    path(spin, `M0 0L${3 * P.u} ${-2 * P.u}`, { stroke: MIR, 'stroke-width': 3 });
+    mk('circle', { cx: 3 * P.u, cy: -2 * P.u, r: 11, fill: MIR, stroke: COL.board, 'stroke-width': 3 }, spin);
+    show(spin, m('turn', .3), .3);
+    tw(spin, { r: -180 }, m('turn', .6), 2.2, io);
+    klMath(p, ['A₃'], P.PX(-3) - 16, P.PY(-2) + 34, m('a3'), { size: 32, anchor: 'end', fill: MIR });
+    klRow(p, c34Co('A₃', -3, -2, MIR), RX, 385, m('a3', .3), { msize: 56, anchor: 'start' });
+    c34Drop(p, P, -3, -2, m('a3', 2.4), m('a3', 3.4), MIR);
+    klText(p, 'оба знака другие', RX, 440, m('both', .2), { size: 28, fill: COL.dim });
+    // O halves the segment A A₃: equal ticks on both halves.
+    tw(spin, { o: .25 }, m('mid'), .3);
+    draw(path(p, `M${P.PX(3)} ${P.PY(2)}L${P.PX(-3)} ${P.PY(-2)}`, { stroke: RULE, 'stroke-width': 5 }, { d: 0, o: .85 }), m('mid', .2), .8);
+    [[1.5, 1], [-1.5, -1]].forEach(([x, y], i) => {
+      const cxm = P.PX(x), cym = P.PY(y), nx = 2 / Math.hypot(3, 2), ny = 3 / Math.hypot(3, 2);
+      show(path(p, `M${cxm - 12 * nx} ${cym - 12 * ny}L${cxm + 12 * nx} ${cym + 12 * ny}`, { stroke: RULE, 'stroke-width': 4 }, { o: 0 }), m('mid', 1.2 + i * .3), .3);
+    });
+    klRow(p, [{ m: 'O' }, ' — середина отрезка ', { m: 'AA₃' }], RX, 520, m('mid', .6), { size: 30, anchor: 'start' });
+    [[3, -2, 'A₁', 16, 34, 'start'], [-3, 2, 'A₂', -16, -16, 'end']].forEach(([x, y, n, dx, dy, an], i) => {
+      c34Dot(p, P, x, y, m('four', .2 + i * .4), { fill: MIR });
+      klMath(p, [n], P.PX(x) + dx, P.PY(y) + dy, m('four', .4 + i * .4), { size: 32, anchor: an, fill: MIR });
+    });
+    show(path(p, `M${P.PX(3)} ${P.PY(2)}H${P.PX(-3)}V${P.PY(-2)}H${P.PX(3)}Z`, { stroke: MIR, 'stroke-width': 2, 'stroke-dasharray': '6 7' }, { o: 0 }), m('four', 1.2), .5);
+    klText(p, 'ось x:  меняется знак y', RX, 620, m('four', 1.6), { size: 28, fill: COL.dim });
+    klText(p, 'ось y:  меняется знак x', RX, 665, m('four', 2), { size: 28, fill: COL.dim });
+    klText(p, 'точка O:  оба знака', RX, 710, m('four', 2.4), { size: 28, fill: COL.dim });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Отрази точку');
+    const P = c34Plane(p, { ...QL, t0: .2 });
+    S.q3P = P;
+    c34Mirror(p, P, 'x', .5, .4);
+    c34Dot(p, P, -4, 3, .6);
+    c34Lab(p, 'B', -4, 3, P.PX(-4) + 16, P.PY(3) - 16, .7, { size: 28 });
+  }, { ask: done => quiz({ x: 820, y: 220, w: 700, cls: 'side' }, [{
+    id: 'c-otrazi', prompt: ['Отрази точку ', $m('B(−4; 3)'), ' относительно оси x и отметь её отражение ', $m('B₁'), '.'],
+    build: c34Pick(S.q3P, [-4, -3], ['При отражении относительно оси x меняется знак y: ', $m('B₁(−4; −3)'), '.'],
+      (x, y) => x === 4 && y === 3 ? 'Это отражение относительно оси y. Здесь зеркало — ось x: x остаётся −4.'
+        : x === 4 && y === -3 ? 'Это отражение относительно точки O: поменялись оба знака. Относительно оси x меняется только знак y.'
+        : 'Опусти от B прямую через ось x и пройди столько же, сколько от B до оси: x тот же, у y другой знак.',
+      () => {
+        const P = S.q3P, q = qlayer();
+        const l = path(q, `M${P.PX(-4)} ${P.PY(3)}V${P.PY(-3)}`, { stroke: MIR, 'stroke-width': 2.5, 'stroke-dasharray': '8 7', opacity: 0 });
+        fx(l, { o: 1 }, 0, .4);
+        floatText('(−4; −3)', P.PX(-4) + 70, P.PY(-3) + 50, MIR);
+      }),
+  }], done) }],
+
+  ['fold', 'Ось симметрии фигуры', m => {
+    const p = panel(0);
+    klTitle(p, 'Ось симметрии фигуры');
+    const R = [[170, 310], [610, 310], [610, 570], [170, 570]], cx = 390, cy = 440;
+    const rc = c34Poly(p, R, { o: 0 }); show(rc, .3, .4);
+    tw(rc, { 'fill-opacity': .32 }, m('rect'), .3); tw(rc, { 'fill-opacity': .14 }, m('rect', 1), .5);
+    const ax = { stroke: MIR, 'stroke-width': 3, 'stroke-dasharray': '10 8' };
+    const v = path(p, `M${cx} 270V610`, ax, { o: 0 }); show(v, 2.4, .4);
+    // The right half folds over the axis onto the left half.
+    const Rh = [[cx, 310], [610, 310], [610, 570], [cx, 570]], Rm = Rh.map(([x, y]) => [2 * cx - x, y]);
+    const half = c34Poly(p, Rh, { fill: MIR, op: .3, stroke: MIR, o: 0 });
+    show(half, m('fold', .5), .2);
+    c34Morph(half, Rh, Rm, m('fold', .7), 1.6);
+    klMark(p, 280, 440, m('match', .1));
+    const band = path(p, `M${cx} 270V610`, { stroke: MIR, 'stroke-width': 12, 'stroke-linecap': 'round' }, { d: 0, o: .4 });
+    draw(band, m('match', 2.4), .7); hide(band, m('second', -.3), .3);
+    hide(klText(p, 'ось симметрии', cx, 650, m('match', 1.2), { size: 30, fill: MIR, weight: 600, anchor: 'middle' }), m('diag', -.3), .3);
+    // Unfold, then fold the top half down over the second axis.
+    c34Morph(half, Rm, Rh, m('second', -.2), .8);
+    hide(half, m('second', .7), .2);
+    const hz = path(p, `M130 ${cy}H650`, ax, { o: 0 }); show(hz, m('second', .3), .4);
+    const Th = [[170, 310], [610, 310], [610, cy], [170, cy]], Tm = Th.map(([x, y]) => [x, 2 * cy - y]);
+    const top = c34Poly(p, Th, { fill: MIR, op: .3, stroke: MIR, o: 0 });
+    show(top, m('second', .9), .2);
+    c34Morph(top, Th, Tm, m('second', 1), 1.3);
+    klText(p, '2 оси', cx, 250, m('second', 2.4), { size: 32, fill: MIR, weight: 700, anchor: 'middle' });
+    hide(top, m('diag', -.3), .3);
+    // The diagonal: fold the upper-left triangle over it; its corner lands outside the rectangle.
+    const a = [170, 570], b = [610, 310];
+    const dg = path(p, `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`, { stroke: COL.chalk, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, { o: 0 });
+    show(dg, m('diag'), .4);
+    const Dt = [a, [170, 310], b], Dm = Dt.map(q => c34Refl(q, a, b));
+    const tri = c34Poly(p, Dt, { fill: COL.chalk, op: .3, stroke: COL.chalk, o: 0 });
+    show(tri, m('dfold'), .2);
+    c34Morph(tri, Dt, Dm, m('dfold', .2), 1.5);
+    klMark(p, Dm[1][0], Dm[1][1] + 6, m('miss'), false, .8);
+    klMark(p, 610, 570, m('miss', .4), false, .8);
+    klText(p, 'диагональ — не ось', cx, 800, m('miss', 1.2), { size: 30, fill: COL.bad, weight: 600, anchor: 'middle' });
+    tw(tri, { o: .35 }, m('miss', 2.6), .4);
+    show(path(p, `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`, { stroke: COL.bad, 'stroke-width': 4, 'stroke-dasharray': '10 8' }, { o: 0 }), m('miss', 2.8), .4);
+    // A square has four axes, a circle infinitely many.
+    const sq = [[880, 320], [1120, 320], [1120, 560], [880, 560]];
+    c34Poly(p, sq, { o: 0 }); show(p.lastChild, m('sq', -.4), .4);
+    [[1000, 280, 1000, 600], [840, 440, 1160, 440], [850, 290, 1150, 590], [850, 590, 1150, 290]].forEach(([x1, y1, x2, y2], i) =>
+      show(path(p, `M${x1} ${y1}L${x2} ${y2}`, ax, { o: 0 }), m('sq', .3 + i * .35), .3));
+    klText(p, '4 оси', 1000, 250, m('sq', 1.2), { size: 32, fill: MIR, weight: 700, anchor: 'middle' });
+    const C = G(p, { o: 0 });
+    mk('circle', { cx: 1360, cy, r: 120, fill: COL.chalk, 'fill-opacity': .14, stroke: COL.chalk, 'stroke-width': 3 }, C);
+    show(C, m('circ', -.4), .4);
+    for (let k = 0; k < 8; k++) {
+      const an = k * Math.PI / 8, dx = 150 * Math.cos(an), dy = 150 * Math.sin(an);
+      show(path(p, `M${1360 - dx} ${cy - dy}L${1360 + dx} ${cy + dy}`, { ...ax, 'stroke-width': 2.5 }, { o: 0 }), m('circ', .3 + k * .25), .25);
+    }
+    klText(p, 'бесконечно много', 1360, 250, m('circ', 1.2), { size: 30, fill: MIR, weight: 700, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Где ось симметрии?');
+    const ax = { stroke: MIR, 'stroke-width': 3.5, 'stroke-dasharray': '10 8' };
+    S.q4h = [400, 800, 1200].map((c, i) => {
+      const g = G(p, { o: 0 });
+      c34Poly(g, c34House(c));
+      path(g, [`M${c - 150} 430H${c + 150}`, `M${c - 130} 560L${c + 130} 300`, `M${c} 185V575`][i], ax);
+      klText(g, String(i + 1), c, 630, undefined, { size: 34, fill: COL.dim, weight: 700, anchor: 'middle' });
+      show(g, .3 + i * .15);
+      return g;
+    });
+    S.q4p = p;
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-os', prompt: 'На каком рисунке пунктир — ось симметрии домика? Нажми на этот рисунок.',
+    build: pickEls(S.q4h.map((g, i) => ({ el: g, box: [400 * (i + 1) - 160, 175, 320, 480], label: 'рисунок ' + (i + 1) })), 2,
+      'Перегни домик по вертикальной прямой через крышу — половинки совпадут.',
+      i => i === 0 ? 'Перегни по этой прямой: крыша ляжет на низ домика, они не совпадут.' : 'По диагонали половинки не совпадают: углы торчат.',
+      () => {
+        const q = qlayer(), c = 1200, Rh = [[c, 220], [c + 100, 330], [c + 100, 530], [c, 530]], Rm = Rh.map(([x, y]) => [2 * c - x, y]);
+        const half = c34Poly(q, Rh, { fill: MIR, op: .35, stroke: MIR });
+        c34Morph(half, Rh, Rm, 0, 1, fxp);
+      }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Сначала x, потом y:  ', ...c34Co('A', 3, -2)],
+    ['Знаки координат — это четверть:  ', { m: '(−; +)' }, ' — II'],
+    'Ось x — другой знак y, ось y — знак x, O — оба',
+    'Ось симметрии: при сгибе половины совпадают',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-chetvert', prompt: 'В какой четверти лежит точка?',
+    build: grid([
+      { parts: [$m('(−2; −7)')], ans: ['3'], why: 'Обе координаты отрицательные — третья четверть.' },
+      { parts: [$m('(5; 1)')], ans: ['1'], why: 'Обе координаты положительные — первая четверть.' },
+      { parts: [$m('(−3; 4)')], ans: ['2'], why: 'x отрицательный, y положительный — вторая четверть.' },
+      { parts: [$m('(6; −8)')], ans: ['4'], why: 'x положительный, y отрицательный — четвёртая четверть.' },
+    ], [['1', 'I', null, '1'], ['2', 'II', null, '2'], ['3', 'III', null, '3'], ['4', 'IV', null, '4']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-os-y', prompt: ['Точку ', $m('(−4; 5)'), ' отразили относительно оси y. Найди координаты отражения.'],
+    build: blanks([{ parts: ['(', { box: '4' }, '; ', { box: '5' }, ')'], why: 'Относительно оси y меняется знак x: (−4; 5) → (4; 5).', hint: 'Зеркало — ось y: y остаётся прежним, у x другой знак.' }]),
+  }, {
+    id: 'p-centr', prompt: ['Точка ', $m('(3; −5)'), ' симметрична точке A относительно начала координат. Найди координаты A.'],
+    build: blanks([{ parts: ['A(', { box: '-3' }, '; ', { box: '5' }, ')'], why: 'Относительно точки O меняются оба знака: A(−3; 5).', hint: 'При симметрии относительно начала координат меняются знаки обеих координат.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-pryam', prompt: 'Сколько осей симметрии у прямоугольника, который не квадрат?',
+    build: choice(['1', '2', '4', 'бесконечно много'], 1, 'Две оси: через середины противоположных сторон. Диагонали — не оси.',
+      ['Есть ещё одна: и вертикальная, и горизонтальная прямая через середины сторон.', null, 'Четыре оси у квадрата. У прямоугольника диагонали — не оси симметрии.', 'Бесконечно много осей у круга.']),
+  }, {
+    id: 'p-zapis', prompt: 'Как записать точку, у которой x = −1, а y = 4?',
+    build: choice([$m('(−1; 4)'), $m('(4; −1)'), $m('(−4; 1)')], 0, 'Сначала пишут x, потом y: (−1; 4).',
+      [null, 'Здесь координаты поменялись местами: первым пишут x.', 'Числа не те: x = −1, y = 4.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

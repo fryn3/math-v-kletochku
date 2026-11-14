@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Углы и прямые · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 7.1 «Углы и прямые» (5–6 класс). Beat ids match papermorph/content/uroki/ch29/narration.ru.json.
+const CHAPTER = { number: 29, label: '7.1', title: 'Углы и прямые', minutes: 8, language: 'ru', next: '../ch30/' };
+
+// Colours: an angle (its sector, arc and degrees) — KL.NUM, the part of a full turn taken; the second angle of a pair
+// (adjacent, the other vertical pair) — KL.TWO; the protractor's inner scale and the clock's cuts — KL.DEN; a line that
+// turns against a fixed one — KL.WHOLE; rules — KL.RULE; a wrong reading — COL.bad.
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, WHOLE = KL.WHOLE, RULE = KL.RULE;
+
+/* ---------- geometry helpers (c29) ---------- */
+// The point at distance r from (cx, cy) in direction a (degrees, counter-clockwise from the right, as in maths).
+const c29Pt = (cx, cy, r, a) => [cx + r * Math.cos(a * Math.PI / 180), cy - r * Math.sin(a * Math.PI / 180)];
+const c29f = v => v.toFixed(1);
+// An arc of radius r from direction a0 to a1 (counter-clockwise), with or without the centre (a sector).
+function c29ArcD(cx, cy, r, a0, a1, sector = false) {
+  const s = Math.min(a1 - a0, 359.9);
+  if (s < .3) return 'M0 0';
+  const [x0, y0] = c29Pt(cx, cy, r, a0), [x1, y1] = c29Pt(cx, cy, r, a0 + s);
+  const arc = `A${r} ${r} 0 ${s > 180 ? 1 : 0} 0 ${c29f(x1)} ${c29f(y1)}`;
+  return sector ? `M${cx} ${cy}L${c29f(x0)} ${c29f(y0)}${arc}Z` : `M${c29f(x0)} ${c29f(y0)}${arc}`;
+}
+// An angle at (cx, cy) from direction a0 to a1: a pale sector, its arc (a small square when it is 90°) and its size in
+// degrees beside the arc (lab: a string shows that instead, false shows nothing). set(a0, a1) redraws it, also live.
+function c29Ang(p, cx, cy, { r = 80, col = NUM, a0 = 0, a1 = 50, lab = true, lr, size = 40, o = 0, op = .28, sq = true } = {}) {
+  const g = G(p, { o });
+  const sec = path(g, 'M0 0', { fill: col, 'fill-opacity': op });
+  const arc = path(g, 'M0 0', { stroke: col, 'stroke-width': 4 });
+  const t = T(g, '', { size, fill: col, font: MATH, anchor: 'middle', weight: 600 });
+  const A = {
+    g, t, sec, cx, cy, r, lab,
+    set(b0, b1) {
+      const s = b1 - b0, right = sq && Math.abs(s - 90) < .5;
+      sec.setAttribute('d', c29ArcD(cx, cy, right ? r * .5 : r, b0, b1, true));
+      if (right) {
+        const q = r * .5, [x1, y1] = c29Pt(cx, cy, q, b0), [x3, y3] = c29Pt(cx, cy, q, b1);
+        arc.setAttribute('d', `M${c29f(x1)} ${c29f(y1)}L${c29f(x1 + x3 - cx)} ${c29f(y1 + y3 - cy)}L${c29f(x3)} ${c29f(y3)}`);
+      } else arc.setAttribute('d', c29ArcD(cx, cy, r, b0, b1));
+      const [x, y] = c29Pt(cx, cy, lr || r + size * .95, (b0 + b1) / 2);
+      put(t, { x, y: y + size * .35 });
+      t.textContent = s < 1 ? '' : A.lab === true ? `${Math.round(s)}°` : A.lab || '';
+    },
+  };
+  A.set(a0, a1);
+  return A;
+}
+// A ray from (cx, cy) in direction a, len long: a group at the vertex turned by r = −a, its line ready to be drawn on.
+function c29Ray(p, cx, cy, len, a, { col = COL.chalk, w = 4.5, back = 0 } = {}) {
+  const g = G(p, { x: cx, y: cy, r: -a });
+  g.line = path(g, `M${-back} 0H${len}`, { stroke: col, 'stroke-width': w }, { d: 0 });
+  return g;
+}
+// The vertex: a chalk dot in its own group at (x, y), so pulse() grows it in place.
+function c29Dot(p, x, y, t0, { col = COL.chalk, r = 8 } = {}) {
+  const g = G(p, { x, y, s: 0, o: 0 });
+  mk('circle', { r, fill: col }, g);
+  pop(g, t0);
+  return g;
+}
+// A protractor around its centre (0, 0), radius R, placed at (x, y): a pale half-disc, a tick every degree and two
+// scales every 10°: inner (0 on the right) in KL.DEN, outer (0 on the left) in chalk. inner[k], outer[k] are the
+// numbers at direction 10k (inner reads 10k, outer 180 − 10k); each sits in its own group, so pulse() works in place.
+function c29Protractor(p, R, { x, y, r = 0, o = 1 } = {}) {
+  const g = G(p, { x, y, r, o });
+  path(g, `M${-R} 0A${R} ${R} 0 0 1 ${R} 0Z`, { fill: COL.chalk, 'fill-opacity': .08, stroke: COL.chalk, 'stroke-width': 3 });
+  let thin = '', thick = '';
+  for (let a = 0; a <= 180; a++) {
+    const len = a % 10 === 0 ? 24 : a % 5 === 0 ? 15 : 8;
+    const [x0, y0] = c29Pt(0, 0, R, a), [x1, y1] = c29Pt(0, 0, R - len, a);
+    const d = `M${c29f(x0)} ${c29f(y0)}L${c29f(x1)} ${c29f(y1)}`;
+    if (a % 10 === 0) thick += d; else thin += d;
+  }
+  path(g, thin, { stroke: COL.chalk, 'stroke-width': 1.4, 'stroke-opacity': .7 });
+  path(g, thick, { stroke: COL.chalk, 'stroke-width': 2.6 });
+  const fs = Math.round(R * .066), num = (val, a, rr, fill) => {
+    const [nx, ny] = c29Pt(0, 0, rr, a), lift = a < 6 || a > 174 ? fs * .6 : 0;
+    const ng = G(g, { x: nx, y: ny - lift });
+    ng.t = T(ng, String(val), { y: fs * .35, size: fs, fill, font: MATH, anchor: 'middle', weight: 600 });
+    return ng;
+  };
+  const outer = [], inner = [];
+  for (let k = 0; k <= 18; k++) {
+    outer.push(num(180 - k * 10, k * 10, R - 24 - fs * .95, COL.chalk));
+    inner.push(num(k * 10, k * 10, R - 24 - fs * 2.25, DEN));
+  }
+  mk('circle', { r: 5, fill: COL.chalk }, g);
+  path(g, 'M0 -16V0', { stroke: COL.chalk, 'stroke-width': 2.5 });
+  return { g, inner, outer, R };
+}
+// A clock face at (cx, cy), radius r: rim, 60 ticks, numbers 1–12, the minute hand on 12 and the hour hand (a group
+// turned by r = 30° an hour) on hour h. Returns { g, hour, spokes(t0) } — spokes draws 12 cuts in KL.DEN one by one.
+function c29Clock(p, cx, cy, r, h, { o = 1 } = {}) {
+  const g = G(p, { o });
+  mk('circle', { cx, cy, r, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 4 }, g);
+  const spokeG = G(g);
+  let small = '', big = '';
+  for (let k = 0; k < 60; k++) {
+    const len = k % 5 === 0 ? 22 : 10, [x0, y0] = c29Pt(cx, cy, r - 4, 90 - k * 6), [x1, y1] = c29Pt(cx, cy, r - 4 - len, 90 - k * 6);
+    const d = `M${c29f(x0)} ${c29f(y0)}L${c29f(x1)} ${c29f(y1)}`;
+    if (k % 5 === 0) big += d; else small += d;
+  }
+  path(g, small, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .5 });
+  path(g, big, { stroke: COL.chalk, 'stroke-width': 4 });
+  const fs = Math.round(r * .14);
+  for (let n = 1; n <= 12; n++) {
+    const [x, y] = c29Pt(cx, cy, r - 30 - fs * .8, 90 - n * 30);
+    T(g, String(n), { x, y: y + fs * .36, size: fs, font: MATH, anchor: 'middle', weight: 600 });
+  }
+  const minute = G(g, { x: cx, y: cy });
+  path(minute, `M0 12V${-(r - 40)}`, { stroke: COL.chalk, 'stroke-width': 5 });
+  const hour = G(g, { x: cx, y: cy, r: h * 30 });
+  path(hour, `M0 12V${-r * .55}`, { stroke: COL.chalk, 'stroke-width': 10 });
+  mk('circle', { cx, cy, r: 10, fill: COL.chalk }, g);
+  return {
+    g, hour,
+    spokes(t0, step = .12) {
+      for (let n = 0; n < 12; n++) {
+        const [x, y] = c29Pt(cx, cy, r - 4, 90 - n * 30);
+        draw(path(spokeG, `M${cx} ${cy}L${c29f(x)} ${c29f(y)}`, { stroke: DEN, 'stroke-width': 2.5, 'stroke-opacity': .8 }, { d: 0 }), t0 + n * step, .3);
+      }
+    },
+  };
+}
+// Flash an angle's sector (a brighter fill for a moment) at t0.
+function c29Flash(A, t0, k = .7) { tw(A.sec, { 'a_fill-opacity': k }, t0, .25); tw(A.sec, { 'a_fill-opacity': .28 }, t0 + .6, .5); }
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Углы и прямые', (m, D) => klIntro(m, D, {
+    unit: 'Глава 7 · Геометрия · Тема 7.1',
+    title: 'Углы и прямые',
+    sub: 'Как измеряют углы и что бывает, когда прямые пересекаются',
+    art: (g, t0) => {
+      const A = c29Ang(g, 700, 700, { r: 70, a1: 50, size: 34 });
+      show(A.g, t0 + .6);
+      draw(c29Ray(g, 700, 700, 200, 0).line, t0, .5);
+      draw(c29Ray(g, 700, 700, 200, 50, { col: NUM }).line, t0 + .3, .5);
+    },
+  })],
+
+  ['angle', 'Что такое угол', m => {
+    const p = panel(0);
+    klTitle(p, 'Что такое угол');
+    const V = [560, 520];
+    const dot = c29Dot(p, ...V, .2);
+    const r1 = c29Ray(p, ...V, 470, 0), r2 = c29Ray(p, ...V, 470, 40, { col: NUM });
+    draw(r1.line, m('ray1'), .6);
+    draw(r2.line, m('ray2'), .6);
+    const A = c29Ang(p, ...V, { r: 90, a1: 40, lab: false });
+    show(A.g, m('ray2', .4));
+    const lv = klText(p, 'вершина', 536, 572, m('vertex'), { size: 32, anchor: 'end', fill: COL.chalk, weight: 600 });
+    pulse(dot, m('vertex'), 2);
+    const ls1 = klText(p, 'сторона', 900, 568, m('sides'), { size: 32, weight: 600 });
+    const ls2 = klText(p, 'сторона', 790, 286, m('sides', .25), { size: 32, weight: 600, anchor: 'end', fill: NUM });
+    tw(r1.line, { 'a_stroke-width': 9 }, m('sides'), .25); tw(r1.line, { 'a_stroke-width': 4.5 }, m('sides', .7), .4);
+    tw(r2.line, { 'a_stroke-width': 9 }, m('sides', .25), .25); tw(r2.line, { 'a_stroke-width': 4.5 }, m('sides', .95), .4);
+    [lv, ls1, ls2].forEach(e => hide(e, m('turn'), .4));
+    const turn = (a, b, t, dur) => prog(q => { const v = a + (b - a) * q; put(r2, { r: -v }); A.set(0, v); }, t, dur);
+    turn(40, 150, m('turn', .2), 3);
+    turn(150, 360, m('full', -.6), 2.6);
+    // a full turn cut into 360 degrees: a tick every degree, longer every 10°
+    let d = '';
+    for (let a = 0; a < 360; a++) {
+      const len = a % 10 === 0 ? 22 : 9, [x0, y0] = c29Pt(...V, 232, a), [x1, y1] = c29Pt(...V, 232 - len, a);
+      d += `M${c29f(x0)} ${c29f(y0)}L${c29f(x1)} ${c29f(y1)}`;
+    }
+    draw(path(p, d, { stroke: DEN, 'stroke-width': 1.6 }, { d: 0 }), m('deg', -.3), 1.6, lin);
+    klText(p, 'полный оборот', 1110, 400, m('full', 1.6), { size: 38, weight: 600 });
+    klText(p, '360°', 1110, 515, m('deg', .2), { size: 104, fill: NUM, weight: 700 });
+    klText(p, '1° — одна из 360 равных долей', 1110, 580, m('deg', 1.6), { size: 28, fill: COL.dim });
+  }],
+
+  ['kinds', 'Виды углов', m => {
+    const p = panel(0);
+    klTitle(p, 'Острый, прямой, тупой, развёрнутый');
+    const V = [800, 540];
+    c29Dot(p, ...V, .2);
+    draw(c29Ray(p, ...V, 400, 0).line, .2, .5);
+    const ray = c29Ray(p, ...V, 400, 0, { col: NUM });
+    draw(ray.line, .3, .5);
+    const A = c29Ang(p, ...V, { r: 100, a1: 0, size: 44, o: 1 });
+    const turn = (a, b, t, dur) => prog(q => { const v = a + (b - a) * q; put(ray, { r: -v }); A.set(0, v); }, t, dur);
+    const stops = [['acute', 50, 'острый', 'меньше 90°'], ['right', 90, 'прямой', 'ровно 90°'],
+      ['obtuse', 130, 'тупой', 'больше 90°, меньше 180°'], ['straight', 180, 'развёрнутый', 'ровно 180°']];
+    turn(0, 50, .9, m('acute') - .9);
+    // dashed yardsticks: a quarter turn (90°) and a half turn (180°)
+    const dash = a => { const g = G(p, { x: V[0], y: V[1], r: -a, o: 0 }); path(g, 'M0 0H330', { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '10 9' }); return g; };
+    const g90 = dash(90), g180 = dash(180);
+    show(g90, m('acute', 1), .4); hide(g90, m('right', .2), .3);
+    pulse(A.t, m('a50'), 1.5);
+    pulse(A.t, m('right', 2.2), 1.5);
+    c29Flash(A, m('sq'), .8);
+    show(g90, m('more'), .4); show(g180, m('less'), .4);
+    pulse(A.t, m('a130'), 1.5);
+    hide(g90, m('straight'), .3); hide(g180, m('straight'), .3);
+    pulse(A.t, m('straight', 2), 1.5);
+    tw(ray.line, { 'a_stroke-width': 9 }, m('one'), .3); tw(ray.line, { 'a_stroke-width': 4.5 }, m('one', 1), .4);
+    const MX = [250, 610, 970, 1330];
+    stops.forEach(([mark, deg, name, cond], i) => {
+      const t = m(mark);
+      if (i) turn(stops[i - 1][1], deg, t, 1.1);
+      const lab = G(p, { o: 0 });
+      T(lab, name, { x: 1250, y: 330, size: 48, fill: NUM, weight: 700 });
+      T(lab, cond, { x: 1250, y: 378, size: 28, fill: COL.dim });
+      const tl = i === 1 ? m('right', 3.4) : t + (i ? .6 : 0);
+      show(lab, tl);
+      if (i < 3) hide(lab, m(stops[i + 1][0]), .3);
+      // the same angle, small, joins the row below
+      const vx = MX[i] + (deg > 100 ? 40 : -30), mini = G(p, { o: 0, y: 20 });
+      const mA = c29Ang(mini, vx, 780, { r: 34, a1: deg, size: 26, lr: 62, o: 1 });
+      draw(c29Ray(mini, vx, 780, 110, 0).line, 0, 0);
+      draw(c29Ray(mini, vx, 780, 110, deg, { col: NUM }).line, 0, 0);
+      if (deg === 180) put(mA.t, { y: 720 });
+      T(mini, name, { x: MX[i] + (deg === 180 ? 30 : 20), y: 850, size: 28, anchor: 'middle', weight: 600 });
+      tw(mini, { o: 1, y: 0 }, i === 2 ? m('a130', .4) : tl + 1.1, .5);
+      S['k' + i] = mA;
+      c29Flash(mA, m('row', i * .55));
+    });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const CX = [230, 590, 950, 1310], DEG = [80, 35, 115, 90];
+    S.q1 = DEG.map((deg, i) => {
+      const vx = CX[i] + (deg > 90 ? 40 : -60), g = G(p, { o: 0 });
+      draw(c29Ray(g, vx, 500, 190, 0).line, 0, 0);
+      draw(c29Ray(g, vx, 500, 190, deg, { col: NUM }).line, 0, 0);
+      const A = c29Ang(g, vx, 500, { r: 56, a1: deg, size: 34, lr: 96, o: 1, lab: false });
+      mk('circle', { cx: vx, cy: 500, r: 6, fill: COL.chalk }, g);
+      const lab = T(p, `${deg}°`, { x: CX[i], y: 600, size: 36, fill: NUM, font: MATH, anchor: 'middle', weight: 600, o: 0 });
+      show(g, .3 + i * .15);
+      return { g, A, lab, box: [CX[i] - 165, 260, 330, 300] };
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-tupoy', prompt: 'Какой из углов тупой? Нажми на него.',
+    build: pickEls(S.q1.map((q, k) => ({ el: q.g, box: q.box, label: `угол ${k + 1}` })), 2,
+      'Этот угол больше прямого, но меньше развёрнутого: 115°. Он тупой.',
+      k => k === 3 ? 'Это прямой угол, он отмечен квадратиком: ровно 90°. Тупой — больше прямого.' : 'Этот угол меньше прямого — он острый. Тупой шире прямого угла.',
+      () => S.q1.forEach((q, i) => fx(q.lab, { o: 1 }, i * .12, .3))),
+  }], done) }],
+
+  ['protractor', 'Транспортир', m => {
+    const p = panel(0);
+    klTitle(p, 'Как измерить угол транспортиром');
+    const C = [800, 600], R = 340;
+    const A = c29Ang(p, ...C, { r: 110, a1: 50, lab: false, o: 1, op: .18 });
+    const base = c29Ray(p, ...C, 480, 0), side = c29Ray(p, ...C, 480, 50, { col: NUM });
+    draw(base.line, .2, .5); draw(side.line, .4, .5);
+    c29Dot(p, ...C, .2);
+    const pr = c29Protractor(p, R, { x: 330, y: 470, r: -28, o: 0 });
+    show(pr.g, m('tool'), .5);
+    tw(pr.g, { x: C[0], y: C[1], r: 0 }, m('centre'), 1.3);
+    const ring = mk('circle', { cx: C[0], cy: C[1], r: 20, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p);
+    put(ring, { o: 0 }); show(ring, m('centre', 1.2), .3);
+    const cl = klText(p, 'центр — на вершину', C[0] - 40, C[1] + 60, m('centre', 1.3), { size: 30, fill: RULE, anchor: 'end', weight: 600 });
+    const zl = klText(p, 'ноль — на сторону', C[0] + 300, C[1] + 60, m('zero', .2), { size: 30, fill: RULE, anchor: 'middle', weight: 600 });
+    pulse(pr.inner[0], m('zero'), 2.2);
+    tw(base.line, { 'a_stroke-width': 9, c_stroke: RULE }, m('zero'), .3);
+    tw(base.line, { 'a_stroke-width': 4.5, c_stroke: COL.chalk }, m('zero', 1.6), .5);
+    // count along the scale that starts at this zero: 10, 20, 30, 40, 50
+    const t0 = m('read'), t5 = m('fifty'), sw = path(p, 'M0 0', { stroke: NUM, 'stroke-width': 8, 'stroke-opacity': .9 });
+    prog(q => sw.setAttribute('d', c29ArcD(...C, R - 128, 0, 50 * q)), t0 - .2, t5 - t0 + .2, lin);
+    for (let k = 1; k <= 5; k++) {
+      const t = k < 5 ? t0 + (t5 - t0) * (k - 1) / 4 : t5;
+      tw(pr.inner[k].t, { c_fill: NUM }, t, .2); pulse(pr.inner[k], t, 1.6);
+    }
+    const l50 = klText(p, '50°', 1200, 420, m('fifty', .3), { size: 72, fill: NUM, weight: 700 });
+    tw(side.line, { 'a_stroke-width': 10 }, m('shows'), .3); tw(side.line, { 'a_stroke-width': 4.5 }, m('shows', 1.1), .4);
+    c29Flash(A, m('shows', .3), .6);
+    tw(l50, { s: 1.2 }, m('shows', .5), .3); tw(l50, { s: 1 }, m('shows', 1), .4);
+    hide(cl, m('read'), .4); hide(zl, m('read'), .4);
+  }],
+
+  ['trap', 'Две шкалы', m => {
+    const p = panel(0);
+    klTitle(p, 'Ловушка: две шкалы');
+    const C = [800, 600], R = 340;
+    const TA = c29Ang(p, ...C, { r: 110, a1: 50, lab: false, o: 1, op: .18 });
+    c29Flash(TA, m('less'), .7);
+    draw(c29Ray(p, ...C, 480, 0).line, 0, 0); draw(c29Ray(p, ...C, 480, 50, { col: NUM }).line, 0, 0);
+    const pr = c29Protractor(p, R, { x: C[0], y: C[1] });
+    pr.inner.forEach((e, k) => pulse(e, m('two', k * .04), 1.4));
+    pr.outer.forEach((e, k) => pulse(e, m('two', 1.1 + k * .04), 1.4));
+    // the wrong reading: 130 on the outer scale, counted from the zero on the left, which is not on a side
+    tw(pr.outer[5].t, { c_fill: COL.bad }, m('wrong'), .2); pulse(pr.outer[5], m('wrong'), 1.9);
+    const wa = path(p, c29ArcD(...C, R - 58, 50, 180), { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 });
+    tw(wa, { d: 1 }, m('wrong', .5), 1.1);
+    const zr = mk('circle', { cx: C[0] - R + 34, cy: C[1] - 24, r: 26, fill: 'none', stroke: COL.bad, 'stroke-width': 4 }, p);
+    put(zr, { o: 0 }); show(zr, m('wrong', 1.4), .3);
+    klText(p, 'этот ноль — не на стороне угла', C[0] - R - 10, C[1] + 60, m('wrong', 1.6), { size: 28, fill: COL.bad, anchor: 'start' });
+    klText(p, '130°', 1190, 300, m('wrong', .4), { size: 68, fill: COL.bad, weight: 700 });
+    klStrike(p, 1180, 300, 1350, 240, m('check', -.4));
+    // the right angle as a yardstick: our angle lies inside it, so it is less than 90°
+    klGuide(p, C[0], C[1] - 8, C[1] - R - 40, m('check', .3), RULE);
+    const l90 = G(p, { x: C[0], y: C[1] - R - 54 });
+    klText(l90, '90°', 0, 0, m('check', .5), { size: 34, fill: RULE, anchor: 'middle', weight: 600 });
+    pulse(l90, m('less', .3), 1.5);
+    klText(p, 'угол острый — значит, меньше 90°', 800, 720, m('check', .9), { size: 36, fill: RULE, anchor: 'middle', weight: 600 });
+    const sw = path(p, 'M0 0', { stroke: NUM, 'stroke-width': 8, 'stroke-opacity': .9 });
+    prog(q => sw.setAttribute('d', c29ArcD(...C, R - 128, 0, 50 * q)), m('right'), .9);
+    tw(pr.inner[5].t, { c_fill: NUM }, m('right', .7), .2); pulse(pr.inner[5], m('right', .7), 1.8);
+    klText(p, '50°', 1190, 430, m('right', .6), { size: 72, fill: NUM, weight: 700 });
+    klMark(p, 1350, 405, m('right', 1), true);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = [800, 540];
+    c29Ang(p, ...C, { r: 100, a0: 110, a1: 180, lab: false, o: 1, op: .2 });
+    draw(c29Ray(p, ...C, 430, 180).line, .2, .5); draw(c29Ray(p, ...C, 430, 110, { col: NUM }).line, .3, .5);
+    S.q2 = c29Protractor(p, 300, { x: C[0], y: C[1], o: 0 });
+    show(S.q2.g, .2);
+    S.q2sw = path(p, c29ArcD(...C, 300 - 46, 110, 180), { stroke: NUM, 'stroke-width': 8 }, { d: 0 });
+    S.q2lab = klText(p, '70°', 470, 330, undefined, { size: 60, fill: NUM, weight: 700, anchor: 'middle' });
+    put(S.q2lab, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-shkala', prompt: 'Сколько градусов в этом угле?',
+    build: blanks([{ parts: [{ box: '70' }, ' градусов'],
+      why: 'Сторона лежит на нуле наружной шкалы — по ней и считаем: 70°. Угол острый, так что 110° не подходит.',
+      hint: 'Найди ноль, который лежит на стороне угла (он слева), и считай по его шкале. Угол острый — меньше 90°.',
+      fx: () => { fx(S.q2sw, { d: 1 }, 0, .8); fx(S.q2lab, { o: 1 }, .6, .4); pulseFx(S.q2.outer[11], 1.8); } }]),
+  }], done) }],
+
+  ['adjacent', 'Смежные углы', m => {
+    const p = panel(0);
+    klTitle(p, 'Смежные углы');
+    const O = [800, 500];
+    draw(path(p, `M300 ${O[1]}H1300`, { stroke: COL.chalk, 'stroke-width': 4.5 }, { d: 0 }), .2, .6);
+    c29Dot(p, ...O, .3);
+    const half = c29Ang(p, ...O, { r: 95, a0: 0, a1: 180, col: RULE, op: .12, lab: '180°', size: 40 });
+    show(half.g, m('line'), .4); hide(half.g, m('ray', .4), .4);
+    const ray = c29Ray(p, ...O, 380, 50, { col: WHOLE });
+    draw(ray.line, m('ray'), .6);
+    const A = c29Ang(p, ...O, { r: 95, a0: 0, a1: 50, col: NUM, size: 40 }), B = c29Ang(p, ...O, { r: 95, a0: 50, a1: 180, col: TWO, size: 40 });
+    show(A.g, m('ray', .5)); show(B.g, m('ray', .7));
+    c29Flash(A, m('cut'), .7); c29Flash(B, m('cut', .6), .7);
+    c29Flash(B, m('a130'), .7);
+    klText(p, 'смежные углы: вместе — развёрнутый угол', 800, 590, m('name'), { size: 32, fill: RULE, anchor: 'middle', weight: 600 });
+    // the live sum: a° + (180 − a)° = 180°
+    const y = 700, xe = 880, sz = 58, row = G(p, { o: 0 });
+    const ta = T(row, '', { y, size: sz, fill: NUM, font: MATH, anchor: 'end' }), tp = T(row, '+', { y, size: sz, font: MATH, anchor: 'middle' });
+    const tb = T(row, '', { x: xe - 30, y, size: sz, fill: TWO, font: MATH, anchor: 'end' });
+    const te = T(row, '= 180°', { x: xe, y, size: sz, font: MATH });
+    const set = v => {
+      put(ray, { r: -v }); A.set(0, v); B.set(v, 180);
+      const a = `${Math.round(v)}°`, b = `${180 - Math.round(v)}°`, wb = textW(b, sz);
+      ta.textContent = a; tb.textContent = b;
+      put(tp, { x: xe - 30 - wb - 32 }); put(ta, { x: xe - 30 - wb - 64 });
+    };
+    set(50);
+    show(row, m('turn'), .4);
+    const turn = (a, b, t, dur) => prog(q => set(a + (b - a) * q), t, dur);
+    turn(50, 85, m('turn', .3), 1.4); turn(85, 25, m('turn', 1.9), 2); turn(25, 50, m('sum', .6), 1.1);
+    tw(te, { c_fill: RULE }, m('sum'), .3);
+    klEq(p, [{ s: '180°', t: m('minus') }, { s: '−', t: m('minus', .8) }, { s: '130°', fill: TWO, t: m('minus', 1.1) }], [], 810, m('minus'), { xEq: xe + 30, size: sz, tEq: m('ans', -.4) });
+    klExpr(p, [{ s: '50°', fill: NUM }], xe + 72, 810, { size: sz, t0: m('ans') });
+  }],
+
+  ['vertical', 'Вертикальные углы', m => {
+    const p = panel(0);
+    klTitle(p, 'Вертикальные углы');
+    const O = [600, 500];
+    draw(path(p, `M150 ${O[1]}H1050`, { stroke: COL.chalk, 'stroke-width': 4.5 }, { d: 0 }), 0, 0);
+    const lineB = c29Ray(p, ...O, 400, 50, { col: WHOLE });
+    draw(lineB.line, 0, 0);              // the ray from the last picture; its other half is drawn on [[through]]
+    const tail = path(lineB, 'M0 0H-400', { stroke: WHOLE, 'stroke-width': 4.5 }, { d: 0 });
+    c29Dot(p, ...O, 0);
+    const opt = { r: 80, size: 38, lr: 135 };
+    const A = [c29Ang(p, ...O, { ...opt, col: NUM, o: 1 }), c29Ang(p, ...O, { ...opt, col: TWO, o: 1 }),
+      c29Ang(p, ...O, { ...opt, col: NUM }), c29Ang(p, ...O, { ...opt, col: TWO })];
+    const set = v => { put(lineB, { r: -v }); A[0].set(0, v); A[1].set(v, 180); A[2].set(180, 180 + v); A[3].set(180 + v, 360); };
+    set(50);
+    draw(tail, m('through'), .7);
+    show(A[2].g, m('through', .7)); show(A[3].g, m('through', .9));
+    A.forEach((a, k) => c29Flash(a, m('four', k * .3), .6));
+    [0, 2].forEach((k, i) => c29Flash(A[k], m('opp', i * .4)));
+    [1, 3].forEach((k, i) => c29Flash(A[k], m('opp', 1.4 + i * .4)));
+    klText(p, 'вертикальные углы', 1330, 260, m('opp', .6), { size: 36, fill: RULE, anchor: 'middle', weight: 600 });
+    klText(p, 'равны', 1330, 308, m('opp', .9), { size: 36, fill: RULE, anchor: 'middle', weight: 600 });
+    // why: both of them make 180° together with the same 130° angle
+    const why = G(p, { o: 0 });
+    klEq(why, [{ s: '50°', fill: NUM }, { s: '+' }, { s: '130°', fill: TWO }], [{ s: '180°' }], 450, undefined, { xEq: 1390, size: 46 });
+    klEq(why, [{ s: '130°', fill: TWO }, { s: '+' }, { s: '50°', fill: NUM }], [{ s: '180°' }], 540, undefined, { xEq: 1390, size: 46 });
+    show(why, m('why', .5));
+    c29Flash(A[1], m('why', .6)); c29Flash(A[0], m('why', 1.1)); c29Flash(A[2], m('why', 2.2));
+    hide(why, m('spin'), .4);
+    const turn = (a, b, t, dur) => prog(q => set(a + (b - a) * q), t, dur);
+    turn(50, 72, m('spin', .4), 1.4); turn(72, 32, m('spin', 2), 1.8); turn(32, 50, m('spin', 4), 1.2);
+  }],
+
+  ['perp', 'Перпендикулярные прямые', m => {
+    const p = panel(0);
+    klTitle(p, 'Перпендикулярные прямые');
+    const O = [600, 500];
+    draw(path(p, `M150 ${O[1]}H1050`, { stroke: COL.chalk, 'stroke-width': 4.5 }, { d: 0 }), 0, 0);
+    const lineB = c29Ray(p, ...O, 350, 50, { col: WHOLE, back: 350 });
+    draw(lineB.line, 0, 0);
+    c29Dot(p, ...O, 0);
+    const opt = { r: 80, size: 38, lr: 135, o: 1 };
+    const A = [c29Ang(p, ...O, { ...opt, col: NUM }), c29Ang(p, ...O, { ...opt, col: TWO }),
+      c29Ang(p, ...O, { ...opt, col: NUM }), c29Ang(p, ...O, { ...opt, col: TWO })];
+    klText(p, 'a', 1070, 485, .3, { size: 48, weight: 600 });
+    const lb = T(p, 'b', { size: 48, fill: WHOLE, weight: 600, o: 0 }); show(lb, .3);
+    const set = v => {
+      put(lineB, { r: -v }); A[0].set(0, v); A[1].set(v, 180); A[2].set(180, 180 + v); A[3].set(180 + v, 360);
+      const [x, y] = c29Pt(...O, 290, v); put(lb, { x: x + 30, y: y + 16 });
+    };
+    set(50);
+    prog(q => set(50 + 40 * q), m('ninety', -.2), 1.4);
+    A.forEach((a, k) => c29Flash(a, m('four', k * .35)));
+    klCount(p, [[620, 489], [580, 489], [580, 529], [620, 529]], m('four'), { step: .35, size: 24, fill: RULE });
+    klText(p, 'перпендикулярные', 1330, 300, m('name'), { size: 36, fill: RULE, anchor: 'middle', weight: 600 });
+    klText(p, 'прямые', 1330, 348, m('name', .1), { size: 36, fill: RULE, anchor: 'middle', weight: 600 });
+    klMath(p, ['a ⊥ b'], 1330, 480, m('name', 1.2), { size: 84, fill: RULE });
+    klText(p, 'четыре прямых угла', 1330, 560, m('name', 1.6), { size: 30, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const O = [800, 470];
+    draw(path(p, `M260 ${O[1]}H1340`, { stroke: COL.chalk, 'stroke-width': 4.5 }, { d: 0 }), .2, .5);
+    draw(c29Ray(p, ...O, 360, 65, { col: WHOLE }).line, .4, .5);
+    mk('circle', { cx: O[0], cy: O[1], r: 8, fill: COL.chalk }, p);
+    const A = c29Ang(p, ...O, { r: 95, a0: 65, a1: 180, col: NUM, size: 44 }), B = c29Ang(p, ...O, { r: 95, a0: 0, a1: 65, col: TWO, size: 44, lab: '?' });
+    show(A.g, .6); show(B.g, .8);
+    S.q3B = B;
+    const { x, y } = st(B.t);
+    S.q3ans = T(p, '65°', { x, y, size: 44, fill: TWO, font: MATH, anchor: 'middle', weight: 600, o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-smezhny', prompt: 'Углы смежные. Найди неизвестный угол.',
+    build: blanks([{ parts: [{ box: '65' }, ' градусов'],
+      why: 'Смежные углы вместе дают 180°: 180° − 115° = 65°.',
+      hint: 'Вместе смежные углы составляют развёрнутый угол — 180°. Вычти известный угол.',
+      fx: () => { fx(S.q3B.t, { o: 0 }, 0, .2); fx(S.q3ans, { o: 1 }, .15, .4); pulseFx(S.q3ans, 1.6); } }]),
+  }], done) }],
+
+  ['parallel', 'Параллельные прямые', m => {
+    const p = panel(0);
+    klTitle(p, 'Параллельные прямые');
+    const M0 = [800, 330], YA = 650;
+    draw(path(p, `M60 ${YA}H1540`, { stroke: COL.chalk, 'stroke-width': 4.5 }, { d: 0 }), .2, .7);
+    const la = klText(p, 'a', 1500, YA - 18, m('line'), { size: 48, weight: 600 });
+    pulse(la, m('line', .1), 1.5);
+    const lineB = c29Ray(p, ...M0, 1900, 60, { col: WHOLE, back: 1900 });
+    draw(lineB.line, m('point', .9), .8);
+    c29Dot(p, ...M0, m('point'), { r: 9 });
+    klText(p, 'M', M0[0] + 18, M0[1] - 20, m('point', .2), { size: 40, weight: 600 });
+    const X = G(p, { o: 0 });
+    mk('circle', { r: 11, fill: RULE, stroke: COL.board, 'stroke-width': 3 }, X);
+    const set = v => {
+      put(lineB, { r: -v });
+      const x = M0[0] - (YA - M0[1]) / Math.tan(Math.max(v, .01) * Math.PI / 180);
+      put(X, { x: Math.max(x, -100), y: YA });
+    };
+    set(60);
+    show(X, m('point', 1.6), .3);
+    const turn = (a, b, t, dur, e) => prog(q => set(a + (b - a) * q), t, dur, e);
+    turn(60, 32, m('turn', .3), 1.8); turn(32, 7, m('run'), 2.6); turn(7, 0, m('par', -.2), 1, out);
+    klText(p, 'b', 1500, M0[1] - 18, m('name'), { size: 48, fill: WHOLE, weight: 600 });
+    klMath(p, ['a ∥ b'], 1200, 515, m('name', .9), { size: 84, fill: RULE });
+    klText(p, 'не пересекаются', 1200, 575, m('par', 1.4), { size: 30, fill: COL.dim, anchor: 'middle' });
+    // the gap between them stays the same everywhere
+    [300, 760].forEach((x, i) => {
+      const e = path(p, `M${x} ${M0[1] + 8}V${YA - 8}`, { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-dasharray': '8 8' }, { o: 0 });
+      show(e, m('ever', i * .5), .4); hide(e, m('name', .6), .4);
+    });
+    turn(0, 5, m('one'), .5); turn(5, -5, m('one', .5), .9); turn(-5, 0, m('one', 1.4), .5);
+    klText(p, 'через M — только одна', 800, 270, m('one', .6), { size: 30, fill: RULE, anchor: 'middle', weight: 600 });
+    // the lines of a squared notebook: parallel and perpendicular
+    klText(p, 'клетки тетради', 1300, 715, m('grid'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    [760, 810, 860].forEach((y, i) => draw(path(p, `M1100 ${y}H1500`, { stroke: WHOLE, 'stroke-width': 3.5 }, { d: 0 }), m('gpar', -.3 + i * .2), .5));
+    [1150, 1250, 1350, 1450].forEach((x, i) => draw(path(p, `M${x} 740V880`, { stroke: DEN, 'stroke-width': 3.5 }, { d: 0 }), m('gperp', -.2 + i * .15), .4));
+    klMath(p, ['∥'], 1060, 822, m('gpar', .4), { size: 44, fill: WHOLE });
+    klMath(p, ['⊥'], 1540, 822, m('gperp', .6), { size: 44, fill: DEN });
+  }],
+
+  ['clock', 'Углы на циферблате', m => {
+    const p = panel(0);
+    klTitle(p, 'Углы на циферблате');
+    const C = [500, 510], R = 300;
+    const ck = c29Clock(p, ...C, R, 0, { o: 0 });
+    show(ck.g, .2);
+    const rim = path(p, 'M0 0', { stroke: NUM, 'stroke-width': 9, 'stroke-opacity': .9 });
+    prog(q => rim.setAttribute('d', c29ArcD(...C, R + 12, 90 - 360 * q, 90)), m('c360'), 1.8);
+    put(rim, { o: 1 }); hide(rim, m('twelve', 1), .6);
+    ck.spokes(m('twelve'), .12);
+    const A = c29Ang(p, ...C, { r: 150, a0: 90, a1: 90, size: 42, lr: 190, o: 1 });
+    const set = h => { put(ck.hour, { r: h * 30 }); A.set(90 - h * 30, 90); };
+    set(0);
+    const go = (a, b, t) => prog(q => set(a + (b - a) * q), t, 1.1);
+    go(0, 1, m('thirty', -.3)); go(1, 2, m('two')); go(2, 3, m('three'));
+    klEq(p, [{ s: '360°', fill: NUM, t: m('c360', .6) }, { s: ':', t: m('twelve', .5) }, { s: '12', fill: DEN, t: m('twelve', .5) }], [{ s: '30°', fill: NUM }], 330, m('c360', .6), { xEq: 1240, size: 56, tEq: m('thirty', .4) });
+    klEq(p, [{ s: '2' }, { s: '·' }, { s: '30°' }], [{ s: '60°', fill: NUM }], 460, m('two', .6), { xEq: 1240, size: 56 });
+    klEq(p, [{ s: '3' }, { s: '·' }, { s: '30°' }], [{ s: '90°', fill: NUM }], 590, m('three', .6), { xEq: 1240, size: 56 });
+    klText(p, 'прямой угол', 1350, 650, m('three', 1.4), { size: 30, fill: RULE, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = [800, 345];
+    const ck = c29Clock(p, ...C, 240, 4, { o: 0 });
+    show(ck.g, .2);
+    S.q4A = c29Ang(p, ...C, { r: 120, a0: -30, a1: 90, size: 40, lr: 168 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-chasy', prompt: 'Сколько градусов между часовой и минутной стрелками ровно в 4 часа?',
+    build: blanks([{ parts: [{ box: '120' }, ' градусов'],
+      why: 'От 12 до 4 — четыре часовых деления по 30°: 4 · 30° = 120°.',
+      hint: 'На каждый час приходится 360° : 12 = 30°. Сколько часовых делений между стрелками?',
+      fx: () => { fx(S.q4A.g, { o: 1 }, 0, .5); } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Полный оборот — ', { m: '360°' }, ', прямой угол — ', { m: '90°' }, ', развёрнутый — ', { m: '180°' }],
+    'Транспортир читают от нуля, который лежит на стороне угла',
+    ['Смежные углы вместе дают ', { m: '180°' }, ', вертикальные углы равны'],
+    ['Перпендикулярные: ', { m: 'a ⊥ b' }, ', четыре прямых угла; параллельные: ', { m: 'a ∥ b' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-vidy', prompt: 'Определи вид угла.',
+    build: grid([
+      { parts: ['135°'], ans: ['tu'], why: '135° больше 90°, но меньше 180°: тупой.' },
+      { parts: ['45°'], ans: ['os'], why: '45° меньше 90°: острый.' },
+      { parts: ['180°'], ans: ['ra'], why: 'Половина оборота: развёрнутый угол.' },
+      { parts: ['90°'], ans: ['pr'], why: 'Четверть оборота: прямой угол.' },
+      { parts: ['91°'], ans: ['tu'], why: 'Чуть больше прямого — уже тупой.' },
+    ], [['os', 'острый', null, '1'], ['pr', 'прямой', null, '2'], ['tu', 'тупой', null, '3'], ['ra', 'развёрнутый', null, '4']], { multi: false }),
+  }, {
+    id: 'p-perp', prompt: 'Сколько прямых углов образуют две перпендикулярные прямые?',
+    build: blanks([{ parts: [{ box: '4' }, ' прямых угла'], why: 'Все четыре угла при пересечении — по 90°.', hint: 'Нарисуй две прямые под прямым углом и посчитай углы.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-gradusy', prompt: 'Найди углы.',
+    build: blanks([
+      { parts: ['Ровно в 3 часа между стрелками ', { box: '90' }, ' градусов'], why: '3 · 30° = 90°.', hint: 'На каждый час — 30°.' },
+      { parts: ['Ровно в 5 часов между стрелками ', { box: '150' }, ' градусов'], why: '5 · 30° = 150°.', hint: 'На каждый час — 30°.' },
+      { parts: ['Прямой угол разделили лучом; один угол 35°, другой ', { box: '55' }, ' градусов'], why: '90° − 35° = 55°.', hint: 'Вместе два угла дают прямой угол — 90°.' },
+      { parts: ['Один из смежных углов 72°, другой ', { box: '108' }, ' градусов'], why: '180° − 72° = 108°.', hint: 'Смежные углы вместе дают 180°.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-transportir', prompt: 'Сторона угла лежит на нуле внутренней шкалы транспортира. Против второй стороны: 40 на внутренней шкале и 140 на наружной. Сколько градусов в угле?',
+    build: choice(['40°', '140°', '180°'], 0, 'Считаем по шкале, ноль которой лежит на стороне угла, — по внутренней: 40°.',
+      [null, '140° — это чтение по другой шкале: её ноль не лежит на стороне угла.', '180° — сумма двух чтений, а не угол.']),
+  }, {
+    id: 'p-vert', prompt: 'Две прямые пересеклись, один из углов равен 70°.',
+    build: blanks([
+      { parts: ['Вертикальный ему угол: ', { box: '70' }, ' градусов'], why: 'Вертикальные углы равны.', hint: 'Угол напротив равен данному.' },
+      { parts: ['Смежный с ним угол: ', { box: '110' }, ' градусов'], why: '180° − 70° = 110°.', hint: 'Смежные углы вместе дают 180°.' },
+    ]),
+  }, {
+    id: 'p-parall', prompt: 'Сколько прямых, параллельных прямой a, можно провести через точку вне её?',
+    build: choice(['ни одной', 'одну', 'две', 'сколько угодно'], 1, 'Через точку вне прямой проходит только одна параллельная ей прямая.',
+      ['Одна такая прямая есть: поверни прямую через точку так, чтобы она не встречала a.', null, 'Если повернуть прямую хоть чуть-чуть, она пересечёт a.', 'Все остальные прямые через точку пересекают a — где-то далеко.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

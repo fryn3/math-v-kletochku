@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Треугольник · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 7.2 «Треугольник» (5–6 класс). Beat ids match papermorph/content/uroki/ch30/narration.ru.json.
+const CHAPTER = { number: 30, label: '7.2', title: 'Треугольник', minutes: 8, language: 'ru', next: '../ch31/' };
+
+const RULE = KL.RULE;
+// The three angles of a triangle keep their colours through a beat: first, second, third.
+const ANG = [KL.NUM, KL.DEN, KL.TWO];
+
+/* ---------- angles drawn true to their numbers ---------- */
+const c30Deg = (V, P) => Math.atan2(P[1] - V[1], P[0] - V[0]) * 180 / Math.PI;
+// The angle at V between the rays to P1 and P2 as [start, width] in SVG degrees (clockwise on screen), width < 180.
+function c30Span(V, P1, P2) {
+  const a1 = c30Deg(V, P1), a2 = c30Deg(V, P2), d = ((a2 - a1) % 360 + 540) % 360 - 180;
+  return d > 0 ? [a1, d] : [a2, -d];
+}
+const c30P = (r, a) => [r * Math.cos(a * Math.PI / 180), r * Math.sin(a * Math.PI / 180)];
+const c30SectorD = (r, s, w) => { const [x1, y1] = c30P(r, s), [x2, y2] = c30P(r, s + w); return `M0 0L${x1} ${y1}A${r} ${r} 0 ${w > 180 ? 1 : 0} 1 ${x2} ${y2}Z`; };
+const c30ArcD = (r, s, w) => { const [x1, y1] = c30P(r, s), [x2, y2] = c30P(r, s + w); return `M${x1} ${y1}A${r} ${r} 0 ${w > 180 ? 1 : 0} 1 ${x2} ${y2}`; };
+const c30SquareD = (u, s) => { const [ax, ay] = c30P(u, s), [bx, by] = c30P(u, s + 90); return `M${ax} ${ay}L${ax + bx} ${ay + by}L${bx} ${by}`; };
+// Triangle with base from (x, y) to (x + base, y) and angles A (left) and B (right): [A, B, C] points, C on top.
+function c30Tri(x, y, base, A, B) {
+  const k = Math.PI / 180, ac = base * Math.sin(B * k) / Math.sin((A + B) * k);
+  return [[x, y], [x + base, y], [x + ac * Math.cos(A * k), y - ac * Math.sin(A * k)]];
+}
+const c30PolyD = pts => 'M' + pts.map(q => q.join(' ')).join('L') + 'Z';
+// A closed outline drawn on at t0 (no t0: shown at once).
+function c30Poly(p, pts, t0, { stroke = COL.chalk, w = 5, dur = .9 } = {}) {
+  if (t0 === undefined) return path(p, c30PolyD(pts), { stroke, 'stroke-width': w });
+  const e = path(p, c30PolyD(pts), { stroke, 'stroke-width': w }, { d: 0 });
+  draw(e, t0, dur);
+  return e;
+}
+// The mark of the angle at V (rays to P1, P2): a tinted sector with an arc edge, or a square for a right angle.
+// The group's origin is V and its local sector starts at g._s, so it can be torn off and turned (tw x, y, r).
+function c30Angle(p, V, P1, P2, { r = 56, col = KL.NUM, op = .35, t0, square = false } = {}) {
+  const [s, w] = c30Span(V, P1, P2);
+  const g = G(p, { x: V[0], y: V[1], o: t0 === undefined ? 1 : 0 });
+  if (square) path(g, c30SquareD(32, s), { stroke: col, 'stroke-width': 4 });
+  else {
+    g._fill = path(g, c30SectorD(r, s, w), { fill: col, 'fill-opacity': op, stroke: 'none' });
+    g._arc = path(g, c30ArcD(r, s, w), { stroke: col, 'stroke-width': 4 });
+  }
+  g._s = s; g._w = w;
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A label on the bisector of the angle at V, far enough out to clear the sides.
+function c30LabXY(V, P1, P2, d) {
+  const [s, w] = c30Span(V, P1, P2), dd = d || Math.max(96, 36 / Math.sin(w * Math.PI / 360)), [dx, dy] = c30P(dd, s + w / 2);
+  return [V[0] + dx, V[1] + dy + 11];
+}
+function c30Lab(p, V, P1, P2, str, t0, { d, size = 32, fill = COL.chalk } = {}) {
+  const [x, y] = c30LabXY(V, P1, P2, d);
+  return klText(p, str, x, y, t0, { size, fill, anchor: 'middle', weight: 600 });
+}
+// A whole triangle with its three angle marks and labels (labs[i] null: no label).
+function c30Full(p, pts, labs, t0, { r = 56, cols = ANG, lab = {}, square = -1 } = {}) {
+  const tri = c30Poly(p, pts, t0);
+  const ang = pts.map((V, i) => c30Angle(p, V, pts[(i + 1) % 3], pts[(i + 2) % 3], { r, col: cols[i], t0: t0 === undefined ? undefined : t0 + .5 + i * .12, square: i === square }));
+  const text = pts.map((V, i) => labs[i] == null ? null : c30Lab(p, V, pts[(i + 1) % 3], pts[(i + 2) % 3], labs[i], t0 === undefined ? undefined : t0 + .6 + i * .12, { fill: cols[i], ...lab, d: Array.isArray(lab.d) ? lab.d[i] : lab.d }));
+  return { tri, ang, text };
+}
+// Torn corners: each angle mark (made with op ~ .85) goes to the point O and turns so that its sector starts at
+// start[i] (SVG degrees; the straight angle above a line runs from -180 to 0).
+function c30Lay(g, O, start, t0, dur = 1.1) {
+  const rot = ((start - g._s) % 360 + 540) % 360 - 180;
+  tw(g, { x: O[0], y: O[1], r: rot }, t0, dur);
+}
+// Value at time t of a piecewise motion: keys [[t, v], …], eased between keys.
+function c30Keys(t, keys) {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, v1] = keys[i], [t0, v0] = keys[i - 1];
+    if (t < t1) return v0 + (v1 - v0) * io((t - t0) / (t1 - t0));
+  }
+  return keys[keys.length - 1][1];
+}
+// A small tick across the middle of segment PQ (equal sides carry equal ticks).
+function c30TickD(P, Q, k = 1) {
+  const mx = (P[0] + Q[0]) / 2, my = (P[1] + Q[1]) / 2, L = Math.hypot(Q[0] - P[0], Q[1] - P[1]);
+  const ux = (Q[0] - P[0]) / L, uy = (Q[1] - P[1]) / L, nx = -uy * 14, ny = ux * 14;
+  let d = '';
+  for (let j = 0; j < k; j++) { const o = (j - (k - 1) / 2) * 10; d += `M${mx + ux * o - nx} ${my + uy * o - ny}L${mx + ux * o + nx} ${my + uy * o + ny}`; }
+  return d;
+}
+// Answer effect: the label e ('?') gives way to the found value, written in its place.
+function c30Reveal(e, str, col) {
+  const t = T(qlayer(), str, { x: st(e).x, y: st(e).y, size: 32, fill: col, anchor: 'middle', weight: 700, o: 0 });
+  fx(e, { o: 0 }, 0, .2); fx(t, { o: 1 }, .15, .4);
+}
+// A stick of length L px hinged at (x, y), turned r degrees (0 = pointing right), drawn as a thick rounded bar.
+function c30Stick(p, x, y, L, r, col, t0) {
+  const g = G(p, { x, y, r, o: t0 === undefined ? 1 : 0 });
+  path(g, `M0 0H${L}`, { stroke: col, 'stroke-width': 12 });
+  mk('circle', { cx: 0, cy: 0, r: 7, fill: COL.board, stroke: col, 'stroke-width': 3 }, g);
+  if (t0 !== undefined) show(g, t0, .4);
+  return g;
+}
+// A bundle of sticks drawn to scale (u px per cm), one above another, with their lengths.
+function c30Bundle(p, x, y, lens, u, t0) {
+  const g = G(p, { o: 0 });
+  lens.forEach((L, i) => {
+    path(g, `M${x} ${y + i * 62}h${L * u}`, { stroke: [KL.NUM, KL.DEN, COL.chalk][i], 'stroke-width': 12 });
+    T(g, `${L} см`, { x: x + L * u + 22, y: y + i * 62 + 11, size: 30, fill: COL.dim, weight: 600 });
+  });
+  show(g, t0);
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Треугольник', (m, D) => klIntro(m, D, {
+    unit: 'Глава 7 · Геометрия · Тема 7.2',
+    title: 'Треугольник',
+    sub: 'Сумма углов, виды треугольников и из каких отрезков он складывается',
+    art: (g, t0) => c30Full(g, c30Tri(700, 720, 200, 50, 70), [null, null, null], t0, { r: 34 }),
+  })],
+
+  ['sum', 'Сумма углов', m => {
+    const p = panel(0);
+    klTitle(p, 'Сумма углов треугольника');
+    const pts = c30Tri(150, 660, 500, 50, 70), O = [1150, 620];
+    c30Poly(p, pts, m('tri'));
+    ['A', 'B', 'C'].forEach((n, i) => klText(p, n, pts[i][0] + [-34, 34, 0][i], pts[i][1] + [30, 30, -24][i], m('tri') + .6, { size: 30, fill: COL.dim, anchor: 'middle' }));
+    // the corners, ready to be torn off
+    const ang = pts.map((V, i) => c30Angle(p, V, pts[(i + 1) % 3], pts[(i + 2) % 3], { r: 110, col: ANG[i], op: .8, t0: m('angles') + i * .5 }));
+    const labs = pts.map((V, i) => c30Lab(p, V, pts[(i + 1) % 3], pts[(i + 2) % 3], ['50°', '70°', '60°'][i], m('angles') + .2 + i * .5, { d: 150, fill: ANG[i] }));
+    // the line and its point
+    draw(path(p, `M850 ${O[1]}H1490`, { stroke: COL.chalk, 'stroke-width': 4 }, { d: 0 }), m('line'), .7);
+    const o = mk('circle', { cx: O[0], cy: O[1], r: 8, fill: COL.chalk }, p); put(o, { o: 0 }); show(o, m('line') + .5, .3);
+    // the cuts: the outlines left where the corners were
+    pts.forEach((V, i) => {
+      const g = G(p, { x: V[0], y: V[1] });
+      draw(path(g, c30ArcD(110, ang[i]._s, ang[i]._w), { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), m('tear') + i * .25, .6);
+    });
+    labs.forEach((e, i) => hide(e, m('tear') + .8 + i * .1, .4));
+    ang.forEach((g, i) => { tw(g, { s: 1.08 }, m('tear') + .9 + i * .15, .25, out); tw(g, { s: 1 }, m('tear') + 1.15 + i * .15, .3); });
+    // laid side by side at O: 50, then 60, then 70 fill the straight angle
+    c30Lay(ang[0], O, -180, m('a'));
+    c30Lay(ang[2], O, -130, m('c'));
+    c30Lay(ang[1], O, -70, m('b'));
+    [['50°', -155, 0], ['60°', -100, 2], ['70°', -35, 1]].forEach(([s, a, i], k) => {
+      const [dx, dy] = c30P(160, a);
+      klText(p, s, O[0] + dx, O[1] + dy + 11, [m('a'), m('c'), m('b')][k] + 1, { size: 32, fill: ANG[i], anchor: 'middle', weight: 600 });
+    });
+    [0, 2, 1].forEach((i, k) => pulse(ang[i], m('flat') + 2.2 + k * .5, 1.08));
+    const big = G(p, { x: O[0], y: O[1] });
+    draw(path(big, c30ArcD(200, -180, 180), { stroke: RULE, 'stroke-width': 5 }, { d: 0 }), m('flat'), 1);
+    klText(p, 'развёрнутый угол', O[0], O[1] + 60, m('flat') + .6, { size: 30, fill: COL.dim, anchor: 'middle' });
+    klText(p, '180°', O[0], O[1] - 222, m('sum'), { size: 44, fill: RULE, anchor: 'middle', weight: 700 });
+    klRow(p, [{ m: '50° + 70° + 60° = 180°', fill: RULE }], 400, 790, m('sum') + .5, { msize: 52 });
+  }],
+
+  ['again', 'Любой треугольник', m => {
+    const p = panel(0);
+    klTitle(p, 'А если треугольник другой?');
+    const pts = c30Tri(120, 600, 560, 30, 40), O = [1150, 600];
+    c30Poly(p, pts, m('tri') - .4);
+    const ang = pts.map((V, i) => c30Angle(p, V, pts[(i + 1) % 3], pts[(i + 2) % 3], { r: 90, col: ANG[i], op: .8, t0: m('tri') + .4 + i * .3 }));
+    const labs = pts.map((V, i) => c30Lab(p, V, pts[(i + 1) % 3], pts[(i + 2) % 3], ['30°', '40°', '110°'][i], m('tri') + [3.8, 4.8, 2.6][i], { d: [170, 150, 125][i], fill: ANG[i] }));
+    pulse(ang[2], m('tri') + 2.4, 1.1);
+    path(p, `M850 ${O[1]}H1490`, { stroke: COL.chalk, 'stroke-width': 4 });
+    mk('circle', { cx: O[0], cy: O[1], r: 8, fill: COL.chalk }, p);
+    pts.forEach((V, i) => {
+      const g = G(p, { x: V[0], y: V[1] });
+      draw(path(g, c30ArcD(90, ang[i]._s, ang[i]._w), { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), m('tear') + i * .15, .5);
+    });
+    labs.forEach((e, i) => hide(e, m('tear') + .3, .4));
+    c30Lay(ang[0], O, -180, m('lay'), 1);
+    c30Lay(ang[2], O, -150, m('lay') + .5, 1);
+    c30Lay(ang[1], O, -40, m('lay') + 1, 1);
+    [['30°', -165, 0, 185], ['110°', -95, 2, 140], ['40°', -20, 1, 165]].forEach(([s, a, i, d]) => {
+      const [dx, dy] = c30P(d, a);
+      klText(p, s, O[0] + dx, O[1] + dy + 11, m('lay') + 2, { size: 32, fill: ANG[i], anchor: 'middle', weight: 600 });
+    });
+    const big = G(p, { x: O[0], y: O[1] });
+    draw(path(big, c30ArcD(225, -180, 180), { stroke: RULE, 'stroke-width': 5 }, { d: 0 }), m('flat'), 1);
+    klText(p, '180°', O[0], O[1] - 246, m('flat') + .7, { size: 44, fill: RULE, anchor: 'middle', weight: 700 });
+    const rule = G(p, { x: 800, y: 0 });
+    klRow(rule, ['Сумма углов любого треугольника ', { m: '= 180°', fill: RULE }], 0, 790, m('rule'), { size: 40, weight: 600, fill: RULE, msize: 52 });
+    pulse(rule, m('rule') + 2.4, 1.06);
+  }],
+
+  ['third', 'Третий угол', m => {
+    const p = panel(0);
+    klTitle(p, 'Как найти третий угол');
+    const pts = c30Tri(120, 640, 500, 35, 75), O = [1140, 560], R = 230;
+    const f = c30Full(p, pts, ['35°', '75°', '?'], .2);
+    f.text.slice(0, 2).forEach(e => { put(e, { o: 0 }); show(e, m('two')); });
+    pulse(f.text[2], m('q'), 1.4);
+    // the straight angle: all three together
+    const g = G(p, { x: O[0], y: O[1] });
+    path(g, `M${-R - 30} 0H${R + 30}`, { stroke: COL.chalk, 'stroke-width': 4 }, { d: 0 });
+    draw(g.lastChild, m('half') - .3, .4);
+    draw(path(g, c30ArcD(R, -180, 180), { stroke: RULE, 'stroke-width': 5 }, { d: 0 }), m('half'), .9);
+    klText(p, '180°', O[0], O[1] - R - 22, m('half') + .5, { size: 40, fill: RULE, anchor: 'middle', weight: 700 });
+    const sec = [[-180, 35, 0], [-145, 75, 1], [-70, 70, 2]].map(([s, w, i]) => {
+      const e = path(g, c30SectorD(R, s, w), { fill: ANG[i], 'fill-opacity': .75, stroke: COL.board, 'stroke-width': 3 });
+      put(e, { o: 0 });
+      return e;
+    });
+    show(sec[0], m('two') + .3); show(sec[1], m('two') + 1.4);
+    const sl = [['35°', -162.5, 0], ['75°', -107.5, 1], ['70°', -35, 2]].map(([s, a, i]) => {
+      const [dx, dy] = c30P(R * .66, a);
+      return klText(p, s, O[0] + dx, O[1] + dy + 12, i < 2 ? m('two') + .5 + i : m('rest') + .3, { size: 34, fill: COL.board, anchor: 'middle', weight: 700 });
+    });
+    // take the two known angles away: what is left is the third
+    tw(sec[0], { o: .18 }, m('minus'), .6); tw(sec[1], { o: .18 }, m('minus') + .5, .6);
+    tw(sl[0], { o: .3 }, m('minus'), .6); tw(sl[1], { o: .3 }, m('minus') + .5, .6);
+    show(sec[2], m('rest'));
+    klRow(p, [{ m: '180° − 35° − 75° =' }], 1300, 720, m('minus') + .3, { msize: 52, anchor: 'end' });
+    klRow(p, [{ m: '70°', fill: ANG[2] }], 1320, 720, m('rest') + .2, { msize: 52, anchor: 'start' });
+    hide(f.text[2], m('ans'), .3);
+    c30Lab(p, pts[2], pts[0], pts[1], '70°', m('ans') + .2, { fill: ANG[2] });
+    pulse(f.ang[2], m('ans') + .3, 1.15);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const pts = c30Tri(500, 580, 600, 25, 55);
+    S.q1 = c30Full(p, [pts[0], pts[2], pts[1]], ['25°', '100°', '?'], .2);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-tretiy', prompt: 'Два угла треугольника равны 25° и 100°. Найди третий угол.',
+    build: blanks([{ parts: ['? = ', { box: '55' }, ' градусов'], why: '180° − 25° − 100° = 55°.',
+      hint: 'Все три угла вместе — 180°. Вычти из 180° два известных угла.',
+      fx: () => { c30Reveal(S.q1.text[2], '55°', ANG[2]); pulseFx(S.q1.ang[2], 1.15); } }]),
+  }], done) }],
+
+  ['kinds', 'Виды по углам', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Треугольники по углам');
+    const A = [470, 690], B = [970, 690], yC = 340;
+    const tri = path(p, '', { stroke: COL.chalk, 'stroke-width': 5 });
+    const marks = [0, 1, 2].map(i => { const g = G(p); return { g, fill: path(g, '', { fill: ANG[i], 'fill-opacity': .35 }), arc: path(g, '', { stroke: ANG[i], 'stroke-width': 4 }) }; });
+    const sq = path(marks[0].g, '', { stroke: ANG[0], 'stroke-width': 4 });
+    const labs = [0, 1, 2].map(i => T(p, '', { size: 32, fill: ANG[i], anchor: 'middle', weight: 600 }));
+    const sum = T(p, '', { x: 1240, y: 300, size: 38, fill: COL.chalk, anchor: 'middle', weight: 600, font: MATH });
+    const keys = [[0, 770], [m('move'), 770], [m('move') + 1.6, 900], [m('move') + 3.4, 680], [m('move') + 4.8, 770],
+      [m('right'), 770], [m('right') + 1.6, 470], [m('obtuse'), 470], [m('obtuse') + 1.4, 330]];
+    clockRun(t => {
+      const C = [c30Keys(t, keys), yC], pts = [A, B, C];
+      tri.setAttribute('d', c30PolyD(pts));
+      const val = [];
+      pts.forEach((V, i) => {
+        const P1 = pts[(i + 1) % 3], P2 = pts[(i + 2) % 3], [s, w] = c30Span(V, P1, P2);
+        const right = i === 0 && Math.abs(w - 90) < .6;
+        marks[i].fill.setAttribute('d', right ? '' : c30SectorD(56, s, w));
+        marks[i].arc.setAttribute('d', right ? '' : c30ArcD(56, s, w));
+        marks[i].g.setAttribute('transform', `translate(${V[0]},${V[1]})`);
+        if (i === 0) sq.setAttribute('d', right ? c30SquareD(32, s) : '');
+        val.push(Math.round(w));
+        const [lx, ly] = c30LabXY(V, P1, P2, 104);
+        labs[i].setAttribute('x', lx); labs[i].setAttribute('y', ly);
+      });
+      val[2] = 180 - val[0] - val[1];
+      labs.forEach((e, i) => { e.textContent = val[i] + '°'; });
+      sum.textContent = `${val[0]}° + ${val[1]}° + ${val[2]}° = 180°`;
+    }, D);
+    const name = (str, t0, t1, col = COL.chalk) => { const e = klText(p, str, 1240, 420, t0, { size: 42, fill: col, anchor: 'middle', weight: 700 }); if (t1) hide(e, t1, .3); return e; };
+    name('остроугольный', m('acute'), m('right') + .3);
+    hide(klText(p, 'все углы острые', 1240, 470, m('acute') + .4, { size: 28, fill: COL.dim, anchor: 'middle' }), m('right') + .3, .3);
+    name('прямоугольный', m('right') + 1.4, m('obtuse') + .3);
+    [1, 2].forEach(i => { tw(labs[i], { c_fill: RULE }, m('right') + 3 + (i - 1) * .5, .4); tw(labs[i], { c_fill: ANG[i] }, m('obtuse'), .4);
+      tw(marks[i].fill, { 'a_fill-opacity': .85 }, m('right') + 3 + (i - 1) * .5, .4); tw(marks[i].fill, { 'a_fill-opacity': .35 }, m('obtuse'), .4); });
+    const n90 = klRow(p, [{ m: ['35° + 55° = 90°'], fill: RULE }], 1240, 480, m('ninety'), { msize: 44 });
+    hide(n90, m('obtuse') + .3, .3);
+    name('тупоугольный', m('obtuse') + 1.2);
+    klText(p, 'один угол тупой', 1240, 470, m('obtuse') + 1.5, { size: 28, fill: COL.dim, anchor: 'middle' });
+    klRow(p, ['на два других: ', { m: '180° − 112° = 68°', fill: RULE }], 1240, 580, m('one') + .5, { size: 30, msize: 40 });
+    klText(p, 'прямой или тупой — только один', 1260, 650, m('one') + 2.5, { size: 28, fill: RULE, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q2 = [[40, 60, 80], [20, 50, 110], [35, 55, 90]].map(([a, b], k) => {
+      const cx = 300 + k * 500, pts = c30Tri(cx - 190, 560, 380, a, b);
+      return c30Full(p, pts, [a + '°', b + '°', '?'], .2 + k * .2, { r: 46, lab: { size: 30, d: [0, 0, k === 1 ? -44 : 0] } });
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-tupoy', prompt: 'Какой треугольник тупоугольный? Найди третий угол и выбери треугольник на рисунке.',
+    build: pickEls(S.q2.map((f, k) => ({ el: f.tri, box: [300 + k * 500 - 225, 210, 450, 420], label: ['первый', 'второй', 'третий'][k] })), 1,
+      '180° − 20° − 50° = 110°: этот угол тупой.',
+      k => k === 0 ? 'Третий угол здесь 180° − 40° − 60° = 80°: все углы острые.' : 'Третий угол здесь 180° − 35° − 55° = 90°: он прямой, а не тупой.',
+      () => S.q2.forEach((f, k) => c30Reveal(f.text[2], ['80°', '110°', '90°'][k], ANG[2]))),
+  }], done) }],
+
+  ['sides', 'Виды по сторонам', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Треугольники по сторонам');
+    const A = [600, 700], B = [1000, 700];
+    const tri = path(p, '', { stroke: COL.chalk, 'stroke-width': 5 });
+    const tk = [0, 1, 2].map(() => { const g = G(p, { o: 0 }); return { g, e: path(g, '', { stroke: RULE, 'stroke-width': 5 }) }; });
+    const keys = [[0, 800, 430], [m('equi') - .2, 800, 430], [m('equi') + 1.2, 800, 700 - 200 * Math.sqrt(3)], [m('scal'), 800, 700 - 200 * Math.sqrt(3)], [m('scal') + 1.4, 935, 410]];
+    clockRun(t => {
+      const C = [c30Keys(t, keys.map(k => [k[0], k[1]])), c30Keys(t, keys.map(k => [k[0], k[2]]))];
+      tri.setAttribute('d', c30PolyD([A, B, C]));
+      tk[0].e.setAttribute('d', c30TickD(A, C)); tk[1].e.setAttribute('d', c30TickD(B, C)); tk[2].e.setAttribute('d', c30TickD(A, B));
+    }, D);
+    const C0 = [800, 430];
+    [[A, B], [B, C0], [C0, A]].forEach(([P, Q], i) => {
+      const e = path(p, `M${P.join(' ')}L${Q.join(' ')}`, { stroke: RULE, 'stroke-width': 8 }, { d: 0 });
+      draw(e, m('sides') + i * .6, .5); hide(e, m('ticks') - .2, .4);
+    });
+    const C2 = [935, 410];
+    [[A, B], [B, C2], [C2, A]].forEach(([P, Q], i) => {
+      const e = path(p, `M${P.join(' ')}L${Q.join(' ')}`, { stroke: ANG[i], 'stroke-width': 8 }, { d: 0 });
+      draw(e, m('scal') + 2.6 + i * .5, .5);
+    });
+    show(tk[0].g, m('ticks'), .3); show(tk[1].g, m('ticks') + .3, .3);
+    pulse(tk[0].g, m('ticks') + .6, 1); show(tk[2].g, m('equi') + 1.2, .3);
+    [tk[0].g, tk[1].g, tk[2].g].forEach(g => hide(g, m('scal') + .2, .4));
+    const name = (str, sub, t0, t1) => {
+      const e = klText(p, str, 800, 790, t0, { size: 42, weight: 700, anchor: 'middle' });
+      const s = klText(p, sub, 800, 840, t0 + .3, { size: 28, fill: COL.dim, anchor: 'middle' });
+      if (t1) { hide(e, t1, .3); hide(s, t1, .3); }
+    };
+    name('равнобедренный', 'две стороны равны', m('iso'), m('equi'));
+    name('равносторонний', 'все три стороны равны', m('equi') + 1.3, m('scal'));
+    name('разносторонний', 'все стороны разные', m('scal') + 1.5);
+    klText(p, 'равные стороны —', 1170, 420, m('ticks') + .4, { size: 28, fill: COL.dim });
+    klText(p, 'равные чёрточки', 1170, 460, m('ticks') + .5, { size: 28, fill: RULE });
+  }],
+
+  ['iso', 'Равнобедренный и равносторонний', m => {
+    const p = panel(0);
+    klTitle(p, 'Углы равнобедренного треугольника');
+    const A = [340, 720], B = [680, 720], C = [510, 720 - 170 * Math.tan(70 * Math.PI / 180)];
+    const f = c30Full(p, [A, B, C], [null, null, null], .2, { cols: [KL.NUM, KL.NUM, KL.DEN] });
+    const tk = path(p, c30TickD(A, C) + c30TickD(B, C), { stroke: RULE, 'stroke-width': 5 });
+    put(tk, { o: 0 }); show(tk, .6);
+    klText(p, 'основание', 510, 770, .8, { size: 26, fill: COL.dim, anchor: 'middle' });
+    pulse(f.ang[0], m('base'), 1.25); pulse(f.ang[1], m('base') + .3, 1.25);
+    // fold along the axis: the right half lands on the left one
+    const axis = path(p, `M510 ${C[1] - 20}V740`, { stroke: COL.dim, 'stroke-width': 3, 'stroke-dasharray': '10 9' });
+    put(axis, { o: 0 }); show(axis, m('fold') - .3, .3);
+    const fg = G(p, { o: 0 }), half = G(fg);
+    path(half, c30PolyD([[510, 720], B, C]), { fill: KL.NUM, 'fill-opacity': .22, stroke: KL.NUM, 'stroke-width': 4 });
+    show(fg, m('fold'), .3);
+    prog(q => half.setAttribute('transform', `translate(510 0) scale(${1 - 2 * q} 1) translate(-510 0)`), m('fold') + .3, 1.4);
+    hide(fg, m('fold') + 2.6, .5); hide(axis, m('fold') + 2.6, .5);
+    c30Lab(p, C, A, B, '40°', m('top'), { d: 120, fill: KL.DEN });
+    klRow(p, [{ m: '180° − 40° = 140°' }], 1120, 330, m('rest'), { msize: 50 });
+    klRow(p, [{ m: '140° : 2 = 70°', fill: KL.NUM }], 1120, 410, m('half'), { msize: 50 });
+    c30Lab(p, A, B, C, '70°', m('half') + .5, { fill: KL.NUM });
+    c30Lab(p, B, C, A, '70°', m('half') + .6, { fill: KL.NUM });
+    // equilateral: three equal angles
+    const E = c30Tri(900, 760, 240, 60, 60);
+    c30Full(p, E, [null, null, null], m('equi'), { r: 36, cols: [KL.TWO, KL.TWO, KL.TWO] });
+    const te = path(p, c30TickD(E[0], E[1]) + c30TickD(E[1], E[2]) + c30TickD(E[2], E[0]), { stroke: RULE, 'stroke-width': 5 });
+    put(te, { o: 0 }); show(te, m('equi') + .8);
+    E.forEach((V, i) => c30Lab(p, V, E[(i + 1) % 3], E[(i + 2) % 3], '60°', m('sixty') + 1 + i * .2, { d: 72, size: 26, fill: KL.TWO }));
+    klRow(p, [{ m: '180° : 3 = 60°', fill: KL.TWO }], 1190, 680, m('sixty'), { msize: 44, anchor: 'start' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const A = [680, 600], B = [920, 600], C = [800, 600 - 120 * Math.tan(75 * Math.PI / 180)];
+    S.q3 = c30Full(p, [A, B, C], ['75°', '75°', '?'], .2, { cols: [KL.NUM, KL.NUM, KL.DEN], lab: { d: 100 } });
+    const tk = path(p, c30TickD(A, C) + c30TickD(B, C), { stroke: RULE, 'stroke-width': 5 });
+    put(tk, { o: 0 }); show(tk, .6);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-vershina', prompt: 'Треугольник равнобедренный, угол при основании 75°. Найди угол при вершине.',
+    build: blanks([{ parts: ['? = ', { box: '30' }, ' градусов'], why: 'Оба угла при основании по 75°: 180° − 75° − 75° = 30°.',
+      hint: 'Углы при основании равны: оба по 75°. Вычти их из 180°.',
+      fx: () => { c30Reveal(S.q3.text[2], '30°', KL.DEN); pulseFx(S.q3.ang[2], 1.15); } }]),
+  }], done) }],
+
+  ['sticks', 'Из трёх отрезков', m => {
+    const p = panel(0);
+    klTitle(p, 'Сложится ли треугольник?');
+    const u = 100, k = Math.PI / 180;
+    // 3, 4, 5: the short sticks rise and their ends meet
+    klText(p, '3 см, 4 см, 5 см', 450, 250, m('s1'), { size: 34, weight: 600, anchor: 'middle' });
+    const b1 = c30Stick(p, 200, 600, 5 * u, 0, COL.chalk, .3);
+    const s3 = c30Stick(p, 200, 600, 3 * u, -90, KL.NUM, .6), s4 = c30Stick(p, 700, 600, 4 * u, -90, KL.DEN, .9);
+    [s3, s4, b1].forEach((g, i) => pulse(g, m('s1') + .6 + i, 1.05));
+    hide(klText(p, '3 см', 160, 460, m('s1') + .6, { size: 30, fill: KL.NUM, anchor: 'end', weight: 600 }), m('up'), .3);
+    hide(klText(p, '4 см', 740, 410, m('s1') + 1.6, { size: 30, fill: KL.DEN, weight: 600 }), m('up'), .3);
+    pulse(b1, m('base'), 1.04);
+    const a3 = Math.acos(.6) / k, a4 = Math.acos(.8) / k;
+    tw(s3, { r: -a3 }, m('up'), 1.8); tw(s4, { r: a4 - 180 }, m('up'), 1.8);
+    const C1 = [200 + 300 * .6, 600 - 300 * .8];
+    const dot = mk('circle', { cx: C1[0], cy: C1[1], r: 14, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
+    put(dot, { o: 0 }); show(dot, m('meet'), .3);
+    klMark(p, 450, 690, m('meet') + .4);
+    klRow(p, [{ m: '5 < 3 + 4' }], 450, 770, m('meet') + .8, { msize: 44, fill: COL.dim });
+    // 2, 3, 6: lying flat they still do not reach
+    klText(p, '2 см, 3 см, 6 см', 1150, 250, m('s2'), { size: 34, weight: 600, anchor: 'middle' });
+    c30Stick(p, 850, 600, 6 * u, 0, COL.chalk, m('s2') + .3);
+    const s2 = c30Stick(p, 850, 600, 2 * u, -70, KL.NUM, m('s2') + .5), s3b = c30Stick(p, 1450, 600, 3 * u, -110, KL.DEN, m('s2') + .7);
+    tw(s2, { r: -35 }, m('down'), 1); tw(s3b, { r: -145 }, m('down'), 1);
+    tw(s2, { r: 0 }, m('down') + 1.1, 1); tw(s3b, { r: -180 }, m('down') + 1.1, 1);
+    const gap = G(p, { o: 0 });
+    path(gap, 'M1050 560V640M1150 560V640', { stroke: COL.bad, 'stroke-width': 4, 'stroke-dasharray': '8 7' });
+    T(gap, 'не достают', { x: 1100, y: 530, size: 28, fill: COL.bad, anchor: 'middle', weight: 600 });
+    show(gap, m('gap'), .4);
+    klMark(p, 1150, 690, m('gap') + .4, false);
+    klRow(p, [{ m: '2 + 3 = 5 < 6' }], 1150, 770, m('less'), { msize: 44, fill: COL.dim });
+    const rule = G(p, { x: 800, y: 860 });
+    klRow(rule, ['Большая сторона ', { m: '<', fill: RULE }, ' суммы двух других'], 0, 0, m('rule'), { size: 38, weight: 600, fill: RULE, msize: 46 });
+    pulse(rule, m('rule') + 2.6, 1.06);
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const u = 110;
+    const claim = klRow(p, [{ m: '2 см, 3 см, 5 см' }, '  →  треугольник'], 800, 270, m('claim'), { size: 38, msize: 46, weight: 600 });
+    c30Stick(p, 525, 600, 5 * u, 0, COL.chalk, m('claim') + .3);
+    const s2 = c30Stick(p, 525, 600, 2 * u, -90, KL.NUM, m('claim') + .5), s3 = c30Stick(p, 1075, 600, 3 * u, -90, KL.DEN, m('claim') + .7);
+    tw(s2, { r: -48 }, m('up'), 1.3); tw(s3, { r: -150 }, m('up'), 1.3);
+    klStrike(p, 800 - claim._w / 2 - 10, 258, 800 + claim._w / 2 + 10, 276, m('strike'));
+    klRow(p, [{ m: '2 + 3 = 5', fill: COL.bad }], 800, 360, m('strike') + .4, { msize: 50 });
+    tw(s2, { r: 0 }, m('flat'), 1.4); tw(s3, { r: -180 }, m('flat'), 1.4);
+    klText(p, 'сплющился в отрезок', 800, 680, m('flat') + 1.6, { size: 30, fill: COL.dim, anchor: 'middle' });
+    klRow(p, [{ m: '5 < 2 + 3' }, '  ?'], 470, 790, m('right'), { size: 36, msize: 46, weight: 600, fill: COL.good });
+    klRow(p, ['нет:  ', { m: '5 = 2 + 3' }], 860, 790, m('right') + 2.4, { size: 36, msize: 46, weight: 600, fill: COL.good });
+    klRow(p, ['→  нельзя'], 1200, 790, m('right') + 4.2, { size: 36, weight: 600, fill: COL.good });
+    klMark(p, 1360, 778, m('right') + 4.4, false, .8);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q4 = [[3, 4, 8], [5, 6, 10], [4, 5, 10]].map((L, k) => c30Bundle(p, 170 + k * 460, 300, L, 30, .2 + k * .2));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-palochki', prompt: 'Из каких палочек сложится треугольник? Выбери набор на рисунке.',
+    build: pickEls(S.q4.map((g, k) => ({ el: g, box: [170 + k * 460 - 30, 250, 420, 220], label: ['первый', 'второй', 'третий'][k] })), 1,
+      '10 < 5 + 6 = 11: большая палочка короче двух других вместе.',
+      k => k === 0 ? '3 + 4 = 7, а это меньше 8: короткие палочки не достанут друг до друга.' : '4 + 5 = 9, а это меньше 10: короткие палочки не достанут друг до друга.',
+      () => { const t = T(qlayer(), '10 < 5 + 6', { x: 800, y: 520, size: 34, fill: COL.good, anchor: 'middle', weight: 700, o: 0 }); fx(t, { o: 1 }, .1, .4); }),
+  }], done) }],
+
+  ['quad', 'Четырёхугольник', m => {
+    const p = panel(0);
+    klTitle(p, 'Сумма углов четырёхугольника');
+    const Q = [[200, 660], [760, 720], [860, 300], [360, 250]];
+    c30Poly(p, Q, m('quad') - .2);
+    const t1 = path(p, c30PolyD([Q[0], Q[1], Q[2]]), { fill: KL.NUM, 'fill-opacity': .25 }), t2 = path(p, c30PolyD([Q[0], Q[2], Q[3]]), { fill: KL.DEN, 'fill-opacity': .25 });
+    put(t1, { o: 0 }); put(t2, { o: 0 });
+    draw(path(p, `M${Q[0].join(' ')}L${Q[2].join(' ')}`, { stroke: RULE, 'stroke-width': 4 }, { d: 0 }), m('diag'), .8);
+    show(t1, m('diag') + .8); show(t2, m('diag') + 1.1);
+    klText(p, '180°', (Q[0][0] + Q[1][0] + Q[2][0]) / 3, (Q[0][1] + Q[1][1] + Q[2][1]) / 3 + 12, m('two'), { size: 38, fill: KL.NUM, anchor: 'middle', weight: 700 });
+    klText(p, '180°', (Q[0][0] + Q[2][0] + Q[3][0]) / 3, (Q[0][1] + Q[2][1] + Q[3][1]) / 3 + 12, m('two') + .6, { size: 38, fill: KL.DEN, anchor: 'middle', weight: 700 });
+    klRow(p, [{ m: '2 · 180° = 360°', fill: RULE }], 1230, 300, m('sum'), { msize: 52 });
+    const R = [1080, 440, 300, 200];
+    c30Poly(p, [[R[0], R[1]], [R[0] + R[2], R[1]], [R[0] + R[2], R[1] + R[3]], [R[0], R[1] + R[3]]], m('rect'));
+    const corners = [[R[0], R[1], 0], [R[0] + R[2], R[1], 90], [R[0] + R[2], R[1] + R[3], 180], [R[0], R[1] + R[3], 270]];
+    corners.forEach(([x, y, s], i) => { const g = G(p, { x, y, o: 0 }); path(g, c30SquareD(28, s), { stroke: KL.TWO, 'stroke-width': 4 }); show(g, m('rect') + .8 + i * .3, .3); });
+    klRow(p, [{ m: '4 · 90° = 360°', fill: KL.TWO }], 1230, 760, m('rect') + 2.2, { msize: 48 });
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Сумма углов любого треугольника ', { m: '= 180°' }],
+    'По углам: остроугольный, прямоугольный, тупоугольный',
+    ['Равнобедренный: углы при основании равны; равносторонний: по ', { m: '60°' }],
+    'Большая сторона меньше суммы двух других',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-tretiy', prompt: 'Два угла треугольника равны 48° и 77°. Найди третий угол.',
+    build: blanks([{ parts: ['третий угол = ', { box: '55' }, ' градусов'], why: '180° − 48° − 77° = 55°.', hint: 'Вычти два известных угла из 180°.' }]),
+  }, {
+    id: 'p-pryamoy', prompt: 'Один острый угол прямоугольного треугольника равен 28°. Найди другой острый угол.',
+    build: blanks([{ parts: ['другой острый угол = ', { box: '62' }, ' градусов'], why: 'Два острых угла прямоугольного треугольника вместе дают 90°: 90° − 28° = 62°.', hint: 'Один угол прямой, 90°. На два других остаётся 90°.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-osnovanie', prompt: 'Угол при вершине равнобедренного треугольника равен 50°. Найди угол при основании.',
+    build: blanks([{ parts: ['угол при основании = ', { box: '65' }, ' градусов'], why: '(180° − 50°) : 2 = 130° : 2 = 65°.', hint: 'Углы при основании равны: (180° − 50°) : 2.' }]),
+  }, {
+    id: 'p-dva-tupyh', prompt: 'Может ли в треугольнике быть два тупых угла?',
+    build: choice(['да', 'нет'], 1, 'Два тупых угла вместе больше 180°, а на все три угла есть только 180°.',
+      ['Тупой угол больше 90°. Два таких — уже больше 180°, а это сумма всех трёх углов.', null]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-otrezki', prompt: 'Из каких отрезков можно сложить треугольник?',
+    build: choice(['2 см, 4 см, 7 см', '3 см, 5 см, 8 см', '4 см, 6 см, 9 см'], 2, '9 < 4 + 6 = 10: большая сторона меньше суммы двух других.',
+      ['2 + 4 = 6, а это меньше 7: короткие отрезки не достанут друг до друга.', '3 + 5 = 8 — ровно столько же, сколько большой: треугольник сплющится в отрезок.', null]),
+  }, {
+    id: 'p-vidy', prompt: 'Даны углы треугольника. Какой это треугольник?',
+    build: grid([
+      { parts: ['90°, 45°, 45°'], ans: ['p'], why: 'Один угол прямой.' },
+      { parts: ['60°, 60°, 60°'], ans: ['o'], why: 'Все углы острые.' },
+      { parts: ['100°, 40°, 40°'], ans: ['t'], why: 'Угол 100° тупой.' },
+      { parts: ['30°, 70°, 80°'], ans: ['o'], why: 'Все три угла меньше 90°.' },
+    ], [['o', 'остроугольный', null, '1'], ['p', 'прямоугольный', null, '2'], ['t', 'тупоугольный', null, '3']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

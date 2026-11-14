@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Многогранники и развёртки · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 7.4 «Многогранники и развёртки» (5–6 класс). Beat ids match papermorph/content/uroki/ch32/narration.ru.json.
+const CHAPTER = { number: 32, label: '7.4', title: 'Многогранники и развёртки', minutes: 8, language: 'ru', next: '../ch33/' };
+
+// Colours of this topic: faces KL.DEN, edges KL.TWO, vertices KL.NUM, the rule KL.RULE.
+const FACE = KL.DEN, EDGE = KL.TWO, VERT = KL.NUM, RULE = KL.RULE;
+const c32D = Math.PI / 180;
+
+/* ---------- solids in parallel projection ---------- */
+// A colour between c and the board: k = 1 is c itself (opaque faces that hide what lies behind them).
+function c32Mix(c, k) {
+  const a = parseInt(c.slice(1), 16), b = parseInt(COL.board.slice(1), 16);
+  const ch = s => Math.round(((a >> s) & 255) * k + ((b >> s) & 255) * (1 - k));
+  return '#' + [16, 8, 0].map(s => ch(s).toString(16).padStart(2, '0')).join('');
+}
+// The view of a solid: world x, y on the table and z up, turned by az about z and seen from el degrees above the
+// table (el 90: straight from above, the table's y going down the screen). look is the world point drawn at (cx, cy),
+// s the pixels per unit. P maps a world point to the screen; depth grows towards the viewer.
+function c32View({ cx = 800, cy = 450, s = 200, az = 30, el = 30, look = [0, 0, 0] }) {
+  const a = az * c32D, b = el * c32D, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+  const loc = ([x, y, z]) => { x -= look[0]; y -= look[1]; z -= look[2]; return [x * ca - y * sa, x * sa + y * ca, z]; };
+  return {
+    P: q => { const [x1, y1, z] = loc(q); return [cx + s * x1, cy + s * (y1 * sb - z * cb)]; },
+    depth: q => { const [, y1, z] = loc(q); return y1 * cb + z * sb; },
+    eye: [sa * cb, ca * cb, sb],
+  };
+}
+// A view blended from a to b by q (0..1); keys missing in b keep a's value.
+function c32Blend(a, b, q) {
+  const o = { ...a };
+  for (const k in b) o[k] = Array.isArray(b[k]) ? b[k].map((v, i) => a[k][i] + (v - a[k][i]) * q) : a[k] + (b[k] - a[k]) * q;
+  return o;
+}
+// An eased 0..1 ramp from t0 over d seconds.
+const c32R = (t, t0, d) => io(Math.max(0, Math.min(1, (t - t0) / d)));
+const c32Sub = (a, b) => a.map((v, i) => v - b[i]);
+const c32Cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const c32Dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// Turn point q about the line through P0 with unit direction a by ang radians (Rodrigues).
+function c32Rot(q, P0, a, ang) {
+  const v = c32Sub(q, P0), c = Math.cos(ang), s = Math.sin(ang), cr = c32Cross(a, v), d = c32Dot(a, v);
+  return [0, 1, 2].map(i => P0[i] + v[i] * c + cr[i] * s + a[i] * d * (1 - c));
+}
+
+// A solid as a wire picture, still: vertices V (world), faces F (vertex lists). Faces are faint KL.DEN, edges chalk
+// (dashed where both their faces turn away), vertices hidden KL.NUM dots. Shown at t0. Returns { g, P (screen points),
+// faces, edges: [{ e, a, b, hid }], verts, edge(a, b) }.
+function c32Solid(p, V, F, view, { t0 = .2, fop = .1, w = 3.5 } = {}) {
+  const g = G(p, { o: 0 });
+  if (t0 !== undefined) show(g, t0);
+  const lo = [0, 1, 2].map(i => Math.min(...V.map(v => v[i]))), hi = [0, 1, 2].map(i => Math.max(...V.map(v => v[i])));
+  const vw = c32View({ ...view, look: lo.map((v, i) => (v + hi[i]) / 2) });
+  const P = V.map(vw.P), C = V.reduce((s, v) => s.map((q, i) => q + v[i] / V.length), [0, 0, 0]);
+  const front = F.map(f => {
+    let n = c32Cross(c32Sub(V[f[1]], V[f[0]]), c32Sub(V[f[2]], V[f[0]]));
+    if (c32Dot(n, c32Sub(V[f[0]], C)) < 0) n = n.map(x => -x);
+    return c32Dot(n, vw.eye) > 1e-6;
+  });
+  const gf = G(g), ge = G(g), gv = G(g);
+  const faces = F.map(f => mk('path', { d: 'M' + f.map(i => P[i].map(x => x.toFixed(1)).join(' ')).join('L') + 'Z', fill: FACE, 'fill-opacity': fop, stroke: 'none' }, gf));
+  const edges = [], seen = {};
+  F.forEach((f, fi) => f.forEach((a, i) => {
+    const b = f[(i + 1) % f.length], key = Math.min(a, b) + '-' + Math.max(a, b);
+    if (seen[key]) { seen[key].vis = seen[key].vis || front[fi]; return; }
+    seen[key] = { a, b, vis: front[fi] };
+  }));
+  for (const k in seen) {
+    const { a, b, vis } = seen[k];
+    const e = mk('path', { d: `M${P[a][0].toFixed(1)} ${P[a][1].toFixed(1)}L${P[b][0].toFixed(1)} ${P[b][1].toFixed(1)}`, stroke: COL.chalk, 'stroke-width': w, 'stroke-linecap': 'round', fill: 'none', 'stroke-opacity': vis ? 1 : .45 }, ge);
+    if (!vis) e.setAttribute('stroke-dasharray', '9 10');
+    edges.push({ e, a, b, hid: !vis });
+  }
+  const verts = P.map(([x, y]) => { const c = mk('circle', { cx: x, cy: y, r: 10, fill: VERT, stroke: COL.board, 'stroke-width': 3 }, gv); put(c, { o: 0 }); return c; });
+  const edge = (a, b) => edges.find(E => (E.a === a && E.b === b) || (E.a === b && E.b === a));
+  return { g, P, faces, edges, verts, edge, front };
+}
+// Light a solid's parts at t: faces (fill opacity k), edges (KL.TWO, thick), vertices (the dots pop).
+const c32Faces = (S, idx, t, k = .5) => idx.forEach((i, j) => tw(S.faces[i], { 'a_fill-opacity': k }, t + j * .08, .4));
+const c32Edges = (S, list, t, step = .1) => list.forEach(([a, b], j) => tw(S.edge(a, b).e, { c_stroke: EDGE, 'a_stroke-width': 7 }, t + j * step, .3));
+const c32Verts = (S, idx, t, step = .1) => idx.forEach((i, j) => { put(S.verts[i], { o: 0, s: 1 }); tw(S.verts[i], { o: 1 }, t + j * step, .25); });
+
+// The solids of this topic (unit sizes), each [V, F].
+const c32Cube = () => [[[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
+  [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]];
+function c32Prism(n, r = .6, h = 1.1, a0 = 90) {   // a right prism on a regular n-gon (n = 3: a triangle)
+  const ring = z => Array.from({ length: n }, (_, k) => { const a = (a0 + k * 360 / n) * c32D; return [r * Math.cos(a), r * Math.sin(a), z]; });
+  const V = [...ring(0), ...ring(h)];
+  const F = [Array.from({ length: n }, (_, k) => k), Array.from({ length: n }, (_, k) => n + k)];
+  for (let k = 0; k < n; k++) F.push([k, (k + 1) % n, n + (k + 1) % n, n + k]);
+  return [V, F];
+}
+function c32Pyr(n, r = .62, h = 1.1) {   // a pyramid on a regular n-gon (n = 4: a square), apex last
+  const V = Array.from({ length: n }, (_, k) => { const a = (45 + k * 360 / n) * c32D; return [r * Math.cos(a), r * Math.sin(a), 0]; });
+  V.push([0, 0, h]);
+  const F = [Array.from({ length: n }, (_, k) => k)];
+  for (let k = 0; k < n; k++) F.push([k, (k + 1) % n, n]);
+  return [V, F];
+}
+
+// The turn of a face's label (in its 0..100 square) that reads upright and unmirrored on the screen, for a face drawn
+// with matrix(a b c d …): of the four quarter turns, each with or without a flip, the one whose right points most to the
+// right and whose down points most down. '' when no turn is needed.
+function c32Upright(a, b, c, d) {
+  let best = '', score = -9;
+  for (const [ux, uy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) for (const sg of [1, -1]) {
+    const vx = -uy * sg, vy = ux * sg, rx = ux * a + uy * c, ry = ux * b + uy * d, dx = vx * a + vy * c, dy = vx * b + vy * d;
+    if (rx * dy - ry * dx <= 0) continue;
+    const sc = rx / (Math.hypot(rx, ry) || 1) + dy / (Math.hypot(dx, dy) || 1);
+    if (sc > score + 1e-9) { score = sc; best = ux === 1 && vy === 1 ? '' : `matrix(${ux} ${uy} ${vx} ${vy} ${50 - 50 * ux - 50 * vx} ${50 - 50 * uy - 50 * vy})`; }
+  }
+  return best;
+}
+// A net of unit squares that folds about its edges: net = [[col, row, parent, label]] (parent −1 for the face that
+// stays on the table). Every other face turns about the edge it shares with its parent by ang(k, t) degrees (0 flat,
+// 90 folded up). view(t) gives c32View's options; fill(k, t) may give a face its own colour. Faces are shaded by how
+// they meet the light and drawn far to near; a label stays readable from either side of its face. draw(t) sets the
+// picture for time t; with D the beat clock calls it (clockRun), otherwise call it yourself (fxp for an answer).
+// at(t, q) is the screen point of world point q (the table face spans col..col+1, row..row+1, z 0..1 up).
+function c32Fold(p, net, { view, ang, fill, col = FACE, size = 46, D } = {}) {
+  const g = G(p), L = [-.35, .45, .82];
+  const faces = net.map(([c, r, par, lab]) => {
+    const f = mk('g', {}, g);
+    const rect = mk('rect', { x: 0, y: 0, width: 100, height: 100, fill: col, stroke: COL.chalk, 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round' }, f);
+    const lw = mk('g', {}, f);
+    if (lab) T(lw, String(lab), { x: 50, y: 50 + size * .36, size, fill: COL.board, font: MATH, weight: 700, anchor: 'middle' });
+    let hinge = null;
+    if (par >= 0) { const n = [c - net[par][0], r - net[par][1]]; hinge = { P0: [net[par][0] + .5 + n[0] / 2, net[par][1] + .5 + n[1] / 2, 0], a: [n[1], -n[0], 0] }; }
+    return { c, r, par, f, rect, lw, hinge };
+  });
+  const chain = faces.map((_, k) => { const ch = []; for (let j = k; faces[j].par >= 0; j = faces[j].par) ch.push(j); return ch; });
+  const world = (k, q, A) => { for (const j of chain[k]) q = c32Rot(q, faces[j].hinge.P0, faces[j].hinge.a, A[j]); return q; };
+  let order = '';
+  function draw(t) {
+    const v = c32View(view(t)), A = faces.map((_, k) => ang(k, t) * c32D);
+    const ds = faces.map((Fc, k) => {
+      const O = world(k, [Fc.c, Fc.r, 0], A), U = world(k, [Fc.c + 1, Fc.r, 0], A), W = world(k, [Fc.c, Fc.r + 1, 0], A);
+      const o = v.P(O), u = v.P(U), w = v.P(W);
+      const a = (u[0] - o[0]) / 100, b = (u[1] - o[1]) / 100, c = (w[0] - o[0]) / 100, d = (w[1] - o[1]) / 100;
+      Fc.f.setAttribute('transform', `matrix(${a.toFixed(4)} ${b.toFixed(4)} ${c.toFixed(4)} ${d.toFixed(4)} ${o[0].toFixed(1)} ${o[1].toFixed(1)})`);
+      const flip = c32Upright(a, b, c, d);
+      if (Fc.flip !== flip) { if (flip) Fc.lw.setAttribute('transform', flip); else Fc.lw.removeAttribute('transform'); Fc.flip = flip; }
+      const e1 = c32Sub(U, O), e2 = c32Sub(W, O), n = c32Cross(e1, e2);
+      const fc = c32Mix((fill && fill(k, t)) || col, .5 + .45 * Math.abs(c32Dot(n, L)));
+      if (Fc.fc !== fc) { Fc.rect.setAttribute('fill', fc); Fc.fc = fc; }
+      return v.depth(O.map((x, i) => x + (e1[i] + e2[i]) / 2));
+    });
+    const idx = faces.map((_, k) => k).sort((i, j) => ds[i] - ds[j]), key = idx.join(',');
+    if (key !== order) { idx.forEach(i => g.appendChild(faces[i].f)); order = key; }
+  }
+  if (D) clockRun(t => draw(t), D); else draw(0);
+  return { g, draw, at: (t, q) => c32View(view(t)).P(q) };
+}
+// The dice net of the lesson: 1 on the table, 2 behind, 3 left, 4 right, 5 in front and 6 (the lid) on 5.
+const c32Dice = [[1, 1, -1, 1], [1, 0, 0, 2], [0, 1, 0, 3], [2, 1, 0, 4], [1, 2, 0, 5], [1, 3, 4, 6]];
+// A flat net drawn plainly: cells [[col, row]] of u px from (x, y). Returns { g, cells, cc(i) }.
+function c32Net(p, cells, x, y, u, { fill = FACE, op = .45, t0 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  const rects = cells.map(([c, r]) => mk('rect', { x: x + c * u, y: y + r * u, width: u, height: u, fill, 'fill-opacity': op, stroke: COL.chalk, 'stroke-width': 3, 'stroke-linejoin': 'round' }, g));
+  if (t0 !== undefined) show(g, t0);
+  return { g, cells: rects, cc: i => [x + (cells[i][0] + .5) * u, y + (cells[i][1] + .5) * u] };
+}
+// A round solid (not a polyhedron): 'cyl', 'cone' or 'ball' of radius r centred on (x, y).
+function c32Round(p, kind, x, y, r, t0) {
+  const g = G(p, { o: 0 }), st = { stroke: COL.chalk, 'stroke-width': 3, fill: 'none' }, ry = r * .3, h = r * 1.1;
+  const sh = d => path(g, d, { fill: FACE, 'fill-opacity': .22, stroke: 'none' });
+  const back = d => path(g, d, { ...st, 'stroke-dasharray': '7 8', 'stroke-opacity': .5 });
+  if (kind === 'cyl') {
+    sh(`M${x - r} ${y - h}V${y + h}A${r} ${ry} 0 0 0 ${x + r} ${y + h}V${y - h}A${r} ${ry} 0 0 0 ${x - r} ${y - h}Z`);
+    path(g, `M${x - r} ${y - h}A${r} ${ry} 0 1 0 ${x + r} ${y - h}A${r} ${ry} 0 1 0 ${x - r} ${y - h}M${x - r} ${y - h}V${y + h}A${r} ${ry} 0 0 0 ${x + r} ${y + h}V${y - h}`, st);
+    back(`M${x - r} ${y + h}A${r} ${ry} 0 0 1 ${x + r} ${y + h}`);
+  } else if (kind === 'cone') {
+    sh(`M${x} ${y - h}L${x - r} ${y + h}A${r} ${ry} 0 0 0 ${x + r} ${y + h}Z`);
+    path(g, `M${x - r} ${y + h}L${x} ${y - h}L${x + r} ${y + h}A${r} ${ry} 0 0 1 ${x - r} ${y + h}`, st);
+    back(`M${x - r} ${y + h}A${r} ${ry} 0 0 1 ${x + r} ${y + h}`);
+  } else {
+    sh(`M${x - r} ${y}A${r} ${r} 0 1 0 ${x + r} ${y}A${r} ${r} 0 1 0 ${x - r} ${y}Z`);
+    path(g, `M${x - r} ${y}A${r} ${r} 0 1 0 ${x + r} ${y}A${r} ${r} 0 1 0 ${x - r} ${y}M${x - r} ${y}A${r} ${ry} 0 0 0 ${x + r} ${y}`, st);
+    back(`M${x - r} ${y}A${r} ${ry} 0 0 1 ${x + r} ${y}`);
+  }
+  show(g, t0);
+  return g;
+}
+// A small net as an SVG picture for a question card: cells [[col, row, label]].
+function c32NetSvg(cells, u = 46) {
+  const W = (Math.max(...cells.map(c => c[0])) + 1) * u + 8, H = (Math.max(...cells.map(c => c[1])) + 1) * u + 8;
+  const s = mk('svg', { viewBox: `-4 -4 ${W} ${H}`, width: W, height: H });
+  s.style.display = 'block'; s.style.margin = '14px 0 4px';
+  cells.forEach(([c, r, lab]) => {
+    mk('rect', { x: c * u, y: r * u, width: u, height: u, fill: c32Mix(FACE, .45), stroke: COL.chalk, 'stroke-width': 2.5 }, s);
+    const t = mk('text', { x: c * u + u / 2, y: r * u + u / 2 + 9, 'text-anchor': 'middle', 'font-size': 26, 'font-weight': 700, fill: COL.chalk, 'font-family': UI }, s);
+    t.textContent = lab;
+  });
+  return s;
+}
+// A labelled count line «В: 3 + 3 = 6» in the part's colour, the sum in pieces at the given times.
+function c32CountLine(p, letter, col, pieces, x, y, times) {
+  klText(p, letter, x, y, times[0], { size: 40, fill: col, weight: 700 });
+  c32Chain(p, pieces, x + 58, y, times);
+}
+// Pieces of one line of mathematics, each appearing at its own time, set one after another from x. Returns the pieces.
+function c32Chain(p, pieces, x, y, times, { size = 44, fills = [] } = {}) {
+  let cx = x;
+  return pieces.map((s, i) => { const e = klMath(p, [s], cx, y, times[i], { size, anchor: 'start', fill: fills[i] || COL.chalk }); cx += e._w + size * .25; return e; });
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Многогранники и развёртки', (m, D) => klIntro(m, D, {
+    unit: 'Глава 7 · Геометрия · Тема 7.4',
+    title: 'Многогранники и развёртки',
+    sub: 'Из чего состоит поверхность куба, призмы и пирамиды',
+    art: (g, t0) => {
+      const [V, Fs] = c32Cube();
+      const S = c32Solid(g, V, Fs, { cx: 690, cy: 640, s: 100 }, { t0, fop: .3 });
+      c32Faces(S, [1, 3, 4], t0, .55);
+      c32Net(g, c32Dice.map(([c, r]) => [c, r]), 860, 560, 40, { t0: t0 + .4 });
+    },
+  })],
+
+  ['parts', 'Грани, рёбра, вершины', m => {
+    const p = panel(0);
+    klTitle(p, 'Грани, рёбра, вершины');
+    const [V, Fs] = c32Cube();
+    const S = c32Solid(p, V, Fs, { cx: 450, cy: 480, s: 270 }, { t0: .2, fop: .08 });
+    // «плоских квадратов»: the faces flash one after another
+    Fs.forEach((_, i) => { tw(S.faces[i], { 'a_fill-opacity': .45 }, m('face', i * .15), .3); tw(S.faces[i], { 'a_fill-opacity': .08 }, m('face', .6 + i * .15), .4); });
+    Fs.forEach((_, i) => { tw(S.faces[i], { 'a_fill-opacity': .35 }, m('faces', -1.8 + i * .1), .3); tw(S.faces[i], { 'a_fill-opacity': .08 }, m('faces', -1.1 + i * .1), .4); });
+    klText(p, 'многогранник', 860, 290, m('poly'), { size: 44, fill: RULE, weight: 700 });
+    klText(p, 'поверхность — из многоугольников', 860, 336, m('poly', -4), { size: 28, fill: COL.dim });
+    klText(p, 'грани', 860, 440, m('faces'), { size: 38, fill: FACE, weight: 700 });
+    c32Faces(S, [0, 1], m('f1'), .5);
+    c32Faces(S, [2, 3, 4, 5], m('f2'), .5);
+    c32Chain(p, ['2', '+ 4 = 6'], 1080, 440, [m('f1'), m('f2')]);
+    klText(p, 'рёбра', 860, 545, m('edges'), { size: 38, fill: EDGE, weight: 700 });
+    c32Edges(S, [[4, 5], [5, 6], [6, 7], [7, 4]], m('e1'), .08);
+    c32Edges(S, [[0, 1], [1, 2], [2, 3], [3, 0]], m('e2'), .08);
+    c32Edges(S, [[0, 4], [1, 5], [2, 6], [3, 7]], m('e3'), .08);
+    S.edges.forEach((E, i) => { tw(E.e, { 'a_stroke-width': 11 }, m('e3', 1.7 + i * .05), .2); tw(E.e, { 'a_stroke-width': 7 }, m('e3', 2 + i * .05), .3); });   // «всего двенадцать»
+    c32Chain(p, ['4', '+ 4', '+ 4 = 12'], 1080, 545, [m('e1'), m('e2'), m('e3')]);
+    klText(p, 'вершины', 860, 650, m('verts'), { size: 38, fill: VERT, weight: 700 });
+    c32Verts(S, [4, 5, 6, 7], m('v1'));
+    c32Verts(S, [0, 1, 2, 3], m('v2'));
+    c32Chain(p, ['4', '+ 4 = 8'], 1080, 650, [m('v1'), m('v2')]);
+    c32Round(p, 'cyl', 920, 790, 34, m('round'));
+    c32Round(p, 'cone', 1020, 790, 36, m('round', .25));
+    c32Round(p, 'ball', 1125, 790, 40, m('round', .5));
+    klText(p, 'кривая поверхность —', 1195, 782, m('round', 1.6), { size: 27, fill: COL.dim });
+    klText(p, 'не многогранники', 1195, 818, m('round', 3.8), { size: 27, fill: COL.dim });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const [V, Fs] = c32Pyr(4);
+    S_q1(p, V, Fs);
+  }, { ask: done => {
+    const Q = S.q1s;
+    return quiz(BAND, [{
+      id: 'c-rebro', prompt: 'Какой из отмеченных элементов — ребро?',
+      build: pickEls(Q.items, 1, 'Ребро — отрезок, сторона грани: здесь две треугольные грани сходятся.',
+        i => i === 0 ? 'Это вершина — точка, где сходятся рёбра.' : 'Это грань — плоский треугольник.',
+        () => fx(Q.edgeEl, { c_stroke: EDGE }, 0, .4)),
+    }], done);
+  } }],
+
+  ['prism', 'Призма и пирамида', m => {
+    const p = panel(0);
+    klTitle(p, 'Призма и пирамида');
+    const [V, Fs] = c32Prism(3, .66, 1.05, -15);
+    const A = c32Solid(p, V, Fs, { cx: 430, cy: 440, s: 230, el: 34 }, { t0: .2 });
+    klText(p, 'призма', 430, 225, .3, { size: 34, anchor: 'middle', fill: COL.dim, weight: 600 });
+    c32Faces(A, [0, 1], m('bases'), .55);
+    c32Faces(A, [2, 3, 4], m('sides'), .22);
+    c32Verts(A, [3, 4, 5], m('pv'), .1); c32Verts(A, [0, 1, 2], m('pv', .45), .1);
+    c32Edges(A, [[3, 4], [4, 5], [5, 3]], m('pe'), .06);
+    c32Edges(A, [[0, 1], [1, 2], [2, 0]], m('pe', .7), .06);
+    c32Edges(A, [[0, 3], [1, 4], [2, 5]], m('pe', 1.6), .06);
+    c32CountLine(p, 'В', VERT, ['3', '+ 3 = 6'], 300, 690, [m('pv'), m('pv', .5)]);
+    c32CountLine(p, 'Р', EDGE, ['3', '+ 3', '+ 3 = 9'], 300, 765, [m('pe'), m('pe', .7), m('pe', 1.6)]);
+    c32CountLine(p, 'Г', FACE, ['3', '+ 2 = 5'], 300, 840, [m('pf'), m('pf', 1)]);
+    c32Faces(A, [2, 3, 4], m('pf'), .5);
+    const [W, Gs] = c32Pyr(4, .66, 1.1);
+    const B = c32Solid(p, W, Gs, { cx: 1170, cy: 440, s: 240, el: 30 }, { t0: m('base', -1.2) });
+    klText(p, 'пирамида', 1170, 225, m('base', -1.2), { size: 34, anchor: 'middle', fill: COL.dim, weight: 600 });
+    c32Faces(B, [0], m('base'), .55);
+    c32Verts(B, [4], m('apex'));
+    c32Faces(B, [1, 2, 3, 4], m('apex', .4), .22);
+    c32Verts(B, [0, 1, 2, 3], m('yv'), .1);
+    c32Edges(B, [[0, 1], [1, 2], [2, 3], [3, 0]], m('ye'), .06);
+    c32Edges(B, [[0, 4], [1, 4], [2, 4], [3, 4]], m('ye', .9), .06);
+    c32Faces(B, [1, 2, 3, 4], m('yf'), .5);
+    c32CountLine(p, 'В', VERT, ['4', '+ 1 = 5'], 1040, 690, [m('yv'), m('yv', .6)]);
+    c32CountLine(p, 'Р', EDGE, ['4', '+ 4 = 8'], 1040, 765, [m('ye'), m('ye', .9)]);
+    c32CountLine(p, 'Г', FACE, ['4', '+ 1 = 5'], 1040, 840, [m('yf'), m('yf', 1)]);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const [V, Fs] = c32Pyr(6, .7, 1.05);
+    S.q2 = c32Solid(p, V, Fs, { cx: 420, cy: 470, s: 300, el: 24 }, { t0: .2, fop: .14 });
+    klText(p, 'шестиугольная пирамида', 420, 210, .3, { size: 32, anchor: 'middle', fill: COL.dim, weight: 600 });
+  }, { ask: done => quiz({ x: 820, y: 220, w: 700, cls: 'side' }, [{
+    id: 'c-shest', prompt: 'Сколько граней и сколько рёбер у шестиугольной пирамиды?',
+    build: blanks([
+      { parts: ['граней: ', { box: '7' }], why: 'Шесть боковых граней и основание: 6 + 1 = 7.', hint: 'По одной боковой грани на каждую сторону основания — и ещё само основание.',
+        fx: () => S.q2.faces.forEach((f, i) => fx(f, { 'a_fill-opacity': .5 }, i * .08, .3)) },
+      { parts: ['рёбер: ', { box: '12' }], why: 'Шесть рёбер у основания и шесть к вершине: 6 + 6 = 12.', hint: 'Сосчитай рёбра основания и рёбра, которые идут к вершине.',
+        fx: () => S.q2.edges.forEach((E, i) => fx(E.e, { c_stroke: EDGE }, i * .05, .3)) },
+    ]),
+  }], done) }],
+
+  ['euler', 'Формула Эйлера', m => {
+    const p = panel(0);
+    klTitle(p, 'Формула Эйлера');
+    const CX = [640, 790, 940], XE = 1110, rows = [['куб', 8, 12, 6, c32Cube()], ['призма', 6, 9, 5, c32Prism(3, .66, 1.05, -15)], ['пирамида', 5, 8, 5, c32Pyr(4, .66, 1.1)]];
+    [['В', VERT], ['Р', EDGE], ['Г', FACE]].forEach(([s, c], i) => klText(p, s, CX[i], 250, .3, { size: 40, fill: c, weight: 700, anchor: 'middle' }));
+    c32Chain(p, ['В', '− Р', '+ Г'], XE + 30, 250, [m('t3', 1.6), m('t3', 3.4), m('t3', 5)], { size: 40, fills: [VERT, EDGE, FACE] });
+    path(p, 'M170 278H1460', { stroke: COL.faint, 'stroke-width': 2 });
+    rows.forEach(([name, v, e, f, [VV, FF]], i) => {
+      const y = 360 + i * 105, t = m('t' + (i + 1));
+      c32Solid(p, VV, FF, { cx: 225, cy: y - 12, s: 62, el: 24 }, { t0: t, w: 2.5 });
+      klText(p, name, 300, y, t, { size: 36, weight: 600 });
+      const nums = [v, e, f].map((n, j) => klMath(p, [String(n)], CX[j], y, t + .1, { size: 48, fill: [VERT, EDGE, FACE][j] }));
+      const tc = m('c' + (i + 1)), tr = m('c' + (i + 1) + 'r');
+      nums.forEach((n, j) => { pulse(n, tc + j * .55, 1.3); pulse(n, m('t3', 1.6 + [0, 1.8, 3.4][j] + i * .12), 1.3); });
+      const two = c32Chain(p, [`${v} − ${e} + ${f}`, '= 2'], XE, y, [tc, tr], { size: 48, fills: [null, RULE] })[1];
+      pulse(two, m('c3r', 2.2 + i * .25), 1.35);
+    });
+    const box = G(p, { o: 0 });
+    mk('rect', { x: 170, y: 640, width: 560, height: 150, rx: 18, fill: RULE, 'fill-opacity': .08, stroke: RULE, 'stroke-width': 3 }, box);
+    show(box, m('rule'));
+    klText(p, 'формула Эйлера', 450, 622, m('rule', 4.2), { size: 28, fill: RULE, weight: 700, anchor: 'middle' });
+    klRow(p, [{ m: 'В', fill: VERT }, { m: ' − ' }, { m: 'Р', fill: EDGE }, { m: ' + ' }, { m: 'Г', fill: FACE }, { m: ' = 2', fill: RULE }], 450, 728, m('rule'), { size: 64, msize: 64 });
+    klText(p, 'для многогранника без сквозных дыр', 450, 830, m('rule', 1.2), { size: 26, fill: COL.dim, anchor: 'middle' });
+    const unk = klRow(p, [{ m: 'Г', fill: FACE }, { m: ' = ?' }], 1150, 770, m('rule', 7.4), { size: 34, msize: 50 });
+    hide(unk, m('exr', -.3), .3);
+    klRow(p, [{ m: 'В = 12', fill: VERT }, ',   ', { m: 'Р = 18', fill: EDGE }], 1150, 680, m('ex'), { size: 34, msize: 46 });
+    c32Chain(p, ['Г', '= 2 − 12 + 18', '= 8'], 960, 770, [m('exr'), m('exr'), m('exa')], { size: 50, fills: [FACE, null, RULE] });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klRow(p, [{ m: 'В', fill: VERT }, { m: ' − ' }, { m: 'Р', fill: EDGE }, { m: ' + ' }, { m: 'Г', fill: FACE }, { m: ' = 2', fill: RULE }], 560, 260, .2, { size: 64, msize: 64 });
+    klRow(p, [{ m: 'В = 10', fill: VERT }, ',    ', { m: 'Р = 15', fill: EDGE }, ',    ', { m: 'Г = ?', fill: FACE }], 560, 420, .5, { size: 40, msize: 56 });
+    const [V, Fs] = c32Prism(5, .62, 1);
+    S.q3 = c32Solid(p, V, Fs, { cx: 1220, cy: 360, s: 210, el: 24 }, { t0: undefined, fop: .2 });
+    S.q3cap = klText(p, 'пятиугольная призма', 1220, 560, undefined, { size: 28, fill: COL.dim, anchor: 'middle' });
+    put(S.q3cap, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-euler', prompt: 'У многогранника 10 вершин и 15 рёбер. Сколько у него граней?',
+    build: blanks([{ parts: ['Г = ', { box: '7' }], why: '10 − 15 + Г = 2, значит Г = 2 − 10 + 15 = 7. Такой многогранник — например, пятиугольная призма.',
+      hint: 'Из формулы: Г = 2 − В + Р.', fx: () => { fx(S.q3.g, { o: 1 }, 0, .5); fx(S.q3cap, { o: 1 }, .3, .4); } }]),
+  }], done) }],
+
+  ['unfold', 'Развёртка куба', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Развёртка куба');
+    const seq = [m('f1'), m('f3'), m('f2'), m('f4')];   // 2 (behind), 3 (left), 4 (right), 5 (front, carrying the lid)
+    const tf = m('fold'), cube = { cx: 800, cy: 500, s: 210, az: 28, el: 32, look: [1.5, 1.5, .5] };
+    const top = { cx: 800, cy: 500, s: 150, az: 0, el: 90, look: [1.5, 2, 0] };
+    const mid = { ...cube, s: 185, look: [1.5, 2, 0] };
+    const U = c32Fold(p, c32Dice, {
+      D, size: 52,
+      fill: (k, t) => t > m('net', 1.4 + k * .3) && t < m('net', 1.9 + k * .3) ? '#d2ecf7' : null,
+      ang: (k, t) => {
+        if (k === 0) return 0;
+        const open = k === 5 ? c32R(t, m('f5'), 1) : c32R(t, [0, seq[0], seq[1], seq[2], seq[3]][k], 1);
+        return 90 * (1 - open) + 90 * c32R(t, tf, 1.8);
+      },
+      view: t => {
+        let v = c32Blend(cube, mid, c32R(t, m('open'), 6));
+        v = c32Blend(v, top, c32R(t, m('top'), 1.6));
+        return c32Blend(v, cube, c32R(t, tf, 1.8));
+      },
+    });
+    // the cuts: the visible edges that are not hinges (three upright, three round the lid)
+    const cuts = [[[2, 1, 0], [2, 1, 1]], [[2, 2, 0], [2, 2, 1]], [[1, 2, 0], [1, 2, 1]], [[1, 1, 1], [2, 1, 1]], [[1, 1, 1], [1, 2, 1]], [[2, 1, 1], [2, 2, 1]]];
+    cuts.forEach(([a, b], i) => {
+      const A = U.at(0, a), B = U.at(0, b);
+      const e = path(p, `M${A[0].toFixed(1)} ${A[1].toFixed(1)}L${B[0].toFixed(1)} ${B[1].toFixed(1)}`, { stroke: RULE, 'stroke-width': 7, 'stroke-dasharray': '12 10' }, { o: 0 });
+      show(e, m('open', -2.6 + i * .2), .3); hide(e, m('open', -.2), .3);
+    });
+    const lab = G(p, { o: 0 });
+    T(lab, 'развёртка куба', { x: 1130, y: 420, size: 40, fill: RULE, weight: 700 });
+    show(lab, m('net'));
+    const l2 = klText(p, 'шесть квадратов —', 1130, 470, m('net', 1.4), { size: 28, fill: COL.dim }), l3 = klText(p, 'вся поверхность куба', 1130, 506, m('net', 3.2), { size: 28, fill: COL.dim });
+    hide(l2, tf, .5); hide(l3, tf, .5);
+    hide(lab, tf, .5);
+    klText(p, 'у куба 11 разных развёрток', 800, 830, tf + 2.2, { size: 32, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['opposite', 'Противоположные грани', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Противоположные грани');
+    const pair = { 0: VERT, 5: VERT, 1: EDGE, 4: EDGE, 2: KL.WHOLE, 3: KL.WHOLE }, at = { 0: 'p1', 5: 'p1', 1: 'p2', 4: 'p2', 2: 'p3', 3: 'p3' };
+    // the pairs take one colour each; at the end the net folds up and each pair lands face to face
+    const vw = { cx: 520, cy: 490, s: 150, az: 0, el: 90, look: [1.5, 2, 0] }, cube = { cx: 520, cy: 500, s: 200, az: 28, el: 32, look: [1.5, 1.5, .5] };
+    const tf = m('s7', .1);
+    c32Fold(p, c32Dice, { D, size: 52, view: t => c32Blend(c32Blend(cube, vw, c32R(t, .8, 1.6)), cube, c32R(t, tf, 1.5)), ang: (k, t) => k ? 90 * (1 - c32R(t, .8, 1.6)) + 90 * c32R(t, tf, 1.5) : 0,
+      fill: (k, t) => t >= m(at[k]) ? pair[k] : null });
+    [['1 + 6', VERT, 'p1'], ['2 + 5', EDGE, 'p2'], ['3 + 4', KL.WHOLE, 'p3']].forEach(([s, col, mk_], i) => {
+      const [sum] = c32Chain(p, [s, '= 7'], 1120, 360 + i * 120, [m(mk_), m('s7', i * .3)], { size: 60, fills: [col, RULE] });
+      pulse(sum, m('s7', -2.8 + i * .5), 1.25);
+    });
+    klText(p, 'игральный кубик:', 1120, 250, m('p3', 2.2), { size: 30, fill: COL.dim, weight: 600 });
+    klText(p, 'в ряду — через одну', 1120, 720, m('p1', -3.6), { size: 30, fill: COL.dim });
+  }],
+
+  ['bad', 'Не всякая развёртка', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Не всякие шесть квадратов — развёртка');
+    const go = m('go'), flat = { s: 95, az: 0, el: 90 }, tilt = { s: 120, az: 26, el: 30 };
+    const view = (cx, look) => t => c32Blend({ ...flat, cx, cy: 470, look: [2, 1.5, 0] }, { ...tilt, cx, cy: 470, look }, c32R(t, go, 1.4));
+    const fold = (k, t) => k === 0 ? 0 : 90 * c32R(t, go + .3, 2);
+    const back = m('no', 1.4), v0 = view(420, [1.5, 1.5, .5]);
+    c32Fold(p, [[1, 1, -1], [0, 1, 0], [2, 1, 0], [3, 1, 2], [1, 0, 0], [1, 2, 0]], { D,
+      view: t => c32Blend(v0(t), { ...flat, cx: 420, cy: 470, look: [2, 1.5, 0] }, c32R(t, back, 1.4)), ang: (k, t) => fold(k, t) * (1 - c32R(t, back, 1.4)),
+      fill: (k, t) => k < 4 && t > back + 1.6 ? RULE : k >= 4 && t > m('rule') ? EDGE : null });
+    const B = c32Fold(p, [[1, 1, -1], [0, 1, 0], [2, 1, 0], [3, 1, 2], [0, 0, 1], [2, 0, 2]], { D, view: view(1180, [1.5, 1.5, .5]), ang: fold,
+      fill: (k, t) => k >= 4 && t >= m('clash') ? COL.bad : null });
+    klMark(p, 420, 760, m('ok'), true);
+    klText(p, 'две грани на одном месте', 1180, 300, m('clash', .2), { size: 28, fill: COL.bad, weight: 600, anchor: 'middle' });
+    // the open side: the square where the front face should be
+    const q = [[1, 2, 0], [2, 2, 0], [2, 2, 1], [1, 2, 1]].map(v => B.at(D, v));
+    const hole = path(p, 'M' + q.map(v => v.map(x => x.toFixed(1)).join(' ')).join('L') + 'Z', { stroke: COL.bad, 'stroke-width': 5, 'stroke-dasharray': '12 9', fill: COL.bad, 'fill-opacity': .12 }, { o: 0 });
+    show(hole, m('hole'), .4);
+    klStrike(p, 1000, 300, 1360, 700, m('no'));
+    klText(p, 'не развёртка куба', 1180, 760, m('no', .3), { size: 32, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klText(p, 'ряд из четырёх: два других квадрата — по разные стороны от него', 800, 850, m('rule'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const sets = [[[0, 1], [1, 1], [2, 1], [3, 1], [0, 0], [3, 0]], [[0, 1], [1, 1], [2, 1], [3, 1], [0, 0], [2, 2]], [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]]];
+    const u = 66, X = [130, 625, 1175];
+    S.q4 = sets.map((cells, i) => c32Net(p, cells, X[i], i === 2 ? 250 : 210, u, { t0: .2 + i * .15 }));
+    S.q4box = sets.map((cells, i) => [X[i] - 30, 180, (Math.max(...cells.map(c => c[0])) + 1) * u + 60, 3 * u + 60]);
+    ['А', 'Б', 'В'].forEach((s, i) => klText(p, s, S.q4box[i][0] + S.q4box[i][2] / 2, 470, .5, { size: 34, fill: COL.dim, weight: 700, anchor: 'middle' }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-razv', prompt: 'Из какой фигуры можно сложить куб?',
+    build: pickEls(S.q4.map((n, i) => ({ el: n.g, box: S.q4box[i], label: 'АБВ'[i] })), 1,
+      'В ряду из четырёх квадратов два других стоят по разные стороны: одна грань станет крышкой, другая — дном.',
+      i => i === 0 ? 'Оба квадрата над рядом: они лягут на одно место, а с другой стороны будет дыра.' : 'Из прямоугольника два на три куб не сложить: в нём есть квадрат из четырёх клеток, такие грани наложатся.',
+      () => S.q4[1].cells.forEach((c, i) => { fx(c, { c_fill: EDGE }, i * .07, .3); })),
+  }], done) }],
+
+  ['area', 'Площадь поверхности', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'Площадь поверхности');
+    const cube = { cx: 400, cy: 480, s: 190, az: 28, el: 32, look: [1.5, 1.5, .5] }, top = { cx: 400, cy: 490, s: 105, az: 0, el: 90, look: [1.5, 2, 0] };
+    const N = c32Fold(p, c32Dice.map(([c, r, par]) => [c, r, par]), { D, view: t => c32Blend(cube, top, c32R(t, m('net'), 1.6)), ang: (k, t) => k ? 90 * (1 - c32R(t, m('net'), 1.4)) : 0 });
+    const c = i => N.at(D, [c32Dice[i][0] + .5, c32Dice[i][1] + .5, 0]);
+    // the edge «2 см» under face 3, then «4» in every square
+    const [ex, ey] = c(2);
+    klBrace(p, ex - 52, ex + 52, ey + 70, '2 см', m('a'), { up: false, size: 30, fill: RULE });
+    c32Dice.forEach((_, i) => { const [x, y] = c(i); const e = klMath(p, ['4'], x, y + 16, m(i === 2 ? 'sq' : 'sum', i === 2 ? .6 : i * .1), { size: 44, fill: COL.board }); pulse(e, m('sum', 1 + i * .3), 1.5); });
+    klRow(p, [{ m: '2 · 2 = 4' }, ' см²'], 1060, 300, m('sq', .3), { size: 34, msize: 46 });
+    klRow(p, [{ m: 'S = 6 · 4 = 24' }, ' см²'], 1060, 390, m('sum', 2.8), { size: 34, msize: 46 });
+    const box = G(p, { o: 0 });
+    mk('rect', { x: 880, y: 440, width: 360, height: 110, rx: 18, fill: RULE, 'fill-opacity': .08, stroke: RULE, 'stroke-width': 3 }, box);
+    show(box, m('rule'));
+    klMath(p, ['S = 6a', E('2')], 1060, 512, m('rule'), { size: 60, fill: RULE });
+    klRow(p, [{ m: ['S = a', E('3'), ' = 8'] }], 1060, 650, m('trap'), { size: 34, msize: 50, fill: COL.dim });
+    klStrike(p, 930, 660, 1190, 610, m('vol', -.4));
+    klText(p, 'ошибка!', 1250, 645, m('vol', -.2), { size: 28, fill: COL.bad, weight: 700 });
+    klRow(p, [{ m: ['a', E('3'), ' = 8'] }, ' см³ — это объём'], 1060, 760, m('vol'), { size: 34, msize: 50 });
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'У многогранника есть грани, рёбра и вершины',
+    ['Призма на n-угольнике: ', { m: '2n' }, ' вершин, ', { m: '3n' }, ' рёбер, ', { m: 'n + 2' }, ' граней'],
+    ['Формула Эйлера:  ', { m: 'В − Р + Г = 2', fill: RULE }],
+    ['Развёртка — вся поверхность на плоскости:  ', { m: ['S = 6a', E('2')] }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-schet', prompt: 'Сосчитай.',
+    build: blanks([
+      { parts: ['Рёбер у куба: ', { box: '12' }], why: '4 сверху, 4 снизу и 4 вертикальных.', hint: 'Рёбра сверху, снизу и боковые.' },
+      { parts: ['Вершин у пятиугольной призмы: ', { box: '10' }], why: 'По 5 вершин у каждого из двух оснований.', hint: 'Вершины есть только у двух оснований.' },
+      { parts: ['Граней у пятиугольной пирамиды: ', { box: '6' }], why: '5 боковых граней и основание.', hint: 'По боковой грани на каждую сторону основания — и само основание.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-euler', prompt: 'У многогранника 6 вершин и 12 рёбер. Сколько у него граней?',
+    build: blanks([{ parts: [{ box: '8' }, ' граней'], why: 'Г = 2 − В + Р = 2 − 6 + 12 = 8.', hint: 'В − Р + Г = 2, значит Г = 2 − В + Р.' }]),
+  }, {
+    id: 'p-ploshchad', prompt: 'Найди площадь поверхности куба с ребром 3 см.',
+    build: blanks([{ parts: ['S = ', { box: '54' }, ' см²'], why: 'Шесть граней по 3 · 3 = 9 см²: 6 · 9 = 54 см².', hint: 'Это не 3 · 3 · 3 = 27 — так находят объём. Сложи площади шести граней.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-protiv', prompt: ['Из развёртки склеили куб. Какая грань окажется напротив грани Б?',
+      c32NetSvg([[0, 0, 'А'], [0, 1, 'Б'], [1, 1, 'В'], [2, 1, 'Г'], [3, 1, 'Д'], [3, 2, 'Е']])],
+    build: choice(['А', 'В', 'Г', 'Е'], 2, 'В ряду Б, В, Г, Д противоположные грани идут через одну: Б и Г, В и Д. А и Е — тоже пара.',
+      ['А и Е стоят по разные стороны ряда: они противоположны друг другу.', 'В — соседка Б: соседние грани в кубе стоят рядом, а не напротив.', 'Е — напротив А.']),
+  }, {
+    id: 'p-tela', prompt: 'Какое из этих тел — не многогранник?',
+    build: choice(['куб', 'пирамида', 'цилиндр', 'призма'], 2, 'У цилиндра поверхность кривая, а у многогранника она состоит из многоугольников.',
+      ['Куб — многогранник: шесть квадратных граней.', 'Пирамида — многогранник: основание и треугольные грани.', null, 'Призма — многогранник: два основания и прямоугольники.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+// q1's picture: a square pyramid with three marked parts in one colour — a vertex, an edge and a face.
+function S_q1(p, V, Fs) {
+  const A = c32Solid(p, V, Fs, { cx: 800, cy: 330, s: 330, el: 24 }, { t0: .2, fop: .1 });
+  const P = A.P;
+  // a front face (the one whose vertices are lowest on the screen), its outer edge to the apex and a base corner
+  const order = [0, 1, 2, 3].sort((i, j) => P[j][1] - P[i][1]);
+  const near = order[0], side = P[order[1]][0] < P[order[2]][0] ? order[1] : order[2], far = side === order[1] ? order[2] : order[1];
+  const fc = [near, side, 4].map(i => P[i]), cen = [(fc[0][0] + fc[1][0] + fc[2][0]) / 3, (fc[0][1] + fc[1][1] + fc[2][1]) / 3];
+  const face = path(p, 'M' + fc.map(v => v.join(' ')).join('L') + 'Z', { fill: RULE, 'fill-opacity': .35, stroke: 'none' }, { o: 0 });
+  show(face, .5);
+  const edgeEl = path(p, `M${P[far][0]} ${P[far][1]}L${P[4][0]} ${P[4][1]}`, { stroke: RULE, 'stroke-width': 9 }, { o: 0 });
+  show(edgeEl, .5);
+  const dot = mk('circle', { cx: P[side][0], cy: P[side][1], r: 13, fill: RULE, stroke: COL.board, 'stroke-width': 3 }, p);
+  put(dot, { o: 0 }); show(dot, .5);
+  const em = [(P[far][0] + P[4][0]) / 2, (P[far][1] + P[4][1]) / 2];
+  S.q1s = { edgeEl, items: [
+    { el: dot, box: [P[side][0] - 40, P[side][1] - 40, 80, 80], label: 'вершина' },
+    { el: edgeEl, box: [em[0] - 40, em[1] - 40, 80, 80], label: 'ребро' },
+    { el: face, box: [cen[0] - 40, cen[1] - 30, 80, 80], label: 'грань' },
+  ] };
+  return A;
+}
+
+boot();
+</script>
+</body>
+</html>

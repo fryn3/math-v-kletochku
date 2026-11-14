@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Движение, работа, покупки · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 8.1 «Движение, работа, покупки» (5–6 класс). Beat ids match papermorph/content/uroki/ch35/narration.ru.json.
+const CHAPTER = { number: 35, label: '8.1', title: 'Движение, работа, покупки', minutes: 7, language: 'ru', next: '../ch36/' };
+
+// Meanings in this lesson: the result (path, work, cost, a distance) in RES, the rate (speed, output per hour, price) of
+// the first mover or pipe in RATE, of the second in RATE2, time and quantity in TIME, a sum of rates and the rule in RULE.
+const RES = KL.NUM, RATE = KL.DEN, RATE2 = KL.WHOLE, TIME = KL.TWO, RULE = KL.RULE;
+
+// Words in several colours on one line: pieces [[text, fill], …]; returns the group.
+function c35Words(p, pieces, x, y, t0, { size = 34, anchor = 'start', weight = 600 } = {}) {
+  const w = pieces.reduce((s, [str]) => s + klW(str, size, weight), 0);
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  let cx = x - (anchor === 'middle' ? w / 2 : anchor === 'end' ? w : 0);
+  pieces.forEach(([str, fill]) => { T(g, str, { x: cx, y, size, fill, weight }); cx += klW(str, size, weight); });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A road at height y: 0 km at x0, `km` pixels per kilometre up to max; ticks every `tick`, labels every `step`.
+// Returns { g, X }: X(v) is the x of kilometre v.
+function c35Road(p, { x0, km, max, y, step, tick = step, t0, size = 32 }) {
+  const X = v => x0 + v * km, g = G(p, { o: 0 });
+  path(g, `M${X(0) - 30} ${y}H${X(max) + 30}`, { stroke: COL.chalk, 'stroke-width': 4 });
+  for (let k = 0; k <= max + 1e-9; k += tick) {
+    const lab = Math.abs(k / step - Math.round(k / step)) < 1e-9;
+    path(g, `M${X(k)} ${y - (lab ? 12 : 8)}V${y + (lab ? 12 : 8)}`, { stroke: COL.chalk, 'stroke-width': lab ? 3.5 : 2.5 });
+    if (lab) T(g, String(k), { x: X(k), y: y + 50, size, fill: COL.chalk, font: MATH, anchor: 'middle' });
+  }
+  T(g, 'км', { x: X(max) + 44, y: y + 50, size: size - 4, fill: COL.dim });
+  show(g, t0);
+  return { g, X };
+}
+// A chalk car whose front bumper is at (x, y), wheels on y, facing right (dir 1) or left (dir −1), tinted col; label
+// (its speed) rides above it.
+function c35Car(p, x, y, dir = 1, col = COL.chalk, label, o = 1) {
+  const g = G(p, { x, y, o }), k = -dir, X = v => (v * k).toFixed(0);
+  path(g, `M${X(150)} -16V-44Q${X(150)} -50 ${X(142)} -50H${X(112)}L${X(88)} -78H${X(36)}L${X(14)} -50H${X(6)}Q0 -50 0 -42V-16Z`, { fill: col, 'fill-opacity': .22, stroke: COL.chalk, 'stroke-width': 3.5 });
+  path(g, `M${X(104)} -50L${X(84)} -72H${X(66)}V-50ZM${X(58)} -50V-72H${X(40)}L${X(22)} -50Z`, { fill: col, 'fill-opacity': .45 });
+  [118, 34].forEach(cx => mk('circle', { cx: X(cx), cy: -15, r: 14, fill: COL.board, stroke: COL.chalk, 'stroke-width': 4 }, g));
+  if (label) T(g, label, { x: X(75), y: -100, size: 30, fill: col, weight: 700, anchor: 'middle' });
+  return g;
+}
+// A walker standing at (x, y) (feet on y), and a cyclist whose front wheel touches x; label above each.
+function c35Walker(p, x, y, col, label, o = 1) {
+  const g = G(p, { x, y, o }), st = { stroke: col, 'stroke-width': 5 };
+  mk('circle', { cx: 0, cy: -86, r: 13, fill: 'none', stroke: col, 'stroke-width': 4.5 }, g);
+  path(g, 'M0 -72V-34M0 -34L-15 0M0 -34L15 0M-17 -48L0 -62L17 -48', st);
+  if (label) T(g, label, { x: 0, y: -116, size: 30, fill: col, weight: 700, anchor: 'middle' });
+  return g;
+}
+function c35Bike(p, x, y, col, label, o = 1) {
+  const g = G(p, { x, y, o }), st = { stroke: col, 'stroke-width': 4.5 };
+  [-22, -98].forEach(cx => mk('circle', { cx, cy: -22, r: 21, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, g));
+  path(g, 'M-98 -22L-70 -56H-34L-22 -22M-70 -56L-60 -22H-22M-34 -56L-30 -68', { stroke: COL.chalk, 'stroke-width': 3 });
+  mk('circle', { cx: -56, cy: -112, r: 12, fill: 'none', stroke: col, 'stroke-width': 4.5 }, g);
+  path(g, 'M-58 -99L-66 -62L-50 -40M-60 -90L-34 -70', st);
+  if (label) T(g, label, { x: -60, y: -140, size: 30, fill: col, weight: 700, anchor: 'middle' });
+  return g;
+}
+// A boat on the water line y, centred on x, bow to the right (dir 1) or to the left (dir −1).
+function c35Boat(p, x, y, dir = 1, o = 1) {
+  const g = G(p, { x, y, o }), k = dir;
+  path(g, `M${-70 * k} -14H${80 * k}L${52 * k} 14H${-56 * k}Z`, { fill: RATE, 'fill-opacity': .3, stroke: COL.chalk, 'stroke-width': 3.5 });
+  path(g, `M${-30 * k} -14V-40H${20 * k}V-14`, { stroke: COL.chalk, 'stroke-width': 3, fill: COL.chalk, 'fill-opacity': .12 });
+  return g;
+}
+// One hop from km a to km b (an hour or a step of the story): a dashed arc above the road at height y with its label.
+function c35Hop(g, X, a, b, y, t, per, col, label) {
+  const xa = X(a), xb = X(b), up = 50;
+  draw(path(g, `M${xa} ${y}Q${(xa + xb) / 2} ${y - up} ${xb} ${y}`, { stroke: col, 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '8 7' }, { d: 0 }), t, per);
+  if (label) klText(g, label, (xa + xb) / 2, y - up / 2 - 12, t + per * .7, { size: 26, fill: col, weight: 700, anchor: 'middle' });
+}
+// Move a group's x from xa to xb (prog, or fxp in an answer effect when fxMode).
+const c35Go = (e, xa, xb, t, dur, fxMode) => (fxMode ? fxp : prog)(q => put(e, { x: xa + (xb - xa) * q }), t, dur, lin);
+// A bracket under a stretch of road with its label, in its own group (so it can leave when the gap changes).
+function c35Gap(p, x1, x2, y, label, t0, col = RES) {
+  const g = G(p);
+  klBrace(g, x1, x2, y, label, t0, { up: false, fill: col, size: 30 });
+  return g;
+}
+// A pool w × h at (x, y) split into n equal layers by faint lines. fill(k, cnt, col, t, dur, fxMode) pours layers
+// k … k + cnt − 1 (water rising from the bottom of layer k), under the lines and the walls.
+function c35Tank(p, { x, y, w, h, n, t0 }) {
+  const g = G(p, { o: 0 }), water = G(g), lh = h / n;
+  for (let k = 1; k < n; k++) path(g, `M${x + 4} ${y + h - k * lh}H${x + w - 4}`, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .35, 'stroke-dasharray': '6 6' });
+  path(g, `M${x} ${y - 10}V${y + h}H${x + w}V${y - 10}`, { stroke: COL.chalk, 'stroke-width': 4.5 });
+  show(g, t0);
+  const fill = (k, cnt, col, t, dur = .8, fxMode) => {
+    const bot = y + h - k * lh, top = bot - cnt * lh;
+    const r = mk('rect', { x: x + 3, y: bot, width: w - 6, height: 0, fill: col, 'fill-opacity': .6 }, water);
+    (fxMode ? fxp : prog)(q => { r.setAttribute('y', bot - (bot - top) * q); r.setAttribute('height', (bot - top) * q); }, t, dur, lin);
+    return r;
+  };
+  return { g, fill, lh, x, y, w, h };
+}
+// A pipe over the pool's corner (side −1 left, +1 right) and its stream, shown from t for dur seconds (fx when fxMode).
+function c35Pipe(p, tank, side, col) {
+  const xm = side < 0 ? tank.x + 40 : tank.x + tank.w - 40, xe = side < 0 ? tank.x - 90 : tank.x + tank.w + 90;
+  path(p, `M${xe} ${tank.y - 50}H${xm}V${tank.y - 22}`, { stroke: col, 'stroke-width': 14, 'stroke-linecap': 'butt', 'stroke-linejoin': 'miter' });
+  const s = path(p, `M${xm} ${tank.y - 18}V${tank.y + tank.h - 8}`, { stroke: col, 'stroke-width': 6, 'stroke-opacity': .7, 'stroke-dasharray': '10 8' });
+  put(s, { o: 0 });
+  return (t, dur, fxMode) => { if (fxMode) { fx(s, { o: 1 }, t, .15); fx(s, { o: 0 }, t + dur, .2); } else { show(s, t, .15); hide(s, t + dur, .2); } };
+}
+// A horizontal arrow from x1 to x2 at height y (head at x2) with its label above the middle, drawn on at t0.
+function c35Arrow(p, x1, x2, y, col, label, t0) {
+  const g = G(p), k = x2 > x1 ? -1 : 1;
+  draw(path(g, `M${x1} ${y}H${x2}`, { stroke: col, 'stroke-width': 6 }, { d: 0 }), t0, .45);
+  const head = path(g, `M${x2 + k * 18} ${y - 13}L${x2} ${y}L${x2 + k * 18} ${y + 13}`, { stroke: col, 'stroke-width': 6, fill: 'none' }, { o: 0 });
+  show(head, t0 + .4, .15);
+  if (label) klText(g, label, (x1 + x2) / 2, y - 22, t0 + .3, { size: 28, fill: col, weight: 700, anchor: 'middle' });
+  return g;
+}
+// A time bar from x0 to x0 + w at height y (50 high), growing from t0 (no t0: hidden, for an answer effect).
+function c35Bar(p, x0, w, y, col, t0, op = .55) {
+  const r = mk('rect', { x: x0, y: y - 25, width: t0 === undefined ? w : 0, height: 50, rx: 6, fill: col, 'fill-opacity': op, stroke: col, 'stroke-width': 2.5 }, p);
+  if (t0 === undefined) put(r, { o: 0 });
+  else prog(q => r.setAttribute('width', w * q), t0, .8);
+  return r;
+}
+// An hour scale at height y: 0 at x0, u pixels per hour, labels every `step` hours up to max, «ч» at the end.
+function c35Hours(p, x0, u, max, y, step, t0) {
+  const g = G(p, { o: 0 });
+  path(g, `M${x0} ${y}H${x0 + max * u + 20}`, { stroke: COL.chalk, 'stroke-width': 3 });
+  for (let h = 0; h <= max; h += step) {
+    path(g, `M${x0 + h * u} ${y - 10}V${y + 10}`, { stroke: COL.chalk, 'stroke-width': 3 });
+    T(g, String(h), { x: x0 + h * u, y: y + 44, size: 28, fill: COL.chalk, font: MATH, anchor: 'middle' });
+  }
+  T(g, 'ч', { x: x0 + max * u + 40, y: y + 44, size: 28, fill: COL.dim });
+  show(g, t0);
+  return g;
+}
+// A small notebook with its price tag, centred on x with its top at y.
+function c35Book(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { x: -30, y: 0, width: 60, height: 78, rx: 5, fill: RATE, 'fill-opacity': .18, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  path(g, 'M-20 0V78', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .6 });
+  T(g, '15 ₽', { x: 0, y: -12, size: 24, fill: RATE, weight: 700, anchor: 'middle' });
+  return g;
+}
+// One line said in two parts: left ends at xm (from t1), right starts at xm (from t2); klRow options.
+function c35Two(p, left, right, xm, y, t1, t2, o = {}) {
+  klRow(p, left, xm, y, t1, { ...o, anchor: 'end' });
+  klRow(p, right, xm, y, t2, { ...o, anchor: 'start' });
+}
+// A ring of radius r that flashes round (x, y) at t0 to point at something.
+function c35Ping(p, x, y, t0, col, r = 70) {
+  const e = mk('circle', { cx: x, cy: y, r, fill: 'none', stroke: col, 'stroke-width': 4 }, p);
+  put(e, { o: 0 }); show(e, t0, .3); hide(e, t0 + 1.6, .5);
+  return e;
+}
+// A block «12» (one hour of the master's work), x its left edge, y its top.
+function c35Block(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { x: 0, y: 0, width: 96, height: 50, rx: 6, fill: RES, 'fill-opacity': .28, stroke: RES, 'stroke-width': 2.5 }, g);
+  T(g, '12', { x: 48, y: 35, size: 28, fill: COL.chalk, font: MATH, anchor: 'middle' });
+  return g;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Движение, работа, покупки', (m, D) => klIntro(m, D, {
+    unit: 'Глава 8 · Текстовые задачи · Тема 8.1',
+    title: 'Движение, работа, покупки',
+    sub: 'Одна формула — и три вида задач',
+    art: (g, t0) => {
+      const car = c35Car(g, 560, 700, 1, RATE);
+      c35Go(car, 560, 760, t0 + .4, 2.2);
+      klRow(g, [{ m: 's', fill: RES }, { m: ' = ' }, { m: 'v', fill: RATE }, { m: ' · ' }, { m: 't', fill: TIME }], 1030, 690, t0 + 1.4, { msize: 60 });
+    },
+  })],
+
+  ['drive', 'Путь, скорость, время', m => {
+    const p = panel(0);
+    klTitle(p, 'Путь, скорость и время', 'машина едет со скоростью 60 км/ч');
+    const RY = 460, { X } = c35Road(p, { x0: 200, km: 5, max: 240, y: RY, step: 60, tick: 30, t0: .2 });
+    const car = c35Car(p, X(0), RY - 3, 1, RATE, '60 км/ч');
+    put(car.lastChild, { o: 0 }); show(car.lastChild, 2);
+    const arcs = G(p);
+    [0, 1, 2].forEach(i => {
+      c35Go(car, X(60 * i), X(60 * (i + 1)), m('h', i * .9), .9);
+      c35Hop(arcs, X, 60 * i, 60 * (i + 1), RY - 130, m('h', i * .9), .9, TIME, (i + 1) + ' ч');
+    });
+    c35Gap(p, X(0), X(180), RY + 78, '180 км', m('h3'));
+    // s = v · t and the two formulas it gives, each with this drive's numbers under it.
+    const F2 = (parts, x, y, t, ms = 64) => klRow(p, parts, x, y, t, { msize: ms });
+    F2([{ m: 's', fill: RES }, { m: ' = ' }, { m: 'v', fill: RATE }, { m: ' · ' }, { m: 't', fill: TIME }], 360, 700, m('f'));
+    F2([{ m: '180', fill: RES }, { m: ' = ' }, { m: '60', fill: RATE }, { m: ' · ' }, { m: '3', fill: TIME }], 360, 790, m('f', 1.4), 46);
+    klText(p, 'путь = скорость · время', 360, 850, m('f', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    F2([{ m: 'v', fill: RATE }, { m: ' = ' }, { m: 's', fill: RES }, { m: ' : ' }, { m: 't', fill: TIME }], 840, 700, m('back', 1.6));
+    F2([{ m: '60', fill: RATE }, { m: ' = ' }, { m: '180', fill: RES }, { m: ' : ' }, { m: '3', fill: TIME }], 840, 790, m('back', 2.6), 46);
+    F2([{ m: 't', fill: TIME }, { m: ' = ' }, { m: 's', fill: RES }, { m: ' : ' }, { m: 'v', fill: RATE }], 1290, 700, m('back2', .8));
+    F2([{ m: '3', fill: TIME }, { m: ' = ' }, { m: '180', fill: RES }, { m: ' : ' }, { m: '60', fill: RATE }], 1290, 790, m('back2', 1.8), 46);
+    show(path(p, 'M600 650V830M1060 650V830', { stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '6 8' }, { o: 0 }), m('back'));
+  }],
+
+  ['same', 'Одна формула', m => {
+    const p = panel(0);
+    klTitle(p, 'Одна формула — три задачи');
+    const FX0 = 760, Y = [300, 520, 740];
+    const row = (y, words, nums, t1, t2) => {
+      c35Words(p, words, FX0, y - 20, t1);
+      klRow(p, nums, FX0, y + 50, t2, { msize: 48, anchor: 'start' });
+    };
+    // Motion: carried over from the road.
+    const car = c35Car(p, 460, Y[0] + 30, 1, RATE, '60 км/ч');
+    put(car, { o: 0 }); show(car, .2);
+    row(Y[0], [['путь', RES], [' = ', COL.chalk], ['скорость', RATE], [' · ', COL.chalk], ['время', TIME]],
+      [{ m: '180', fill: RES }, { m: ' = ' }, { m: '60', fill: RATE }, { m: ' · ' }, { m: '3', fill: TIME }], .3, .5);
+    // Work: one block of 12 details for each hour.
+    const BX = 130, BY = Y[1] - 30;
+    const blocks = [0, 1, 2, 3, 4].map(i => c35Block(p, BX + i * 104, BY, 0));
+    show(blocks[0], m('work'));
+    klText(p, '12 деталей в час', BX, BY - 26, m('work', .3), { size: 28, fill: RATE, weight: 600 });
+    blocks.slice(1).forEach((b, i) => { put(b, { x: BX + 30 }); tw(b, { o: 1, x: BX + (i + 1) * 104 }, m('work5', i * .3), .45); });
+    c35Gap(p, BX, BX + 5 * 104 - 8, BY + 72, '5 ч', m('work5', 1.3), TIME);
+    row(Y[1], [['работа', RES], [' = ', COL.chalk], ['производительность', RATE], [' · ', COL.chalk], ['время', TIME]],
+      [{ m: '60', fill: RES }, { m: ' = ' }, { m: '12', fill: RATE }, { m: ' · ' }, { m: '5', fill: TIME }], m('work5', 2), m('work5', 2.6));
+    // Purchases: four notebooks at 15 ₽.
+    const books = [0, 1, 2, 3].map(i => c35Book(p, 180 + i * 110, Y[2] - 30, 0));
+    show(books[0], m('buy'));
+    books.slice(1).forEach((b, i) => show(b, m('buy4', i * .3)));
+    c35Gap(p, 140, 550, Y[2] + 66, '4 шт.', m('buy4', 1.1), TIME);
+    row(Y[2], [['стоимость', RES], [' = ', COL.chalk], ['цена', RATE], [' · ', COL.chalk], ['количество', TIME]],
+      [{ m: '60', fill: RES }, { m: ' = ' }, { m: '15', fill: RATE }, { m: ' · ' }, { m: '4', fill: TIME }], m('buy4', 1.6), m('buy4', 2.2));
+    // The rule: the middle word of every line is «how much for one unit».
+    c35Words(p, [['сколько на одну единицу', RATE], ['  ·  ', COL.chalk], ['число единиц', TIME]], 1130, 860, m('rule', 1), { size: 30, anchor: 'middle' });
+    [['путь', 'скорость'], ['работа', 'производительность'], ['стоимость', 'цена']].forEach(([a, b], i) => {
+      const x1 = FX0 + klW(a, 34, 600) + klW(' = ', 34, 600), x2 = x1 + klW(b, 34, 600);
+      draw(path(p, `M${x1} ${Y[i] - 6}H${x2}`, { stroke: RULE, 'stroke-width': 4 }, { d: 0 }), m('rule', i * .4), .4);
+    });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'Машина проехала 240 км за 3 ч.', 800, 190, .2, { size: 36, weight: 600, anchor: 'middle' });
+    const RY = 450, { X } = c35Road(p, { x0: 200, km: 5, max: 240, y: RY, step: 60, tick: 30, t0: .2 });
+    const car = c35Car(p, X(0), RY - 3, 1, RATE);
+    const arcs = G(p);
+    S.q1lab = [0, 1, 2].map(i => {
+      c35Go(car, X(80 * i), X(80 * (i + 1)), .5 + i * .5, .5);
+      c35Hop(arcs, X, 80 * i, 80 * (i + 1), RY - 110, .5 + i * .5, .5, TIME, (i + 1) + ' ч');
+      return klText(p, '? км', X(80 * i + 40), RY - 20, .6 + i * .5, { size: 26, fill: COL.dim, anchor: 'middle' });
+    });
+    S.q1km = [0, 1, 2].map(i => { const e = klText(p, '80 км', X(80 * i + 40), RY - 20, undefined, { size: 26, fill: RATE, weight: 700, anchor: 'middle' }); put(e, { o: 0 }); return e; });
+    c35Gap(p, X(0), X(240), RY + 78, '240 км', .8);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-skorost', prompt: 'С какой скоростью ехала машина?',
+    build: blanks([{ parts: ['скорость — ', { box: '80' }, ' км/ч'], why: 'Скорость = путь : время = 240 : 3 = 80 км/ч.',
+      hint: 'Скорость — это путь, делённый на время.',
+      fx: () => { S.q1lab.forEach((e, i) => { fx(e, { o: 0 }, i * .2, .2); fx(S.q1km[i], { o: 1 }, .1 + i * .2, .3); }); floatText('240 : 3 = 80', 800, 260, RULE); } }]),
+  }], done) }],
+
+  ['meet', 'Движение навстречу', m => {
+    const p = panel(0);
+    klTitle(p, 'Навстречу друг другу');
+    const RY = 500, { X } = c35Road(p, { x0: 200, km: 4, max: 300, y: RY, step: 50, t0: .2 });
+    const a = c35Car(p, X(0), RY - 3, 1, RATE, '70 км/ч'), b = c35Car(p, X(300), RY - 3, -1, RATE2, '80 км/ч');
+    // The labels come with the speeds.
+    [a, b].forEach(c => put(c.lastChild, { o: 0 }));
+    show(a.lastChild, m('v')); show(b.lastChild, m('v', 2.4));
+    const g0 = c35Gap(p, X(0), X(300), RY + 78, '300 км', 3);
+    const arcs = G(p), AY = RY - 140;
+    const hour = (i, t, d) => {
+      c35Go(a, X(70 * i), X(70 * (i + 1)), t, d);
+      c35Go(b, X(300 - 80 * i), X(300 - 80 * (i + 1)), t, d);
+      c35Hop(arcs, X, 70 * i, 70 * (i + 1), AY, t, d, RATE, '70 км');
+      c35Hop(arcs, X, 300 - 80 * i, 300 - 80 * (i + 1), AY, t, d, RATE2, '80 км');
+    };
+    const clock1 = klText(p, 'прошёл 1 ч', 1500, 112, m('h1', 2.5), { size: 34, fill: TIME, weight: 700, anchor: 'end' });
+    hour(0, m('h1'), 2.6);
+    hide(g0, m('gap1'), .3);
+    const g1 = c35Gap(p, X(70), X(220), RY + 78, '150 км', m('gap1', .2));
+    const less = klText(p, 'на 150 км меньше', 800, 700, m('gap1', 1), { size: 30, fill: COL.dim, anchor: 'middle' });
+    klRow(p, [{ m: '70', fill: RATE }, { m: ' + ' }, { m: '80', fill: RATE2 }, { m: ' = ' }, { m: '150', fill: RULE }, ' км/ч'], 800, 215, m('sum', 2.6), { size: 34, msize: 54 });
+    klText(p, 'скорость сближения', 800, 262, m('sum', .3), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    hide(clock1, m('h2'), .3);
+    klText(p, 'прошло 2 ч', 1500, 112, m('h2', 1), { size: 34, fill: TIME, weight: 700, anchor: 'end' });
+    hour(1, m('h2'), 1.4);
+    hide(g1, m('h2'), .3); hide(less, m('h2'), .3);
+    c35Ping(p, X(140), RY - 60, m('h2', 1.2), RULE);
+    klText(p, 'встреча', X(140), RY + 100, m('h2', 1.3), { size: 30, fill: RULE, weight: 700, anchor: 'middle' });
+    c35Two(p, [{ m: 't', fill: TIME }, { m: ' = ' }, { m: '300', fill: RES }, { m: ' : ' }, { m: '150', fill: RULE }], [{ m: ' = ' }, { m: '2', fill: TIME }, ' ч'], 860, 740, m('t', 3), m('t', 5.6), { size: 40, msize: 64 });
+    klText(p, 'расстояние : скорость сближения', 800, 810, m('t', .3), { size: 28, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['chase', 'Движение вдогонку', m => {
+    const p = panel(0);
+    klTitle(p, 'Вдогонку');
+    const RY = 520, { X } = c35Road(p, { x0: 200, km: 100, max: 12, y: RY, step: 1, t0: .2, size: 28 });
+    const walker = c35Walker(p, X(6), RY - 3, RATE2, '5 км/ч'), bike = c35Bike(p, X(0), RY - 3, RATE, '15 км/ч');
+    [walker, bike].forEach(e => put(e.lastChild, { o: 0 }));
+    show(walker.lastChild, m('set', 3)); show(bike.lastChild, m('set', 6.6));
+    let gap = c35Gap(p, X(0), X(6), RY + 78, '6 км', m('set', .8));
+    klRow(p, [{ m: '15', fill: RATE }, { m: ' − ' }, { m: '5', fill: RATE2 }, { m: ' = ' }, { m: '10', fill: RULE }, ' км/ч'], 800, 250, m('d', 2), { size: 34, msize: 54 });
+    klText(p, 'за час разрыв меньше на 10 км', 800, 300, m('d', 3.4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, [{ m: 't', fill: TIME }, { m: ' = ' }, { m: '6', fill: RES }, { m: ' : ' }, { m: '10', fill: RULE }, { m: ' = ' }, { m: '0,6', fill: TIME }, ' ч'], 560, 760, m('t', 1), { size: 36, msize: 56 });
+    c35Two(p, [{ m: '0,6 · 60' }], [{ m: ' = ' }, { m: '36', fill: TIME }, ' мин'], 1100, 760, m('min', 1.6), m('min', 3.6), { size: 36, msize: 56 });
+    // Three steps of 12 minutes: the cyclist does 3 km, the walker 1 km; the gap 6 → 4 → 2 → 0.
+    const clock = [];
+    ['s1', 's2', 's3'].forEach((s, i) => {
+      c35Go(bike, X(3 * i), X(3 * (i + 1)), m(s), 1);
+      c35Go(walker, X(6 + i), X(7 + i), m(s), 1);
+      hide(gap, m(s), .3);
+      if (i < 2) gap = c35Gap(p, X(3 * (i + 1)), X(7 + i), RY + 78, (4 - 2 * i) + ' км', m(s, 1));
+      if (i) hide(clock[i - 1], m(s), .3);
+      clock.push(klText(p, (12 * (i + 1)) + ' мин', 1500, 112, m(s, .5), { size: 34, fill: TIME, weight: 700, anchor: 'end' }));
+    });
+    hide(walker.lastChild, m('s3', .9), .3); hide(bike.lastChild, m('s3', .9), .3);
+    klText(p, 'догнал', X(9), RY - 160, m('s3', 1.1), { size: 30, fill: RULE, weight: 700, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const RY = 450, { X } = c35Road(p, { x0: 260, km: 60, max: 18, y: RY, step: 2, tick: 1, t0: .2, size: 28 });
+    S.q2a = c35Walker(p, X(0), RY - 3, RATE, '4 км/ч');
+    S.q2b = c35Walker(p, X(18), RY - 3, RATE2, '5 км/ч');
+    S.q2X = X;
+    c35Gap(p, X(0), X(18), RY + 78, '18 км', .4);
+    S.q2sum = klRow(p, [{ m: '4', fill: RATE }, { m: ' + ' }, { m: '5', fill: RATE2 }, { m: ' = ' }, { m: '9', fill: RULE }, ' км/ч'], 800, 210, undefined, { size: 34, msize: 54 });
+    put(S.q2sum, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-peshehody', prompt: 'Два пешехода идут навстречу друг другу. Через сколько часов они встретятся?',
+    build: blanks([
+      { parts: ['скорость сближения — ', { box: '9' }, ' км/ч'], why: 'Навстречу скорости складываются: 4 + 5 = 9 км/ч.',
+        hint: 'Идут навстречу — расстояние сокращается на сумму скоростей.', fx: () => fx(S.q2sum, { o: 1 }, 0, .4) },
+      { parts: ['встретятся через ', { box: '2' }, ' ч'], why: '18 : 9 = 2 ч. Проверка: 4 · 2 + 5 · 2 = 8 + 10 = 18 км.',
+        hint: 'Время встречи — расстояние, делённое на скорость сближения.',
+        fx: () => { const X = S.q2X; c35Go(S.q2a, X(0), X(8), 0, 2, true); c35Go(S.q2b, X(18), X(8), 0, 2, true); floatText('18 : 9 = 2', 800, 300, RULE); } },
+    ]),
+  }], done) }],
+
+  ['river', 'По реке', (m, D) => {
+    const p = panel(0);
+    klTitle(p, 'По течению и против течения');
+    mk('rect', { x: 100, y: 300, width: 1400, height: 160, rx: 12, fill: KL.DEN, 'fill-opacity': .1 }, p);
+    const waves = G(p);
+    for (let x = 120; x <= 1340; x += 120) [335, 400].forEach((y, j) => path(waves, `M${x + j * 60} ${y + 30}q15 -12 30 0t30 0`, { stroke: RATE2, 'stroke-width': 3, 'stroke-opacity': .6 }));
+    prog(q => put(waves, { x: (q * D * 24) % 120 }), 0, D, lin);
+    const boat = c35Boat(p, 330, 380, 1);
+    klText(p, 'течение', 1480, 290, .4, { size: 26, fill: RATE2, weight: 600, anchor: 'end' });
+    // Speeds as arrows, 40 px for 1 km/h.
+    const U = 40, Y1 = 590, Y2 = 760, A0 = 300;
+    c35Arrow(p, A0, A0 + 12 * U, Y1, RATE, '12 км/ч', m('own', .8));
+    const cur = c35Arrow(p, A0, A0 + 2 * U, Y1 + 70, RATE2, '2 км/ч', m('cur', .6));
+    tw(cur, { x: 12 * U, y: -70 }, m('down', .8), .8, io);
+    klBrace(p, A0, A0 + 14 * U, Y1 + 36, '14 км/ч', m('down', 1.8), { up: false, fill: RULE, size: 30 });
+    klRow(p, [{ m: '12', fill: RATE }, { m: ' + ' }, { m: '2', fill: RATE2 }, { m: ' = ' }, { m: '14', fill: RULE }], 1250, 610, m('down', 2.4), { msize: 52 });
+    c35Go(boat, 330, 980, m('down', .8), 3);
+    // Upstream: the boat turns round; the river pushes it back by 2.
+    hide(boat, m('up'), .3);
+    const back = c35Boat(p, 980, 380, -1, 0);
+    show(back, m('up', .3), .3);
+    c35Go(back, 980, 520, m('up', .8), 3);
+    const B0 = 1240;
+    c35Arrow(p, B0, B0 - 12 * U, Y2, RATE, '12 км/ч', m('up', .8));
+    c35Arrow(p, B0 - 12 * U, B0 - 10 * U, Y2 + 22, RATE2, '', m('up', 1.6));
+    klBrace(p, B0 - 10 * U, B0, Y2 + 44, '10 км/ч', m('up', 2.4), { up: false, fill: RULE, size: 30 });
+    klRow(p, [{ m: '12', fill: RATE }, { m: ' − ' }, { m: '2', fill: RATE2 }, { m: ' = ' }, { m: '10', fill: RULE }], 420, 780, m('up', 3), { msize: 52 });
+  }],
+
+  ['work', 'Совместная работа', m => {
+    const p = panel(0);
+    klTitle(p, 'Совместная работа', 'одна труба наполняет бассейн за 6 ч, другая — за 3 ч');
+    const tank = c35Tank(p, { x: 230, y: 300, w: 320, h: 480, n: 6, t0: .3 });
+    const pa = c35Pipe(p, tank, -1, RATE), pb = c35Pipe(p, tank, 1, RATE2);
+    const RX = 760;
+    klRow(p, ['1-я труба: ', { m: '6 ч', fill: TIME }], RX, 290, m('task', .3), { size: 32, anchor: 'start', fill: RATE });
+    klRow(p, ['2-я труба: ', { m: '3 ч', fill: TIME }], RX, 350, m('task', 2.5), { size: 32, anchor: 'start', fill: RATE2 });
+    const qm = klText(p, '?', 390, 570, m('task', 5.6), { size: 80, fill: COL.dim, weight: 700, anchor: 'middle' });
+    hide(qm, m('one'), .3);
+    klText(p, 'весь бассейн — 1', 390, 840, m('one', .4), { size: 30, fill: RES, weight: 600, anchor: 'middle' });
+    c35Ping(p, 390, 540, m('one'), RES, 150);
+    pa(m('a', .3), 1.6); tank.fill(0, 1, RATE, m('a', .3), 1.6);
+    klRow(p, ['1-я за час: ', { m: [F('1', '6')], fill: RATE }], RX, 470, m('a', .6), { size: 32, msize: 44, anchor: 'start' });
+    pb(m('b', .2), 1.6); tank.fill(1, 2, RATE2, m('b', .2), 1.6);
+    klRow(p, ['2-я за час: ', { m: [F('1', '3'), ' = ', F('2', '6')], fill: RATE2 }], RX, 575, m('b', .5), { size: 32, msize: 44, anchor: 'start' });
+    klText(p, '1 ч', 580, 300 + 480 - 3 * 80 + 10, m('sum', .3), { size: 30, fill: TIME, weight: 700 });
+    const sumL = klRow(p, ['вместе за час: ', { m: [F('1', '6'), ' + ', F('2', '6'), ' = ', F('3', '6')] }], RX, 680, m('sum', .6), { size: 32, msize: 44, anchor: 'start' });
+    klRow(p, [{ m: [' = ', F('1', '2')], fill: RULE }], RX + sumL._w, 680, m('sum', 3), { size: 32, msize: 44, anchor: 'start' });
+    pa(m('h2', .2), 1.4); pb(m('h2', .2), 1.4);
+    tank.fill(3, 1, RATE, m('h2', .2), 1.4); tank.fill(4, 2, RATE2, m('h2', .2), 1.4);
+    klText(p, '2 ч', 580, 300 + 10, m('h2', 1.4), { size: 30, fill: TIME, weight: 700 });
+    c35Two(p, [{ m: 't', fill: TIME }, { m: ' = 1 : ' }, { m: [F('1', '2')], fill: RULE }], [{ m: ' = ' }, { m: '2', fill: TIME }, ' ч'], RX + 230, 805, m('t', 2.5), m('t', 5.2), { size: 36, msize: 52 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3t = c35Tank(p, { x: 670, y: 190, w: 260, h: 312, n: 12, t0: .2 });
+    S.q3pa = c35Pipe(p, S.q3t, -1, RATE); S.q3pb = c35Pipe(p, S.q3t, 1, RATE2);
+    klRow(p, ['1-я труба: ', { m: '12 ч', fill: TIME }], 420, 260, .3, { size: 32, fill: RATE });
+    klRow(p, ['2-я труба: ', { m: '6 ч', fill: TIME }], 1190, 260, .4, { size: 32, fill: RATE2 });
+    S.q3sum = klRow(p, [{ m: [F('1', '12'), ' + ', F('1', '6'), ' = ', F('3', '12'), ' = '] }, { m: [F('1', '4')], fill: RULE }], 340, 420, undefined, { msize: 40 });
+    put(S.q3sum, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-truby', prompt: 'Какую часть бассейна трубы наполняют вместе за час? За сколько часов наполнят весь?',
+    build: blanks([
+      { parts: ['за час вместе — ', { box: '1/4' }, ' бассейна'], why: '1/12 + 1/6 = 1/12 + 2/12 = 3/12 = 1/4 бассейна в час.',
+        hint: 'Первая труба за час наливает 1/12 бассейна, вторая — 1/6. Сложи эти части.',
+        fx: () => { S.q3pa(0, 1, true); S.q3pb(0, 1, true); S.q3t.fill(0, 1, RATE, 0, 1, true); S.q3t.fill(1, 2, RATE2, 0, 1, true); fx(S.q3sum, { o: 1 }, .3, .4); } },
+      { parts: ['вместе за ', { box: '4' }, ' ч'], why: 'Каждый час — четверть бассейна, значит, весь за 1 : 1/4 = 4 ч.',
+        hint: 'Сколько раз четверть помещается в целом бассейне?',
+        fx: () => { S.q3pa(0, 2.4, true); S.q3pb(0, 2.4, true); [1, 2, 3].forEach(h => { S.q3t.fill(3 * h, 1, RATE, (h - 1) * .8, .8, true); S.q3t.fill(3 * h + 1, 2, RATE2, (h - 1) * .8, .8, true); }); } },
+    ]),
+  }], done) }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка: сложить время');
+    const X0 = 400, U = 110, XH = h => X0 + h * U;
+    c35Hours(p, X0, U, 9, 700, 1, .2);
+    const lab = (s, y, col, t) => klText(p, s, 100, y + 10, t, { size: 28, fill: col, weight: 600 });
+    lab('1-я труба одна', 260, RATE, .3); c35Bar(p, X0, 6 * U, 260, RATE, .3);
+    lab('2-я труба одна', 360, RATE2, .5); c35Bar(p, X0, 3 * U, 360, RATE2, .5);
+    lab('вместе?', 470, COL.dim, m('add'));
+    c35Bar(p, X0, 9 * U, 470, COL.dim, m('add', .3), .35);
+    klRow(p, [{ m: '6 + 3 = 9' }, ' ч'], XH(4.5), 482, m('add', .9), { size: 30, msize: 40 });
+    klStrike(p, X0 - 10, 500, XH(9) + 10, 440, m('no'));
+    klText(p, 'дольше, чем одна 2-я труба!', XH(9), 540, m('no', .6), { size: 28, fill: COL.bad, weight: 600, anchor: 'end' });
+    klGuide(p, XH(3), 230, 690, m('fast'), RATE2);
+    c35Ping(p, XH(1.5), 360, m('fast'), RATE2, 90);
+    lab('вместе', 600, RULE, m('ans'));
+    c35Bar(p, X0, 2 * U, 600, RULE, m('ans', .3));
+    klText(p, '2 ч — быстрее любой одной', XH(2) + 20, 610, m('ans', 1.1), { size: 28, fill: RULE, weight: 600 });
+    klRow(p, ['складывают то, что делают за час:  ', { m: [F('1', '6'), ' + ', F('1', '3'), ' = ', F('1', '2')], fill: RULE }], 800, 840, m('rule', .5), { size: 32, msize: 44 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'Два одинаковых насоса', 100, 150, .2, { size: 36, weight: 600 });
+    const X0 = 140, U = 70;
+    c35Hours(p, X0, U, 8, 620, 2, .2);
+    klText(p, '1-й насос один — 8 ч', X0, 270, .3, { size: 28, fill: RATE, weight: 600 });
+    c35Bar(p, X0, 8 * U, 310, RATE, .3);
+    klText(p, '2-й насос один — 8 ч', X0, 400, .4, { size: 28, fill: RATE2, weight: 600 });
+    c35Bar(p, X0, 8 * U, 440, RATE2, .4);
+    S.q4bar = c35Bar(p, X0, 4 * U, 545, RULE);
+    S.q4lab = klText(p, 'вместе — 4 ч', X0 + 4 * U + 20, 555, undefined, { size: 28, fill: RULE, weight: 600 });
+    put(S.q4lab, { o: 0 });
+  }, { ask: done => quiz({ x: 820, y: 220, w: 700, cls: 'side' }, [{
+    id: 'c-nasosy', prompt: 'Каждый насос в одиночку откачивает воду из подвала за 8 ч. За сколько часов они справятся вдвоём?',
+    build: choice(['за 16 ч', 'за 8 ч', 'за 4 ч'], 2,
+      'Каждый за час откачивает 1/8, вдвоём — 2/8 = 1/4 воды в час, значит, всё за 4 ч.',
+      ['Время складывать нельзя: вдвоём работа идёт быстрее, а не дольше.', 'Вдвоём быстрее, чем одному: за час они делают вдвое больше.', null],
+      () => { fx(S.q4bar, { o: 1 }, 0, .4); fx(S.q4lab, { o: 1 }, .3, .4); }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Путь, работа, стоимость: результат = скорость · время',
+    'Навстречу скорости складываются, вдогонку — вычитаются',
+    'По течению скорость реки прибавляют, против — вычитают',
+    'Вместе: складывают работу за час, а не время',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-kater', prompt: 'Собственная скорость катера 20 км/ч, скорость течения 3 км/ч. Сколько километров катер пройдёт против течения за 2 ч?',
+    build: blanks([{ parts: [{ box: '34' }, ' км'], why: 'Против течения: 20 − 3 = 17 км/ч; за 2 ч — 17 · 2 = 34 км.', hint: 'Сначала найди скорость против течения: из собственной скорости вычти скорость течения.' }]),
+  }, {
+    id: 'p-pokupka', prompt: 'Купили 3 кг яблок по 90 ₽ и 2 кг груш по 120 ₽. Сколько заплатили за всю покупку?',
+    build: blanks([{ parts: [{ box: '510' }, ' ₽'], why: '90 · 3 = 270 ₽, 120 · 2 = 240 ₽, всего 270 + 240 = 510 ₽.', hint: 'Стоимость = цена · количество; посчитай яблоки и груши отдельно и сложи.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-samokat', prompt: 'Вася едет на самокате со скоростью 5 м/с и догоняет сестру, которая едет со скоростью 3 м/с. Между ними 40 м. Через сколько секунд он её догонит?',
+    build: blanks([{ parts: [{ box: '20' }, ' с'], why: 'Вдогонку разрыв сокращается на 5 − 3 = 2 м в секунду: 40 : 2 = 20 с.', hint: 'Вдогонку разрыв сокращается на разность скоростей.' }]),
+  }, {
+    id: 'p-detali', prompt: 'Мастер делает 15 деталей в час, ученик — 9 деталей в час. За сколько часов они вместе сделают 96 деталей?',
+    build: blanks([{ parts: [{ box: '4' }, ' ч'], why: 'Вместе за час: 15 + 9 = 24 детали; 96 : 24 = 4 ч.', hint: 'Сложи, сколько деталей они делают за час вдвоём.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-poezda', prompt: 'Расстояние между городами 360 км. Из них одновременно навстречу друг другу вышли два поезда: 70 км/ч и 50 км/ч. Через сколько часов они встретятся?',
+    build: blanks([{ parts: [{ box: '3' }, ' ч'], why: 'Скорость сближения 70 + 50 = 120 км/ч; 360 : 120 = 3 ч.', hint: 'Навстречу скорости складываются.' }]),
+  }, {
+    id: 'p-brigady', prompt: 'Первая бригада может выполнить заказ за 10 дней, вторая — за 15 дней. За сколько дней они выполнят заказ, работая вместе?',
+    build: blanks([{ parts: [{ box: '6' }, ' дней'], why: 'За день вместе: 1/10 + 1/15 = 3/30 + 2/30 = 5/30 = 1/6 заказа; весь — за 6 дней.', hint: 'Весь заказ — 1. Сложи, какую часть каждая бригада делает за день.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

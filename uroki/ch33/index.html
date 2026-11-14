@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Окружность и круг · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 7.5 «Окружность и круг» (6 класс). Beat ids match papermorph/content/uroki/ch33/narration.ru.json.
+const CHAPTER = { number: 33, label: '7.5', title: 'Окружность и круг', minutes: 7, language: 'ru', next: '../ch34/' };
+
+// Colours of this lesson: radius r — KL.NUM, diameter d — KL.DEN, the circle's line and its length C — KL.TWO,
+// the disc and its area S — KL.WHOLE, formulas and conclusions — KL.RULE.
+const RAD = KL.NUM, DIA = KL.DEN, RIM = KL.TWO, AREA = KL.WHOLE, RULE = KL.RULE, TAU = 2 * Math.PI;
+
+// The path of a whole circle (for draw()): from the top, clockwise.
+function c33CircD(x, y, r) { return `M${x} ${y - r}A${r} ${r} 0 1 1 ${x} ${y + r}A${r} ${r} 0 1 1 ${x} ${y - r}`; }
+// A circle: a faint disc, its rim in RIM; drawn on at t0 (rim), the disc fading in with it. Returns { disc, rim }.
+function c33Circle(p, x, y, r, t0, { fill = .12, w = 5 } = {}) {
+  const disc = mk('circle', { cx: x, cy: y, r, fill: AREA, 'fill-opacity': fill }, p);
+  const rim = path(p, c33CircD(x, y, r), { stroke: RIM, 'stroke-width': w }, t0 === undefined ? {} : { d: 0 });
+  if (t0 !== undefined) { put(disc, { o: 0 }); show(disc, t0, .6); draw(rim, t0, .7); }
+  return { disc, rim };
+}
+// A straight segment drawn on at t0 (shown at once without t0).
+function c33Seg(p, x1, y1, x2, y2, col, t0, w = 5) {
+  return path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: col, 'stroke-width': w }, t0 === undefined ? {} : { d: 0 });
+}
+function c33Dot(p, x, y, t0, col = COL.chalk, r = 7) {
+  const e = mk('circle', { cx: x, cy: y, r, fill: col }, p);
+  if (t0 !== undefined) { put(e, { o: 0 }); show(e, t0, .3); }
+  return e;
+}
+
+// A wheel of radius R standing on the line y = Y at x0, which rolls to the right without slipping. set(th) puts it after
+// turning th radians: the centre has gone R·th, the part of the rim that has touched the line (an arc of length R·th)
+// lies on the line as the segment x0 … x0 + R·th, and only the rest of the rim is left on the wheel. So at th = 2π the
+// segment is the whole circumference, 2πR, at the drawing's scale. P0, the rim point that touched x0, is the dot.
+function c33Wheel(p, { x0, Y, R, w = 7 }) {
+  const g = G(p);
+  const ghost = mk('circle', { r: R, fill: AREA, 'fill-opacity': .1, stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '8 8' }, g);
+  const seg = path(g, '', { stroke: RIM, 'stroke-width': w, 'stroke-linecap': 'butt' });
+  const rim = path(g, '', { stroke: RIM, 'stroke-width': w, 'stroke-linecap': 'butt' });
+  const spoke = path(g, '', { stroke: RAD, 'stroke-width': 3.5 });
+  const hub = mk('circle', { r: 6, fill: COL.chalk }, g);
+  const dot = mk('circle', { r: 10, fill: RULE, stroke: COL.board, 'stroke-width': 3 }, g);
+  const set = th => {
+    const cx = x0 + R * th, cy = Y - R, sx = cx - R * Math.sin(th), sy = cy + R * Math.cos(th), f = v => v.toFixed(2);
+    ghost.setAttribute('cx', f(cx)); ghost.setAttribute('cy', f(cy));
+    hub.setAttribute('cx', f(cx)); hub.setAttribute('cy', f(cy));
+    dot.setAttribute('cx', f(sx)); dot.setAttribute('cy', f(sy));
+    seg.setAttribute('d', th > 1e-4 ? `M${x0} ${Y}H${f(cx)}` : '');
+    rim.setAttribute('d', th < 1e-4 ? c33CircD(cx, cy, R) : th > TAU - 1e-4 ? ''
+      : `M${f(sx)} ${f(sy)}A${R} ${R} 0 ${TAU - th > Math.PI ? 1 : 0} 1 ${f(cx)} ${Y}`);
+    spoke.setAttribute('d', `M${f(cx)} ${f(cy)}L${f(sx)} ${f(sy)}`);
+  };
+  set(0);
+  return { g, set, spoke, dot, seg, x0, Y, R };
+}
+
+// One of n equal sectors of a disc as a group at the disc's centre (so x, y, r move and turn it about its tip):
+// the AREA fill, the RIM arc on its round side.
+function c33Sector(p, x, y, r, i, n, op) {
+  const g = G(p, { x, y }), a0 = i * 360 / n, a1 = (i + 1) * 360 / n;
+  g._fill = path(g, klSectorD(r, a0, a1), { fill: AREA, 'fill-opacity': op, stroke: COL.board, 'stroke-width': 0 });
+  const pt = a => `${(r * Math.sin(a * Math.PI / 180)).toFixed(2)} ${(-r * Math.cos(a * Math.PI / 180)).toFixed(2)}`;
+  path(g, `M${pt(a0)}A${r} ${r} 0 0 1 ${pt(a1)}`, { stroke: RIM, 'stroke-width': 4, 'stroke-linecap': 'butt' });
+  return g;
+}
+// An ellipse drawn around something at t0 (a ring that says «look here»).
+function c33Ring(p, cx, cy, rx, ry, t0, col = RULE) {
+  return draw(path(p, `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`, { stroke: col, 'stroke-width': 4 }, { d: 0 }), t0, .5);
+}
+// A circle with a horizontal diameter and its length written above it, for the questions and the trap.
+function c33DiamCircle(p, x, y, R, label, t0) {
+  const c = c33Circle(p, x, y, R, t0);
+  const d = c33Seg(p, x - R, y, x + R, y, DIA, t0 === undefined ? undefined : t0 + .5, 6);
+  if (t0 !== undefined) draw(d, t0 + .5, .5);
+  c33Dot(p, x, y, t0 === undefined ? undefined : t0 + .5);
+  klText(p, label, x, y - 22, t0 === undefined ? undefined : t0 + .8, { size: 34, fill: DIA, weight: 700, anchor: 'middle' });
+  return c;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Окружность и круг', (m, D) => klIntro(m, D, {
+    unit: 'Глава 7 · Геометрия · Тема 7.5',
+    title: 'Окружность и круг',
+    sub: 'Длина окружности, площадь круга и число π',
+    art: (g, t0) => {
+      c33Circle(g, 800, 640, 70, t0);
+      draw(c33Seg(g, 800, 640, 870, 640, RAD, t0, 4), t0 + .6, .4);
+      c33Dot(g, 800, 640, t0 + .5, COL.chalk, 5);
+      klMath(g, ['π ≈ 3,14'], 1010, 655, t0 + .9, { size: 44, fill: RULE });
+    },
+  })],
+
+  ['compass', 'Циркуль чертит окружность', m => {
+    const p = panel(0);
+    klTitle(p, 'Циркуль чертит окружность');
+    const OX = 470, OY = 500, R = 220;
+    // The compass: needle at O, pencil at P = O + rad·(cos φ, sin φ), the hinge above the middle of the legs.
+    const disc = mk('circle', { cx: OX, cy: OY, r: R, fill: AREA, 'fill-opacity': .3, o: 0 }, p);
+    put(disc, { o: 0 });
+    const trace = path(p, '', { stroke: RIM, 'stroke-width': 6 });
+    const radius = path(p, '', { stroke: RAD, 'stroke-width': 5 });
+    const cg = G(p, { o: 0 });
+    const legs = path(cg, '', { stroke: COL.chalk, 'stroke-width': 7 });
+    const hinge = mk('circle', { r: 11, fill: COL.chalk }, cg);
+    const lead = mk('circle', { r: 7, fill: RULE }, cg);
+    let rad = 16, phi = 0;
+    const setC = () => {
+      const px = OX + rad * Math.cos(phi), py = OY + rad * Math.sin(phi), hx = (OX + px) / 2, hy = (OY + py) / 2 - 190;
+      legs.setAttribute('d', `M${OX} ${OY}L${hx.toFixed(1)} ${hy.toFixed(1)}L${px.toFixed(1)} ${py.toFixed(1)}`);
+      hinge.setAttribute('cx', hx.toFixed(1)); hinge.setAttribute('cy', hy.toFixed(1));
+      lead.setAttribute('cx', px.toFixed(1)); lead.setAttribute('cy', py.toFixed(1));
+    };
+    setC();
+    show(cg, .2, .4);
+    c33Dot(p, OX, OY, m('centre'), COL.chalk, 8);
+    klText(p, 'O', OX - 16, OY + 40, m('centre', .2), { size: 34, weight: 600, anchor: 'end' });
+    klText(p, 'центр', OX + 10, OY + 40, m('centre', .4), { size: 28, fill: COL.dim });
+    // The legs open along the radius to the right: the coral radius grows with them.
+    prog(q => { rad = 16 + (R - 16) * q; setC(); radius.setAttribute('d', `M${OX} ${OY}H${(OX + rad).toFixed(1)}`); }, m('radius'), 1.2);
+    klText(p, 'радиус', OX + R / 2 + 40, OY + 44, m('radius', 2.6), { size: 30, fill: RAD, anchor: 'middle' });
+    tw(radius, { 'a_stroke-width': 10 }, m('radius', 5.6), .3); tw(radius, { 'a_stroke-width': 5 }, m('radius', 6.1), .4);
+    klText(p, 'r', OX + R / 2, OY - 20, m('radius', 5.9), { size: 44, fill: RAD, weight: 700, anchor: 'middle' });
+    // One full turn: the pencil leaves the circle behind it.
+    prog(q => {
+      phi = TAU * q; setC();
+      const ex = (OX + R * Math.cos(phi)).toFixed(1), ey = (OY + R * Math.sin(phi)).toFixed(1);
+      trace.setAttribute('d', q > .999 ? c33CircD(OX, OY, R) : q > 0 ? `M${OX + R} ${OY}A${R} ${R} 0 ${phi > Math.PI ? 1 : 0} 1 ${ex} ${ey}` : '');
+    }, m('draw'), 2.8);
+    hide(cg, m('line', -.2), .5);
+    tw(trace, { 'a_stroke-width': 12 }, m('line'), .3); tw(trace, { 'a_stroke-width': 6 }, m('line', .6), .4);
+    klText(p, 'окружность', 760, 330, m('line', .2), { size: 46, fill: RIM, weight: 700 });
+    klText(p, '— линия; все её точки на расстоянии r от центра', 760, 380, m('line', 1.6), { size: 28, fill: COL.dim });
+    // «все её точки на одном расстоянии»: three more distances from the centre, dashed
+    [-100, -165, 125].forEach((a, i) => { const rr = a * Math.PI / 180;
+      draw(path(p, `M${OX} ${OY}L${(OX + R * Math.cos(rr)).toFixed(1)} ${(OY + R * Math.sin(rr)).toFixed(1)}`, { stroke: RAD, 'stroke-width': 3, 'stroke-dasharray': '9 8' }, { d: 0, o: .8 }), m('line', 3.2 + i * .35), .4); });
+    show(disc, m('disc'), .8);
+    tw(trace, { 'a_stroke-width': 12 }, m('disc', 5), .3); tw(trace, { 'a_stroke-width': 6 }, m('disc', 5.6), .4);
+    tw(disc, { 'a_fill-opacity': .55 }, m('disc', 6.8), .4); tw(disc, { 'a_fill-opacity': .3 }, m('disc', 7.5), .5);
+    klText(p, 'круг', 760, 620, m('disc', .3), { size: 46, fill: AREA, weight: 700 });
+    klText(p, '— окружность и всё, что внутри неё', 760, 670, m('disc', .6), { size: 28, fill: COL.dim });
+  }],
+
+  ['diam', 'Радиус и диаметр', m => {
+    const p = panel(0);
+    klTitle(p, 'Радиус и диаметр');
+    const OX = 470, OY = 500, R = 220;
+    c33Circle(p, OX, OY, R);
+    // The radii: copies of the first one turned about the centre (a group at O holding the segment 0 … R).
+    const ANG = [0, -50, -125, 155, 110, 50];
+    const rays = ANG.map((a, i) => {
+      const g = G(p, { x: OX, y: OY, o: i ? 0 : 1 });
+      path(g, `M0 0H${R}`, { stroke: RAD, 'stroke-width': 5 });
+      if (i) tw(g, { r: a, o: 1 }, m('radii', (i - 1) * .3), .6);
+      return g;
+    });
+    const labs = ANG.map((a, i) => {
+      const rr = a * Math.PI / 180, lx = OX + R * .55 * Math.cos(rr) + 26 * Math.sin(rr), ly = OY + R * .55 * Math.sin(rr) - 26 * Math.cos(rr) + 12;
+      return klText(p, 'r', lx, ly, i ? m('radii', (i - 1) * .3 + .5) : undefined, { size: 38, fill: RAD, weight: 700, anchor: 'middle' });
+    });
+    c33Dot(p, OX, OY, undefined, COL.chalk, 8);
+    // The diameter: through the centre, from rim to rim.
+    labs.forEach(l => hide(l, m('diam', -.3), .3));
+    rays.slice(1).forEach((g, i) => i === 2 ? null : hide(g, m('diam', -.3), .3));
+    hide(rays[0], m('diam', -.3), .3);
+    const dl = c33Seg(p, OX - R, OY, OX + R, OY, DIA, m('diam'), 12);
+    draw(dl, m('diam'), .7);
+    [c33Dot(p, OX - R, OY, m('diam'), DIA, 9), c33Dot(p, OX + R, OY, m('diam', .6), DIA, 9)].forEach(e => tw(e, { a_r: 16 }, m('diam', 2.6), .3) || tw(e, { a_r: 9 }, m('diam', 3), .4));
+    hide(rays[3], m('diam', -.3), .3);
+    klText(p, 'диаметр', OX, OY + 120, m('diam', 4.5), { size: 34, fill: DIA, weight: 700, anchor: 'middle' });
+    // Two radii lie on it: one turns back to the right, one to the left.
+    const r1 = G(p, { x: OX, y: OY, r: -40, o: 0 }), r2 = G(p, { x: OX, y: OY, r: 220, o: 0 });
+    [r1, r2].forEach((g, i) => { path(g, `M0 0H${R}`, { stroke: RAD, 'stroke-width': 5 }); show(g, m('two', i * .4), .3); tw(g, { r: i ? 180 : 0 }, m('two', i * .4), .7); });
+    klText(p, 'r', OX + R / 2, OY - 22, m('two', .8), { size: 40, fill: RAD, weight: 700, anchor: 'middle' });
+    klText(p, 'r', OX - R / 2, OY - 22, m('two', 1.2), { size: 40, fill: RAD, weight: 700, anchor: 'middle' });
+    c33Dot(p, OX, OY, m('two'), COL.chalk, 8);
+    klBrace(p, OX - R, OX + R, OY + 40, 'd', m('two', 1.5), { up: false, fill: DIA, size: 44 });
+    klRow(p, [{ m: 'd', fill: DIA }, { m: ' = 2 · ' }, { m: 'r', fill: RAD }], 1180, 400, m('rule'), { size: 64, msize: 96 });
+    klText(p, 'диаметр — два радиуса', 1180, 480, m('rule', .5), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, [{ m: 'd', fill: DIA }, { m: ' = 8 см' }], 1180, 610, m('ex'), { size: 48, msize: 60 });
+    klRow(p, [{ m: 'r', fill: RAD }, { m: ' = 8 : 2 = 4 см' }], 1180, 700, m('ex', 2), { size: 48, msize: 60 });
+    const half = c33Seg(p, OX, OY, OX + R, OY, RAD, undefined, 5); put(half, { o: 0 });
+    tw(half, { o: 1, 'a_stroke-width': 13 }, m('ex', 3.2), .3); tw(half, { o: 0, 'a_stroke-width': 5 }, m('ex', 4.4), .6);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const R = 120, CX = [400, 800, 1200], CY = 330;
+    S.q1 = CX.map((x, i) => {
+      const g = G(p, { o: 0 });
+      c33Circle(g, x, CY, R);
+      c33Dot(g, x, CY, undefined, COL.chalk, 7);
+      const at = a => [x + R * Math.cos(a * Math.PI / 180), CY + R * Math.sin(a * Math.PI / 180)];
+      // a chord that misses the centre, a diameter at a slant, a radius
+      const ends = [[at(200), at(320)], [at(140), at(320)], [[x, CY], at(60)]][i];
+      c33Seg(g, ...ends[0], ...ends[1], COL.chalk, undefined, 6);
+      ends.forEach(([ex, ey]) => c33Dot(g, ex, ey, undefined, COL.chalk, 7));
+      show(g, .2 + i * .15);
+      return g;
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-diametr', prompt: 'На каком рисунке проведён диаметр? Нажми на него.',
+    build: pickEls(S.q1.map((g, i) => ({ el: g, box: [[400, 800, 1200][i] - 150, 180, 300, 300], label: 'рисунок ' + (i + 1) })), 1,
+      'Этот отрезок проходит через центр и соединяет две точки окружности — это диаметр.',
+      i => i === 0 ? 'Этот отрезок соединяет две точки окружности, но не проходит через центр. Это не диаметр.' : 'Этот отрезок идёт от центра до окружности — это радиус, половина диаметра.',
+      () => S.q1.forEach((g, i) => i === 1 && fx(g, { s: 1 }, 0, .1))),
+  }, {
+    id: 'c-r3', prompt: 'Радиус окружности 3 см. Найди её диаметр.',
+    build: blanks([{ parts: ['d = ', { box: '6' }, ' см'], why: 'Диаметр — два радиуса: 2 · 3 = 6 см.', hint: 'Диаметр в два раза больше радиуса.' }]),
+  }], done) }],
+
+  ['roll', 'Прокатим круг', m => {
+    const p = panel(0);
+    klTitle(p, 'Какой длины окружность?');
+    const W = c33Wheel(p, { x0: 220, Y: 560, R: 100 });
+    S.rollW = W;
+    draw(path(p, 'M120 560H1500', { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), .1, .6);
+    p.appendChild(W.g);
+    put(W.g, { o: 0 }); show(W.g, .3);
+    put(W.spoke, { o: 0 }); put(W.dot, { o: 0 });
+    show(W.spoke, m('mark'), .3); show(W.dot, m('mark'), .3); tw(W.dot, { a_r: 18 }, m('mark', .3), .25); tw(W.dot, { a_r: 10 }, m('mark', .6), .4);
+    prog(q => W.set(TAU * q), m('roll'), 4.5);
+    const end = 220 + TAU * 100;
+    c33Seg(p, 220, 535, 220, 585, COL.chalk, undefined, 3);
+    draw(c33Seg(p, end, 535, end, 585, COL.chalk, 0, 3), m('seg'), .3);
+    tw(W.seg, { 'a_stroke-width': 13 }, m('seg'), .3); tw(W.seg, { 'a_stroke-width': 7 }, m('seg', .6), .4);
+    klBrace(p, 220, end, 610, 'C — длина окружности', m('seg', .5), { up: false, fill: RIM, size: 38 });
+    const ruler = G(p, { x: 380, y: 300, r: -30, o: 0 });
+    mk('rect', { x: 0, y: 0, width: 300, height: 44, rx: 4, fill: '#d9c9a3', 'fill-opacity': .25, stroke: COL.chalk, 'stroke-width': 2.5 }, ruler);
+    path(ruler, Array.from({ length: 11 }, (_, i) => `M${15 + i * 27} 0V${i % 5 ? 12 : 22}`).join(''), { stroke: COL.chalk, 'stroke-width': 2 });
+    show(ruler, 1, .4); tw(ruler, { x: 300, y: 330, r: -10 }, 1, 1.2);
+    hide(klMark(p, 470, 300, 4.2, false, .8), m('mark', -.6), .4);
+    hide(ruler, m('mark', -.6), .4);
+    klText(p, 'C', 500, 535, m('seg', 5.6), { size: 48, fill: RIM, weight: 700, anchor: 'middle' });
+    tw(W.seg, { 'a_stroke-width': 13 }, m('seg', 5.6), .3); tw(W.seg, { 'a_stroke-width': 7 }, m('seg', 6.2), .4);
+    klText(p, 'один оборот — и обод лёг на прямую', 1030, 470, m('roll', 4.8), { size: 30, fill: COL.dim });
+  }],
+
+  ['pi', 'Число π', m => {
+    const p = panel(0);
+    klTitle(p, 'Во сколько раз окружность длиннее диаметра?');
+    const X0 = 220, Y = 560, R = 100, end = X0 + TAU * R;
+    path(p, 'M120 560H1000', { stroke: COL.dim, 'stroke-width': 3 });
+    const W = c33Wheel(p, { x0: X0, Y, R });
+    W.set(TAU);
+    klText(p, 'C', 500, 535, undefined, { size: 40, fill: RIM, weight: 700, anchor: 'middle' });
+    // The wheel's diameter, upright; each rod is a copy of it that turns down and lies along the segment.
+    const CX = end, CY = Y - R;
+    draw(c33Seg(p, CX, CY - R, CX, CY + R, DIA, 0, 6), .3, .5);
+    klText(p, 'd', CX + 22, CY - 30, .6, { size: 40, fill: DIA, weight: 700 });
+    S.piRods = ['d1', 'd2', 'd3'].map((mk_, k) => {
+      const g = G(p, { x: CX, y: CY, r: 90, o: 0 });
+      path(g, `M${-R} 0H${R}`, { stroke: DIA, 'stroke-width': 6 });
+      path(g, `M${-R} -12V12M${R} -12V12`, { stroke: DIA, 'stroke-width': 3 });
+      show(g, m(mk_), .2);
+      tw(g, { x: X0 + R + 2 * R * k, y: 600, r: 0 }, m(mk_), .7, io);
+      klText(p, 'd', X0 + R + 2 * R * k, 645, m(mk_, .9), { size: 36, fill: DIA, weight: 700, anchor: 'middle' });
+      klText(p, String(k + 1), X0 + R + 2 * R * k, 690, m(mk_, .9), { size: 30, fill: COL.dim, anchor: 'middle' });
+      return g;
+    });
+    draw(c33Seg(p, X0 + 6 * R, 600, end, 600, RULE, 0, 8), m('rest', .7), .4);
+    klText(p, '≈ 0,14 d', end + 20, 650, m('rest', 1), { size: 32, fill: RULE, weight: 600 });
+    // a small wheel: its rim unrolls into 3,14 of its own diameters too
+    path(p, 'M150 830H1000', { stroke: COL.dim, 'stroke-width': 2 });
+    const w2 = c33Wheel(p, { x0: X0, Y: 830, R: 25, w: 5 });
+    put(w2.g, { o: 0 }); show(w2.g, m('ratio', 4), .4);
+    prog(q => w2.set(TAU * q), m('ratio', 5), 2.2);
+    klRow(p, ['и здесь  ', { m: 'C ≈ 3,14 · d' }], X0 + TAU * 25 + 70, 840, m('ratio', 7.4), { size: 30, msize: 36, fill: COL.dim, anchor: 'start' });
+    const X = 1290;
+    klRow(p, [{ m: 'C', fill: RIM }, { m: ' : ' }, { m: 'd', fill: DIA }, { m: ' ≈ 3,14' }], X, 280, m('ratio'), { size: 56, msize: 64 });
+    klText(p, 'у любой окружности', X, 330, m('ratio', 3), { size: 28, fill: COL.dim, anchor: 'middle' });
+    klMath(p, ['π ≈ 3,14'], X, 425, m('pi'), { size: 72, fill: RULE });
+    klRow(p, [{ m: 'C', fill: RIM }, { m: ' = π · ', fill: RULE }, { m: 'd', fill: DIA }], X, 550, m('c1'), { size: 64, msize: 76 });
+    klRow(p, [{ m: 'C', fill: RIM }, { m: ' = 2 · π · ', fill: RULE }, { m: 'r', fill: RAD }], X, 650, m('c2'), { size: 64, msize: 76 });
+    tw(W.seg, { 'a_stroke-width': 13 }, m('c1', 1.2), .3); tw(W.seg, { 'a_stroke-width': 7 }, m('c1', 1.8), .4);
+    S.piRods.forEach((g, k) => { tw(g, { y: 590 }, m('c1', 2.6 + k * .2), .2, out); tw(g, { y: 600 }, m('c1', 2.8 + k * .2), .3); });
+    draw(c33Seg(p, CX, CY, CX, CY - R, RAD, 0, 7), m('c2', 1.5), .4);
+    draw(c33Seg(p, CX, CY, CX, CY + R, RAD, 0, 7), m('c2', 2), .4);
+    klText(p, 'r', CX - 18, CY - 40, m('c2', 1.7), { size: 36, fill: RAD, weight: 700, anchor: 'end' });
+    klText(p, 'r', CX - 18, CY + 60, m('c2', 2.2), { size: 36, fill: RAD, weight: 700, anchor: 'end' });
+    klText(p, 'Опыт: обмотай банку ниткой,', X, 770, m('jar'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    klText(p, 'длина нитки : диаметр ≈ 3,14', X, 812, m('jar', 1.5), { size: 28, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const X0 = 260, Y = 470, R = 80;
+    draw(path(p, `M150 ${Y}H1450`, { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), .1, .5);
+    const W = c33Wheel(p, { x0: X0, Y, R });
+    put(W.spoke, { o: 0 }); put(W.dot, { o: 0 }); put(W.g, { o: 0 }); show(W.g, .2);
+    const dg = G(p, { o: 0 });
+    c33Seg(dg, X0, Y - 2 * R, X0, Y, DIA, undefined, 6);
+    klText(dg, 'd = 50 см', X0, Y - 2 * R - 22, undefined, { size: 34, fill: DIA, weight: 700, anchor: 'middle' });
+    show(dg, .5);
+    S.q2 = { W, dg, ans: klRow(p, [{ m: 'C', fill: RIM }, { m: ' = 3,14 · 50 = 157 см' }], 520, 560, undefined, { size: 40, msize: 48 }) };
+    put(S.q2.ans, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-koleso', prompt: ['Диаметр колеса 50 см. Какой путь оно проходит за один оборот? ', $m('π ≈ 3,14'), '.'],
+    build: blanks([{ parts: [{ box: '157' }, ' см'], why: 'За один оборот колесо проходит длину своего обода: C = π · d = 3,14 · 50 = 157 см.',
+      hint: 'За оборот колесо проходит длину окружности: C = π · d.',
+      fx: () => { const q = S.q2; fx(q.dg, { o: 0 }, 0, .2); fx(q.W.dot, { o: 1 }, 0, .2); fx(q.W.spoke, { o: 1 }, 0, .2); fxp(v => q.W.set(TAU * v), .3, 2.4); fx(q.ans, { o: 1 }, 2.6, .4); } }]),
+  }], done) }],
+
+  ['sectors', 'Площадь круга', m => {
+    const p = panel(0);
+    klTitle(p, 'Площадь круга: разрежем на секторы');
+    const CX = 330, CY = 470, R = 150, N = 16, A = 360 / N;
+    mk('circle', { cx: CX, cy: CY, r: R, fill: AREA, 'fill-opacity': .1, stroke: COL.dim, 'stroke-width': 2, 'stroke-dasharray': '8 8' }, p);
+    const secs = Array.from({ length: N }, (_, i) => c33Sector(p, CX, CY, R, i, N, i % 2 ? .5 : .85));
+    secs.forEach(s => { put(s, { o: 0 }); show(s, .2); tw(s._fill, { 'a_stroke-width': 2.5 }, m('cut', .5), .4); });
+    const cuts = Array.from({ length: N }, (_, i) => {
+      const a = i * A * Math.PI / 180;
+      return c33Seg(p, CX, CY, CX + R * Math.sin(a), CY - R * Math.cos(a), DIA, 0, 3);
+    });
+    cuts.forEach((c, i) => { draw(c, m('cut', i * .06), .4); hide(c, m('lay', -.3), .3); });
+    // Even sectors stand tip up (round side down), odd ones tip down (round side up), side by side: the round sides
+    // along the bottom are half the rim, the ones along the top the other half.
+    const w = 2 * R * Math.sin(A / 2 * Math.PI / 180), X0 = 820, YT = 330, rc = R * Math.cos(A / 2 * Math.PI / 180);
+    secs.forEach((s, i) => {
+      const phi = (i + .5) * A, k = i >> 1, up = i % 2 === 0;
+      const to = up ? { x: X0 + w / 2 + k * w, y: YT, r: 180 - phi } : { x: X0 + w + k * w, y: YT + rc, r: phi > 180 ? 360 - phi : -phi };
+      tw(s, to, m('lay', i * .17), .9, io);
+    });
+    const x1 = X0 + 8 * w;
+    draw(path(p, `M${X0 + w / 4} ${YT - 4}H${x1 + w / 4}V${YT + R + 2}H${X0 + w / 4}Z`, { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-dasharray': '10 8' }, { d: 0, o: .8 }), m('rect'), .8);
+    klText(p, 'чем больше секторов, тем ровнее края', (X0 + x1) / 2, YT - 40, m('rect', 2.8), { size: 28, fill: COL.dim, anchor: 'middle' });
+    draw(c33Seg(p, x1 + w / 2 + 40, YT, x1 + w / 2 + 40, YT + R, RAD, 0, 5), m('side'), .5);
+    klText(p, 'r', x1 + w / 2 + 64, YT + R / 2 + 14, m('side', .3), { size: 44, fill: RAD, weight: 700 });
+    klBrace(p, X0, x1, YT + R + 34, 'π · r', m('long'), { up: false, fill: RIM, size: 44 });
+    klText(p, 'половина длины окружности', (X0 + x1) / 2, YT + R + 124, m('long', 1.2), { size: 28, fill: COL.dim, anchor: 'middle' });
+    secs.forEach((s, i) => i % 2 === 0 && pulse(s, m('long', 2.6 + i * .04), 1.08));
+    const flash = mk('rect', { x: X0 + w / 4, y: YT - 4, width: 8 * w, height: R + 6, fill: AREA, 'fill-opacity': .35 }, p);
+    put(flash, { o: 0 }); show(flash, m('area', 2.2), .4); hide(flash, m('area', 3.6), .6);
+    klRow(p, [{ m: 'S', fill: AREA }, { m: ' ≈ ' }, { m: 'π · r', fill: RIM }, { m: ' · ' }, { m: 'r', fill: RAD }], 1050, 750, m('area'), { size: 56, msize: 64 });
+    klRow(p, [{ m: 'S', fill: AREA }, { m: ' = π · ', fill: RULE }, { m: 'r²', fill: RAD }], 1050, 850, m('rule'), { size: 64, msize: 76 });
+    klText(p, 'S — площадь круга', CX, 700, m('area', .4), { size: 30, fill: AREA, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const CX = 800, CY = 340, R = 170;
+    c33Circle(p, CX, CY, R, .2, { fill: .35 });
+    draw(c33Seg(p, CX, CY, CX + R, CY, RAD, 0, 5), .6, .4);
+    c33Dot(p, CX, CY, .5);
+    klText(p, '10 см', CX + R / 2, CY - 20, .8, { size: 34, fill: RAD, weight: 700, anchor: 'middle' });
+    S.q3 = klRow(p, [{ m: 'S', fill: AREA }, { m: ' = 3,14 · 10² = 3,14 · 100 = 314 см²' }], 800, 600, undefined, { size: 40, msize: 46 });
+    put(S.q3, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-ploshad', prompt: ['Радиус круга 10 см. Найди его площадь, ', $m('π ≈ 3,14'), '.'],
+    build: blanks([{ parts: ['S = ', { box: '314' }, ' см²'], why: 'S = π · r² = 3,14 · 10 · 10 = 314 см².',
+      hint: 'S = π · r²: радиус умножь сам на себя, потом на 3,14.', fx: () => fx(S.q3, { o: 1 }, 0, .4) }]),
+  }], done) }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Дан диаметр — найди площадь');
+    const CX = 290, CY = 470, R = 150;
+    c33DiamCircle(p, CX, CY, R, 'd = 10 см', .2);
+    const dd = c33Seg(p, CX - R, CY, CX + R, CY, DIA, undefined, 6); put(dd, { o: 0 });
+    tw(dd, { o: 1, 'a_stroke-width': 14 }, 3.6, .3); tw(dd, { o: 0, 'a_stroke-width': 6 }, 4.2, .5);
+    const X = 580;
+    const W1 = 'S = 3,14 · 10²', ww = mathW([W1], 50);
+    klMath(p, [W1], X, 280, m('wrong'), { size: 50, anchor: 'start', fill: COL.dim });
+    klMath(p, [' = 314 см²'], X + ww, 280, m('wrong', 3.6), { size: 50, anchor: 'start', fill: COL.dim });
+    klStrike(p, X - 10, 290, X + mathW(['S = 3,14 · 10² = 314 см²'], 50) + 10, 250, m('strike'));
+    klText(p, 'ошибка: подставили диаметр', X, 330, m('strike', .3), { size: 28, fill: COL.bad, weight: 700 });
+    // The radius is half the diameter: the right half turns coral.
+    draw(c33Seg(p, CX, CY, CX + R, CY, RAD, 0, 6), m('r'), .5);
+    klText(p, '5 см', CX + R / 2, CY + 44, m('r', .3), { size: 32, fill: RAD, weight: 700, anchor: 'middle' });
+    const r1 = klRow(p, [{ m: 'r', fill: RAD }, { m: ' = 10 : 2' }], X, 440, m('r', .3), { size: 50, msize: 54, anchor: 'start' });
+    klMath(p, [' = 5 см'], X + r1._w, 440, m('r', 2.6), { size: 54, anchor: 'start' });
+    const A = 'S = 3,14 · ', B = '5²', wA = mathW([A], 54), wB = mathW([B], 54);
+    klMath(p, [A], X, 560, m('right'), { size: 54, anchor: 'start' });
+    klMath(p, [B], X + wA, 560, m('right'), { size: 54, anchor: 'start', fill: RAD });
+    const C1 = ' = 3,14 · 25', wC = mathW([C1], 54);
+    klMath(p, [C1], X + wA + wB, 560, m('right', 2.6), { size: 54, anchor: 'start' });
+    klMath(p, [' = 78,5 см²'], X + wA + wB + wC, 560, m('right', 4.4), { size: 54, anchor: 'start' });
+    klMark(p, 1520, 545, m('right', 6.5));
+    c33Ring(p, X + wA + wB / 2, 543, wB / 2 + 8, 34, m('sq'));
+    klText(p, 'в квадрат — только радиус', X + wA - 60, 630, m('sq', .3), { size: 28, fill: RULE, weight: 600 });
+    const c1 = klRow(p, [{ m: 'C', fill: RIM }, { m: ' = π · ' }, { m: 'd', fill: DIA }], X, 750, m('len'), { size: 46, msize: 50, anchor: 'start' });
+    klMath(p, [' = 3,14 · 10 = 31,4 см'], X + c1._w, 750, m('len', 2.4), { size: 50, anchor: 'start' });
+    klText(p, 'длина — в см, площадь — в см²', X, 820, m('len', 5), { size: 30, fill: COL.dim });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    c33DiamCircle(p, 800, 330, 170, '6 см', .2);
+    S.q4 = G(p, { o: 0 });
+    c33Seg(S.q4, 800, 330, 970, 330, RAD, undefined, 6);
+    klText(S.q4, 'r = 3 см', 885, 380, undefined, { size: 32, fill: RAD, weight: 700, anchor: 'middle' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-diam6', prompt: ['Диаметр круга 6 см. Как найти его площадь? ', $m('π ≈ 3,14'), '.'],
+    build: choice([$m('3,14 · 6²'), $m('3,14 · 3²'), $m('3,14 · 6')], 1,
+      'Радиус 6 : 2 = 3 см, поэтому S = 3,14 · 3² = 3,14 · 9 = 28,26 см².',
+      ['6 см — это диаметр, а в формулу площади входит радиус. Сначала найди его: 6 : 2 = 3.', null, '3,14 · 6 — это π · d, длина окружности, а не площадь.'],
+      () => fx(S.q4, { o: 1 }, 0, .4)),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Диаметр — два радиуса:  ', { m: 'd = 2 · r' }],
+    ['Длина окружности:  ', { m: 'C = π · d = 2 · π · r' }, ',   π ≈ 3,14'],
+    ['Площадь круга:  ', { m: 'S = π · r²' }],
+    'Дан диаметр — сначала найди радиус',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-chto', prompt: 'Что это больше напоминает: окружность или круг?',
+    build: grid([
+      { parts: ['обод колеса'], ans: ['o'], why: 'Обод — это линия по краю колеса: окружность.' },
+      { parts: ['блин'], ans: ['k'], why: 'Блин — вся часть плоскости внутри края: круг.' },
+      { parts: ['обруч'], ans: ['o'], why: 'Обруч — только линия: окружность.' },
+      { parts: ['дно банки'], ans: ['k'], why: 'Дно — вся площадка внутри края: круг.' },
+    ], [['o', 'окружность', null, '1'], ['k', 'круг', null, '2']], { multi: false, text: true }),
+  }, {
+    id: 'p-rd', prompt: 'Найди диаметр или радиус.',
+    build: blanks([
+      { parts: ['r = 4,5 см,   d = ', { box: '9' }, ' см'], why: 'd = 2 · r = 2 · 4,5 = 9 см.', hint: 'Диаметр — два радиуса.' },
+      { parts: ['d = 30 см,   r = ', { box: '15' }, ' см'], why: 'r = d : 2 = 30 : 2 = 15 см.', hint: 'Радиус — половина диаметра.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-dlina', prompt: ['Найди длину окружности, ', $m('π ≈ 3,14'), '.'],
+    build: blanks([
+      { parts: ['d = 20 см,   C = ', { box: '62,8' }, ' см'], why: 'C = π · d = 3,14 · 20 = 62,8 см.', hint: 'C = π · d.' },
+      { parts: ['r = 2 см,   C = ', { box: '12,56' }, ' см'], why: 'C = 2 · π · r = 2 · 3,14 · 2 = 12,56 см.', hint: 'Дан радиус: C = 2 · π · r.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-s3', prompt: ['Найди площадь круга радиусом 3 дм, ', $m('π ≈ 3,14'), '.'],
+    build: blanks([{ parts: ['S = ', { box: '28,26' }, ' дм²'], why: 'S = π · r² = 3,14 · 3 · 3 = 3,14 · 9 = 28,26 дм².', hint: 'S = π · r²: сначала 3 · 3.' }]),
+  }, {
+    id: 'p-s8', prompt: ['Диаметр круга 8 см. Чему равна его площадь? ', $m('π ≈ 3,14'), '.'],
+    build: choice(['50,24 см²', '200,96 см²', '25,12 см²'], 0, 'Радиус 8 : 2 = 4 см, S = 3,14 · 4² = 3,14 · 16 = 50,24 см².',
+      [null, 'Это 3,14 · 8²: в квадрат возвели диаметр. Сначала найди радиус: 8 : 2 = 4.', 'Это 3,14 · 8 — длина окружности, а не площадь.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

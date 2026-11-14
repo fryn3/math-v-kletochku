@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Части и решение с конца · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 8.2 «Части и решение с конца» (5–6 класс). Beat ids match papermorph/content/uroki/ch36/narration.ru.json.
+const CHAPTER = { number: 36, label: '8.2', title: 'Части и решение с конца', minutes: 7, language: 'ru', next: '../ch37/' };
+
+// Meanings (as 5.1): the smaller quantity (one part) in NUM, the larger in DEN, the difference piece in WHOLE,
+// the unknown x (a closed box) in UNK, the value of one part, the backward steps and the rules in RULE.
+const NUM = KL.NUM, DEN = KL.DEN, DIF = KL.WHOLE, UNK = KL.TWO, RULE = KL.RULE;
+
+// One cell of a strip: a group at (x, y) holding a w × h rect (g.rect, for glows) with a chalk frame and an optional
+// number on it (g.lab). Moving the group (tw x, y) moves the cell; t0 undefined: shown at once.
+function c36Cell(p, x, y, w, h, col, t0, lab) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  g.rect = mk('rect', { x: 0, y: 0, width: w, height: h, fill: col, 'fill-opacity': .85 }, g);
+  mk('rect', { x: 0, y: 0, width: w, height: h, rx: 3, fill: 'none', stroke: COL.chalk, 'stroke-width': 3 }, g);
+  if (lab !== undefined) g.lab = T(g, String(lab), { x: w / 2, y: h / 2 + h * .19, size: Math.min(44, h * .55), fill: COL.board, font: MATH, weight: 700, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// n equal cells side by side from (x, y), each cw wide, appearing `step` apart from t0.
+function c36Row(p, x, y, n, cw, h, col, t0, step = .15) {
+  return Array.from({ length: n }, (_, i) => c36Cell(p, x + i * cw, y, cw, h, col, t0 === undefined ? undefined : t0 + i * step));
+}
+// A number on a cell (board-coloured, bold), hidden until shown at t0 (t0 undefined: built hidden for fx).
+function c36Lab(p, x, y, str, t0, size = 40) {
+  const e = T(p, String(str), { x, y, size, fill: COL.board, font: MATH, weight: 700, anchor: 'middle', o: 0 });
+  if (t0 !== undefined) show(e, t0, .3);
+  return e;
+}
+// A vertical bracket at x from y1 to y2 (opening left, toward the strips) with klRow pieces to its right.
+function c36VBrace(p, x, y1, y2, pieces, t0, { size = 32, msize = 50 } = {}) {
+  const g = G(p, { o: 0 });
+  path(g, `M${x - 14} ${y1}H${x}V${y2}H${x - 14}`, { stroke: COL.chalk, 'stroke-width': 3, fill: 'none' });
+  klRow(g, pieces, x + 18, (y1 + y2) / 2 + 14, undefined, { anchor: 'start', size, msize });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A box of width w centred on (x, y): lab 'x' gives a closed box with a lid (the unknown), a number gives a known
+// result, null an empty box. set(v, t0, col) lifts the lid (if any) and shows v inside; fxSet(v, delay, col) the same
+// on the question clock (after c07Box / c22Box).
+function c36Box(p, x, y, w = 110, lab = null, col = COL.chalk) {
+  const g = G(p, { x, y });
+  mk('rect', { x: -w / 2, y: -w / 2, width: w, height: w, rx: 8, fill: mix(COL.board, col, .14), stroke: col, 'stroke-width': 3.5 }, g);
+  const sz = v => w * (String(v).length > 1 ? .5 : .62);
+  let lid = null, lb = null;
+  if (lab === 'x') {
+    lid = G(g, { x: -w / 2 - 5, y: -w / 2 });
+    path(lid, `M0 0H${w + 10}`, { stroke: col, 'stroke-width': 7, 'stroke-linecap': 'round' });
+    lb = M(g, ['x'], { y: w * .2, size: sz('x'), fill: col });
+  } else if (lab !== null) M(g, [String(lab)], { y: w * .19, size: sz(lab), fill: col });
+  const num = (v, c) => M(g, [String(v)], { y: w * .19, size: sz(v), fill: c, o: 0 });
+  g.set = (v, t0, c = RULE) => {
+    if (lid) { tw(lid, { r: -38, y: -w / 2 - 6 }, t0, .5, back); hide(lb, t0, .3); }
+    show(num(v, c), t0 + (lid ? .3 : 0), .3);
+  };
+  g.fxSet = (v, d = 0, c = RULE) => {
+    if (lid) { fx(lid, { r: -38, y: -w / 2 - 6 }, d, .5); fx(lb, { o: 0 }, d, .3); }
+    fx(num(v, c), { o: 1 }, d + (lid ? .3 : 0), .3);
+  };
+  return g;
+}
+// An arrow from (x1, y) to (x2, y) bending through cy, its maths label at (lx, ly) in col (after c07Arrow).
+// Drawn on at t0; with t0 undefined it is built hidden and returned for fx({ o: 1 }).
+function c36Arrow(p, x1, x2, y, cy, label, col, t0, { lx, ly, size = 48, dur = .6 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 0 : 1 }), mx = (x1 + x2) / 2;
+  const line = path(g, `M${x1} ${y}Q${mx} ${cy} ${x2} ${y}`, { stroke: col, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round' }, t0 === undefined ? {} : { d: 0 });
+  const a = Math.atan2(y - cy, x2 - mx), L = 20;
+  const pt = da => `${(x2 - L * Math.cos(a + da)).toFixed(1)} ${(y - L * Math.sin(a + da)).toFixed(1)}`;
+  const head = path(g, `M${pt(.45)}L${x2} ${y}L${pt(-.45)}`, { stroke: col, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, t0 === undefined ? {} : { o: 0 });
+  const lab = M(g, [label], { x: lx ?? mx, y: ly ?? (cy < y ? (y + cy) / 2 - 18 : (y + cy) / 2 + 52), size, fill: col, o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) { draw(line, t0, dur); show(head, t0 + dur * .85, .2); show(lab, t0 + dur * .5, .3); }
+  return g;
+}
+// A numbered disc (the order of the backward steps) centred on (x, y), shown at t0.
+function c36Num(p, x, y, n, t0) {
+  const g = G(p, { o: 0 });
+  mk('circle', { cx: x, cy: y, r: 22, fill: RULE }, g);
+  T(g, String(n), { x, y: y + 9, size: 26, fill: COL.board, weight: 700, anchor: 'middle' });
+  show(g, t0);
+  return g;
+}
+// A tick built hidden (for fx on a right answer), centred on (x, y).
+function c36Tick(p, x, y) {
+  const g = G(p, { x, y, o: 0 });
+  path(g, 'M-26 2L-8 20L28 -22', { stroke: COL.good, 'stroke-width': 8, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' });
+  return g;
+}
+// A glow on a cell: its fill brightens and settles back.
+function c36Glow(c, t) { tw(c.rect, { 'a_fill-opacity': 1 }, t, .3); tw(c.rect, { 'a_fill-opacity': .85 }, t + .9, .4); }
+// A strike through a klRow written with anchor 'start' at x, baseline y.
+function c36StrikeRow(p, row, x, y, t0) { return klStrike(p, x - 14, y + 8, x + row._w + 14, y - 38, t0); }
+// The chain «x → (op1) → □ → (op2) → result» with boxes at xs on y: { bx, bm, br } (the unknown, the middle, the end).
+function c36Chain(p, xs, y, op1, op2, res, t0, t1, t2, w = 110) {
+  const bx = c36Box(p, xs[0], y, w, 'x', UNK);
+  const bm = c36Box(p, xs[1], y, w, null);
+  const br = c36Box(p, xs[2], y, w, res);
+  [bx, bm, br].forEach((b, i) => { put(b, { o: 0 }); show(b, [t0, t1, t2][i], .4); });
+  c36Arrow(p, xs[0] + w / 2 + 10, xs[1] - w / 2 - 10, y - 30, y - 130, op1, COL.chalk, t1 - .5);
+  c36Arrow(p, xs[1] + w / 2 + 10, xs[2] - w / 2 - 10, y - 30, y - 130, op2, COL.chalk, t2 - .5);
+  return { bx, bm, br };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Части и решение с конца', (m, D) => klIntro(m, D, {
+    unit: 'Глава 8 · Текстовые задачи · Тема 8.2',
+    title: 'Части и решение с конца',
+    sub: 'Как раскладывать задачу на равные части и решать её с конца',
+    art: (g, t0) => {
+      c36Cell(g, 560, 548, 80, 44, NUM, t0);
+      c36Row(g, 560, 604, 3, 80, 44, DEN, t0 + .4);
+      klRow(g, [{ m: '· 3' }, '  →  ', { m: '+ 5' }, '  →  ', { m: '26', fill: RULE }], 1000, 600, t0 + 2.2, { size: 30, msize: 40 });
+    },
+  })],
+
+  ['times', 'В несколько раз больше', m => {
+    const p = panel(0);
+    klTitle(p, '«В три раза больше» — это части');
+    const CW = 200, H = 90;
+    const ld = klText(p, 'Дима', 330, 288, .3, { size: 34, anchor: 'end', weight: 600 });
+    const ls = klText(p, 'Саша', 330, 418, .5, { size: 34, anchor: 'end', weight: 600 });
+    const dG = G(p), sG = G(p);
+    const dc = c36Cell(dG, 360, 230, CW, H, NUM, m('dima'));
+    // Three copies of Dima's part fly down: Sasha's three parts are the same size.
+    const sc = [0, 1, 2].map(i => {
+      const c = c36Cell(sG, 360, 230, CW, H, DEN);
+      put(c, { o: 0 }); show(c, m('sasha', .3 + i * .5), .2);
+      tw(c, { x: 360 + i * CW, y: 360 }, m('sasha', .3 + i * .5), .7, io);
+      return c;
+    });
+    const vb = c36VBrace(p, 1000, 230, 450, ['вместе  ', { m: '48' }], m('total'));
+    // The two strips slide together into one row of four parts.
+    [ld, ls, vb].forEach(e => hide(e, m('join'), .4));
+    tw(dG, { x: -160, y: 330 }, m('join'), 1.1, io);
+    tw(sG, { x: 40, y: 200 }, m('join', .2), 1.1, io);
+    klBrace(p, 200, 400, 664, 'Дима', m('join', 1.2), { up: false, fill: NUM, size: 32 });
+    klBrace(p, 400, 1000, 664, 'Саша', m('join', 1.4), { up: false, fill: DEN, size: 32 });
+    klBrace(p, 200, 1000, 534, '48', m('join', 1.6), { size: 40 });
+    const cnt = klCount(p, [0, 1, 2, 3].map(i => [300 + i * CW, 622]), m('four'), { step: .3, size: 40, fill: COL.board });
+    const o = { anchor: 'start', size: 34, msize: 52 };
+    klRow(p, ['всего  ', { m: '1 + 3 = 4' }, '  части'], 1080, 300, m('four', .4), o);
+    klRow(p, ['одна часть:  ', { m: '48 : 4 = 12', fill: RULE }], 1080, 385, m('one'), o);
+    [dc, ...sc].forEach((c, i) => c36Glow(c, m('one', 2.6 + i * .4)));
+    cnt.forEach((e, i) => { hide(e, m('deal', i * .25), .2); c36Lab(p, 300 + i * CW, 622, '12', m('deal', .1 + i * .25)); });
+    c36Glow(dc, m('ans'));
+    sc.forEach((c, i) => c36Glow(c, m('ans', 1.4 + i * .2)));
+    klMath(p, ['12'], 300, 800, m('ans', .2), { size: 52, fill: NUM });
+    klMath(p, ['3 · 12 = 36'], 700, 800, m('ans', 1.6), { size: 52, fill: DEN });
+    const chk = klRow(p, [{ m: '12 + 36 = 48' }], 1080, 510, m('check'), o);
+    klMark(p, 1080 + chk._w + 50, 494, m('check', 1), true, .8);
+    const w = klRow(p, [{ m: '48 : 3 = 16' }], 1080, 650, m('wrong'), { ...o, fill: COL.dim });
+    c36StrikeRow(p, w, 1080, 650, m('strike'));
+    klText(p, 'потеряли часть Димы', 1080, 712, m('strike', .5), { size: 30, fill: COL.bad, weight: 700 });
+    c36Glow(dc, m('strike', 1));
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'Оля', 330, 272, .2, { size: 34, anchor: 'end', weight: 600 });
+    klText(p, 'Лена', 330, 392, .3, { size: 34, anchor: 'end', weight: 600 });
+    c36Cell(p, 360, 220, 150, 80, NUM, .2);
+    c36Row(p, 360, 340, 4, 150, 80, DEN, .3, .1);
+    c36VBrace(p, 1000, 220, 420, ['вместе  ', { m: '40' }], .6);
+    S.q1lab = [[435, 272], ...[0, 1, 2, 3].map(i => [435 + i * 150, 392])].map(([x, y]) => c36Lab(p, x, y, '8'));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-razy', prompt: 'У Лены в 4 раза больше значков, чем у Оли, вместе 40. Сколько значков у Оли?',
+    build: blanks([
+      { parts: ['всего частей:  ', { box: '5' }], why: 'Оля — 1 часть, Лена — 4 части: всего 1 + 4 = 5.', hint: 'Не забудь часть Оли: 1 + 4.' },
+      { parts: ['у Оли:  ', { box: '8' }, '  значков'], why: 'Одна часть: 40 : 5 = 8. У Оли 8, у Лены 32.', hint: 'Раздели 40 на число частей.',
+        fx: () => S.q1lab.forEach((e, i) => fx(e, { o: 1 }, i * .1, .3)) },
+    ]),
+  }], done) }],
+
+  ['more', 'На сколько-то больше', m => {
+    const p = panel(0);
+    klTitle(p, '«На шесть больше» — это разность');
+    const U = 40, H = 80, X0 = 300;
+    klText(p, 'Катя', 270, 292, m('bars'), { size: 34, anchor: 'end', weight: 600 });
+    klText(p, 'Маша', 270, 422, m('bars', .2), { size: 34, anchor: 'end', weight: 600 });
+    c36VBrace(p, 1100, 240, 450, ['вместе  ', { m: '30' }], m('bars', 2.2));
+    const kc = c36Cell(p, X0, 240, 12 * U, H, NUM, m('bars', 1.2));
+    c36Glow(kc, m('kbar'));
+    c36Cell(p, X0, 370, 12 * U, H, DEN, m('same'));
+    klGuide(p, X0 + 12 * U, 218, 472, m('same', .5), RULE);
+    const pc = c36Cell(p, X0 + 12 * U, 370, 6 * U, H, DIF, m('piece'), '6');
+    // The piece is cut off and set aside, then given back.
+    tw(pc, { x: 900, y: 520, o: .4 }, m('cut'), 1, io);
+    const o = { anchor: 'start', size: 34, msize: 52 };
+    klRow(p, [{ m: '30 − 6 = 24' }], X0, 580, m('rest'), o);
+    klRow(p, [{ m: '24 : 2 = 12', fill: RULE }], X0, 660, m('half', .6), o);
+    c36Lab(p, X0 + 6 * U, 292, '12', m('half', 1.4), 44);
+    c36Lab(p, X0 + 6 * U, 422, '12', m('half', 1.7), 44);
+    c36Glow(kc, m('katya'));
+    tw(pc, { x: X0 + 12 * U, y: 370, o: 1 }, m('back'), 1, io);
+    klRow(p, [{ m: '12 + 6 = 18', fill: DEN }], X0, 740, m('sum'), o);
+    const c1 = klRow(p, [{ m: '12 + 18 = 30' }], X0, 840, m('check'), o);
+    const c2 = klRow(p, [{ m: '18 − 12 = 6' }], X0 + c1._w + 80, 840, m('check', 1.2), o);
+    klMark(p, X0 + c1._w + c2._w + 140, 824, m('check', 2.4), true, .8);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const U = 24, H = 80, X0 = 360;
+    klText(p, 'Коля', 330, 282, .2, { size: 34, anchor: 'end', weight: 600 });
+    klText(p, 'Петя', 330, 402, .3, { size: 34, anchor: 'end', weight: 600 });
+    c36Cell(p, X0, 230, 15 * U, H, NUM, .2);
+    c36Cell(p, X0, 350, 15 * U, H, DEN, .3);
+    S.q2pc = c36Cell(p, X0 + 15 * U, 350, 10 * U, H, DIF, .4, '10');
+    c36VBrace(p, 1020, 230, 430, ['вместе  ', { m: '40' }], .6);
+    S.q2lab = [282, 402].map(y => c36Lab(p, X0 + 7.5 * U, y, '15', undefined, 44));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-na', prompt: 'У Пети и Коли вместе 40 марок, у Пети на 10 больше. Сколько марок у Коли?',
+    build: blanks([
+      { parts: ['без лишнего:  40 − 10 = ', { box: '30' }], why: 'Убрали лишние 10 марок Пети: остались две равные полоски.', hint: 'Отрежь кусочек 10 от общего числа.',
+        fx: () => fx(S.q2pc, { o: .35 }, 0, .4) },
+      { parts: ['у Коли:  ', { box: '15' }, '  марок'], why: '30 : 2 = 15. У Коли 15, у Пети 15 + 10 = 25.', hint: 'Две равные полоски: раздели 30 пополам.',
+        fx: () => S.q2lab.forEach((e, i) => fx(e, { o: 1 }, i * .2, .3)) },
+    ]),
+  }], done) }],
+
+  ['trap', 'Разность или части', m => {
+    const p = panel(0);
+    klTitle(p, '«На восемь больше» или «в восемь раз больше»');
+    const hd = { anchor: 'start', size: 32, msize: 46, weight: 600 }, o = { anchor: 'start', size: 32, msize: 48 };
+    // Top: the difference.
+    klRow(p, ['на ', { m: '8' }, ' больше'], 100, 228, .4, { ...hd, fill: DIF });
+    const ta = c36Cell(p, 140, 256, 280, 56, NUM, m('top'));
+    const tb = c36Cell(p, 140, 322, 280, 56, DEN, m('top', .2));
+    const pc = c36Cell(p, 420, 322, 160, 56, DIF, m('top', .4), '8');
+    c36VBrace(p, 620, 256, 378, ['вместе  ', { m: '36' }], m('top', .6), { size: 30, msize: 46 });
+    c36Glow(pc, m('on', .8));
+    tw(pc, { o: .35 }, m('onres'), .5);
+    klRow(p, [{ m: '(36 − 8) : 2 = 14' }], 930, 296, m('onres', .3), o);
+    klRow(p, [{ m: '14', fill: NUM }, '  и  ', { m: '22', fill: DEN }], 930, 370, m('onres', 2.6), o);
+    path(p, 'M100 430H1500', { stroke: COL.faint, 'stroke-width': 2 });
+    // Bottom: the parts.
+    klRow(p, ['в ', { m: '8' }, ' раз больше'], 100, 498, 2, { ...hd, fill: RULE });
+    const w = klRow(p, [{ m: '14' }, '  и  ', { m: '22' }], 930, 560, m('wrong'), { ...o, fill: COL.dim });
+    c36StrikeRow(p, w, 930, 560, m('strike'));
+    klRow(p, [{ m: '8 · 14 ≠ 22' }], 930 + w._w + 50, 560, m('strike', .4), { ...o, fill: COL.bad });
+    const ba = c36Cell(p, 140, 526, 60, 56, NUM, m('parts'));
+    const bb = c36Row(p, 140, 592, 8, 60, 56, DEN, m('parts', .5), .1);
+    c36VBrace(p, 620, 526, 648, ['вместе  ', { m: '36' }], m('times', .4), { size: 30, msize: 46 });
+    [ta, tb, ba, ...bb].forEach((c, i) => c36Glow(c, m('draw', 1 + i * .12)));
+    const pts = [[170, 566], ...Array.from({ length: 8 }, (_, i) => [170 + i * 60, 632])];
+    const cnt = klCount(p, pts, m('nine'), { step: .15, size: 32, fill: COL.board });
+    klRow(p, [{ m: '1 + 8 = 9' }, '  частей'], 930, 640, m('nine', .8), o);
+    klRow(p, [{ m: '36 : 9 = 4', fill: RULE }], 930, 715, m('tres'), o);
+    cnt.forEach((e, i) => { hide(e, m('tres', .6 + i * .08), .2); c36Lab(p, pts[i][0], pts[i][1], '4', m('tres', .7 + i * .08), 32); });
+    klRow(p, [{ m: '4', fill: NUM }, '  и  ', { m: '32', fill: DEN }], 930, 790, m('tres', 2.4), o);
+    klText(p, 'сначала нарисуй полоски — потом считай', 800, 860, m('draw'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    klText(p, 'Коля', 130, 282, .2, { size: 30, anchor: 'end', weight: 600 });
+    klText(p, 'Петя', 130, 382, .2, { size: 30, anchor: 'end', weight: 600 });
+    const H = 60, mkPic = (cx, build) => { const g = G(p, { o: 0 }); build(g, cx - 150); show(g, .3); return g; };
+    S.q3pics = [
+      mkPic(300, (g, x) => { c36Cell(g, x, 240, 100, H, NUM); c36Row(g, x, 340, 2, 100, H, DEN); }),
+      mkPic(800, (g, x) => { c36Cell(g, x, 240, 200, H, NUM); c36Cell(g, x, 340, 200, H, DEN); c36Cell(g, x + 200, 340, 70, H, DIF, undefined, '2'); }),
+      mkPic(1300, (g, x) => { c36Cell(g, x, 240, 100, H, NUM); c36Row(g, x, 340, 3, 100, H, DEN); }),
+    ];
+    ['А', 'Б', 'В'].forEach((s, i) => klText(p, s, 300 + i * 500, 470, .4, { size: 30, fill: COL.dim, weight: 600, anchor: 'middle' }));
+    S.q3ok = c36Tick(p, 500, 370);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-kartinka', prompt: 'У Пети в 2 раза больше марок, чем у Коли. Нажми на картинку, которая подходит.',
+    build: pickEls(S.q3pics.map((g, i) => ({ el: g, box: [300 + i * 500 - 190, 214, 380, 286], label: ['А', 'Б', 'В'][i] })), 0,
+      'У Коли одна часть, у Пети две таких же части: в 2 раза больше.',
+      i => i === 1 ? 'Здесь у Пети такая же полоска и кусочек 2 — это «на 2 больше».' : 'Здесь у Пети три части против одной — это «в 3 раза больше».',
+      () => fx(S.q3ok, { o: 1 }, 0, .3)),
+  }], done) }],
+
+  ['chain', 'Решение с конца', m => {
+    const p = panel(0);
+    klTitle(p, 'Решение с конца');
+    const xs = [300, 800, 1300], Y = 340;
+    const { bx, bm } = c36Chain(p, xs, Y, '· 3', '+ 5', '26', m('think'), m('mul', .5), m('got'));
+    pulse(bx, m('got', 1.8), 1.2);
+    // The way back: each arrow reversed, under the chain, in RULE.
+    c36Arrow(p, xs[2] - 65, xs[1] + 65, Y + 40, Y + 140, '− 5', RULE, m('sub5'));
+    klMath(p, ['26 − 5 = 21'], 1050, 600, m('sub5', .8), { size: 56, fill: RULE });
+    bm.set(21, m('sub5', 3));
+    c36Arrow(p, xs[1] - 65, xs[0] + 65, Y + 40, Y + 140, ': 3', RULE, m('div'));
+    klMath(p, ['21 : 3 = 7'], 550, 600, m('seven'), { size: 56, fill: RULE });
+    bx.set(7, m('open'), UNK);
+    klText(p, 'с конца', 1300, 470, m('back'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    const c = klRow(p, ['проверка:   ', { m: '7 · 3 = 21' }, ',    ', { m: '21 + 5 = 26' }], 800, 760, m('check'), { size: 32, msize: 52 });
+    klMark(p, 800 + c._w / 2 + 50, 744, m('check', 4.2), true, .8);
+  }],
+
+  ['order', 'Обратные действия', m => {
+    const p = panel(0);
+    klTitle(p, 'Обратные действия — в обратном порядке');
+    const o = { size: 36, msize: 96 };
+    klRow(p, [{ m: '+' }, '    отменяет    ', { m: '−', fill: RULE }], 380, 320, m('pm'), o);
+    klRow(p, [{ m: '·' }, '    отменяет    ', { m: ':', fill: RULE }], 380, 470, m('md'), o);
+    path(p, 'M760 220V800', { stroke: COL.faint, 'stroke-width': 2 });
+    // The chain once more, small, with the order of the steps back numbered.
+    const xs = [920, 1170, 1420], Y = 330;
+    c36Chain(p, xs, Y, '· 3', '+ 5', '26', .3, .5, .7, 76);
+    c36Arrow(p, xs[2] - 45, xs[1] + 45, Y + 30, Y + 110, '− 5', RULE, m('order', .3), { size: 40 });
+    c36Num(p, (xs[1] + xs[2]) / 2, Y + 150, 1, m('order', .8));
+    c36Arrow(p, xs[1] - 45, xs[0] + 45, Y + 30, Y + 110, ': 3', RULE, m('order', 2.2), { size: 40 });
+    c36Num(p, (xs[0] + xs[1]) / 2, Y + 150, 2, m('order', 2.7));
+    klText(p, 'сделали последним — отменяем первым', 1170, 560, m('coat'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    const w = klRow(p, [{ m: '26 : 3 = ?' }], 1040, 700, m('wrong'), { anchor: 'start', size: 34, msize: 56, fill: COL.dim });
+    c36StrikeRow(p, w, 1040, 700, m('strike'));
+    klText(p, 'не делится нацело', 1170, 770, m('strike', .5), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const xs = [300, 800, 1300], Y = 330;
+    const { bx, bm } = c36Chain(p, xs, Y, '− 4', '· 5', '35', .2, .5, .8);
+    S.q4 = { bx, bm,
+      a1: c36Arrow(p, xs[2] - 65, xs[1] + 65, Y + 40, Y + 140, ': 5', RULE),
+      a2: c36Arrow(p, xs[1] - 65, xs[0] + 65, Y + 40, Y + 140, '+ 4', RULE) };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-konec', prompt: 'Задумали число, вычли из него 4, результат умножили на 5 и получили 35. Какое число задумали?',
+    build: blanks([
+      { parts: ['в средней клетке:  ', { box: '7' }], why: 'Последним умножали на 5 — делим: 35 : 5 = 7.', hint: 'Отмени последнее действие: вместо · 5 сделай : 5.',
+        fx: () => { fx(S.q4.a1, { o: 1 }, 0, .4); S.q4.bm.fxSet(7, .3); } },
+      { parts: ['задумали:  ', { box: '11' }], why: 'Перед этим вычитали 4 — прибавим: 7 + 4 = 11. Проверка: (11 − 4) · 5 = 35.', hint: 'Вместо − 4 сделай + 4.',
+        fx: () => { fx(S.q4.a2, { o: 1 }, 0, .4); S.q4.bx.fxSet(11, .3, UNK); } },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['«В ', { m: 'n' }, ' раз больше»:  1 часть и ', { m: 'n' }, ' частей, всего ', { m: 'n + 1' }],
+    ['«На ', { m: 'm' }, ' больше»:  убери ', { m: 'm' }, ', остаток раздели поровну'],
+    ['Отношение ', { m: 'a : b' }, ':  всего ', { m: 'a + b' }, ' равных частей'],
+    'С конца: обратные действия в обратном порядке',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-lena', prompt: 'У Лены в 4 раза больше значков, чем у Оли, а вместе у них 35 значков. Сколько значков у Оли?',
+    build: blanks([{ parts: [{ box: '7' }, '  значков'], why: 'Оля — 1 часть, Лена — 4 части, всего 5 частей; 35 : 5 = 7.', hint: 'Сколько всего частей? Не забудь часть Оли.' }]),
+  }, {
+    id: 'p-korziny', prompt: 'В двух корзинах 60 яблок, во второй в 2 раза больше, чем в первой. Сколько яблок во второй корзине?',
+    build: blanks([{ parts: [{ box: '40' }, '  яблок'], why: 'Всего 1 + 2 = 3 части, одна часть 60 : 3 = 20; во второй 2 · 20 = 40.', hint: 'Первая корзина — 1 часть, вторая — 2 части.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-marki', prompt: 'У Пети и Коли вместе 50 марок, у Пети на 8 больше. Сколько марок у Коли?',
+    build: blanks([{ parts: [{ box: '21' }, '  марка'], why: '(50 − 8) : 2 = 21. У Коли 21, у Пети 29.', hint: 'Убери лишние 8 марок и раздели остаток пополам.' }]),
+  }, {
+    id: 'p-otnoshenie', prompt: 'Брат и сестра разделили 45 конфет в отношении 2 : 3. Сколько конфет у каждого?',
+    build: blanks([{ parts: ['брат:  ', { box: '18' }, ',   сестра:  ', { box: '27' }], why: 'Всего 2 + 3 = 5 частей, одна часть 45 : 5 = 9; 2 · 9 = 18, 3 · 9 = 27.', hint: 'Сложи члены отношения: это число частей.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-zadumali', prompt: 'Задумали число, прибавили к нему 8, результат умножили на 2 и получили 30. Какое число задумали?',
+    build: blanks([{ parts: [{ box: '7' }], why: 'С конца: 30 : 2 = 15, 15 − 8 = 7. Проверка: (7 + 8) · 2 = 30.', hint: 'Последним умножали на 2 — начни с деления на 2.' }]),
+  }, {
+    id: 'p-zadumali2', prompt: 'Задумали число, умножили его на 4, вычли 6 и получили 30. Какое число задумали?',
+    build: blanks([{ parts: [{ box: '9' }], why: 'С конца: 30 + 6 = 36, 36 : 4 = 9. Проверка: 9 · 4 − 6 = 30.', hint: 'Последним вычитали 6 — начни с прибавления 6.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
