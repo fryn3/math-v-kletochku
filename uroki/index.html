@@ -60,8 +60,9 @@
 
 <script>
 // Units are the chapters (главы) of the reference site, chapters are its topics (темы). Folders keep the topic's
-// place in the whole course (3.1 is the 13th topic, ch13), and each card shows the topic's own number. Add a lesson
-// here when it is ready, and set the previous lesson's CHAPTER.next.
+// place in the whole course (3.1 is the 13th topic, ch13), and each card shows the topic's own number. Every unit
+// names its number and first folder ({ unit, chapter }), so a unit may be listed before the ones ahead of it are made.
+// Add a lesson here when it is ready, and set the previous lesson's CHAPTER.next.
 Contents.book({
   start: { unit: 3, chapter: 13 },
   units: [   // [unit title, [[lesson title, minutes, { chapter: number shown }], ...]]
@@ -70,7 +71,7 @@ Contents.book({
       ['Основное свойство дроби', 8, { chapter: '3.2' }],
       ['Сложение и вычитание дробей', 7, { chapter: '3.3' }],
       ['Умножение и деление дробей', 8, { chapter: '3.4' }],
-    ]],
+    ], { unit: 3, chapter: 13 }],
   ],
   hues: ['#f4a48c', '#86c9e8', '#f3c95c', '#e8a0c8', '#8fd6b0', '#bba8ee', '#f0b45a'],   // one colour per unit, cycling
 });
