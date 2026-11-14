@@ -43,8 +43,6 @@ You make ONE lesson of the Papermorph lesson book «Математика в кл
 - math.js `pointRow` draws a decimal point, but this book writes a decimal comma: use ch17's `c17Table` / `c17Col` (comma at a fixed x) instead.
 - math.js `numberLine` draws into `S.line`, which is not cleared between beats: set `S.line = G(p)` right before each `numberLine(...)` call so the line leaves with the beat (ch25 `c25Line`). In an answer effect `move` takes the start time before the run function: `move(p, a, b, y, 0, fx)`.
 - Finished lessons hold helpers worth copying under your own prefix (list in `chapters.md`, «Кандидаты в общую библиотеку»): read the one you need, not the whole page.
-- The Edge voice guesses the stress of a homograph and often guesses wrong («Сравни числа» comes out «числа́»). Put the combining acute U+0301 right after the stressed vowel wherever the form decides the stress: «чи́сла» (plural) / «числа́» (два числа́, от числа́); «сто́роны» / «стороны́» (три стороны́); «ме́ста» / «места́»; «часа́» (два часа́) / «ча́са» (половина ча́са); «шага́», «ряда́», «шара́» after два, три, четыре; «цены́», «длины́», «воды́», «реки́» (genitive); «кру́жки» (mugs) / «кружки́» (clubs); «со́рока» (forty). The mark steers the voice and keeps the word times; captions show it, as a dictionary does.
-- No label sits on a line or is crossed by one: in this book a line through text means «ошибка». Latin x and y in the UI font look like Cyrillic «х» and «у»: set variables in math italics (`klRow` pieces with `{ m: 'x' }`, ch34 `c34Tx`).
 
 ## Check before you report
 
