@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Римские цифры · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.8 «Римские цифры» (5 класс). Beat ids match papermorph/content/uroki/ch08/narration.ru.json.
+const CHAPTER = { number: 8, label: '1.8', title: 'Римские цифры', minutes: 7, language: 'ru', next: '../ch09/' };
+
+// Colours in this lesson: a symbol's value, a symbol that is added — KL.NUM; a symbol that is subtracted — KL.TWO
+// (вычитаемое, as in style.json); places of our positional notation — KL.DEN (as in 1.1); rules — KL.RULE.
+const ADD = KL.NUM, SUB = KL.TWO, RULE = KL.RULE, PLACE = KL.DEN;
+const NBSP = ' ';
+
+// One Roman symbol on a tile: a group whose origin is the tile's centre (x, y), so it slides, hops and pulses in place.
+// box: false leaves the tile out (a bare stick for counting). g._t is the letter (for c_fill), g._r the tile.
+function c08Tile(p, ch, x, y, { s = 110, fill = COL.chalk, t0, box = true } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  if (box) g._r = mk('rect', { x: -s * .43, y: -s * .5, width: s * .86, height: s, rx: s * .1, fill: COL.chalk, 'fill-opacity': .06, stroke: COL.chalk, 'stroke-opacity': .35, 'stroke-width': 2 }, g);
+  g._t = T(g, ch, { x: 0, y: s * .27, size: s * .76, fill, font: MATH, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A Roman record as separate tiles, `pitch` apart and centred on x; fills(i, ch) may colour each symbol.
+function c08Word(p, str, x, y, { s = 110, pitch = s * .96, fills, t0, step = 0, box = true } = {}) {
+  const xs = str.split('').map((_, i) => x + (i - (str.length - 1) / 2) * pitch);
+  const tiles = str.split('').map((ch, i) => c08Tile(p, ch, xs[i], y, { s, box, fill: fills ? fills(i, ch) : COL.chalk, t0: t0 === undefined ? undefined : t0 + i * step }));
+  tiles.xs = xs;
+  return tiles;
+}
+// Numbers and signs in the maths face, fading in at t0 (no t0: shown at once): a group whose origin is the text's
+// anchor point on the baseline (x, y), so it pulses in place; g._t is the text (for c_fill).
+function c08M(p, str, x, y, t0, { size = 56, fill = COL.chalk, anchor = 'middle', weight = 400 } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  g._t = T(g, str, { x: 0, y: 0, size, fill, font: MATH, anchor, weight });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A value dropping out of a tile: hidden at (x, y0), it falls to (x, y1) at t.
+function c08Drop(p, str, x, y0, y1, t, { size = 52, fill = ADD } = {}) {
+  const g = G(p, { x, y: y0, o: 0 });
+  T(g, str, { x: 0, y: 0, size, fill, font: MATH, anchor: 'middle' });
+  tw(g, { o: 1, y: y1 }, t, .55, out);
+  return g;
+}
+// A hop of a group from x a to x b along an arc of height hgt above its y.
+function c08Hop(e, a, b, y, t, dur = .8, hgt = 120) {
+  prog(q => put(e, { x: a + (b - a) * q, y: y - Math.sin(Math.PI * q) * hgt }), t, dur, io);
+}
+// A bracket under x1 … x2 at height y with its label below, drawn at once (for answer effects: fade the group in).
+function c08Brace(p, x1, x2, y, label, { fill = ADD, size = 34 } = {}) {
+  const g = G(p);
+  path(g, `M${x1} ${y - 12}V${y}H${x2}V${y - 12}`, { stroke: fill, 'stroke-width': 3, fill: 'none' });
+  T(g, label, { x: (x1 + x2) / 2, y: y + size * .95, size, fill, font: MATH, anchor: 'middle' });
+  return g;
+}
+// A clock face with Roman numerals, radius r, centred on (cx, cy), hands at ten past ten; shown at t0.
+// Returns { g, nums } (nums[k] is the numeral of hour k + 1, a group at its place, for pulses).
+const C08_HOURS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+function c08Clock(p, cx, cy, r, t0) {
+  const g = G(p, { o: 0 });
+  mk('circle', { cx, cy, r, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 4 }, g);
+  for (let k = 0; k < 60; k++) {
+    const a = k * 6 * Math.PI / 180, big = k % 5 === 0, r0 = r - (big ? 18 : 9);
+    path(g, `M${(cx + r0 * Math.sin(a)).toFixed(1)} ${(cy - r0 * Math.cos(a)).toFixed(1)}L${(cx + (r - 3) * Math.sin(a)).toFixed(1)} ${(cy - (r - 3) * Math.cos(a)).toFixed(1)}`,
+      { stroke: big ? COL.chalk : COL.dim, 'stroke-width': big ? 4 : 2, 'stroke-linecap': 'round' });
+  }
+  const nums = C08_HOURS.map((s, k) => {
+    const a = (k + 1) * 30 * Math.PI / 180, rr = r - 56;
+    const n = G(g, { x: cx + rr * Math.sin(a), y: cy - rr * Math.cos(a) });
+    n._t = T(n, s, { x: 0, y: 12, size: s.length > 3 ? 28 : 34, fill: COL.chalk, font: MATH, anchor: 'middle' });
+    return n;
+  });
+  const hand = (deg, len, w) => { const h = G(g, { x: cx, y: cy, r: deg }); path(h, `M0 12V${-len}`, { stroke: COL.chalk, 'stroke-width': w, 'stroke-linecap': 'round' }); };
+  hand(305, r * .5, 8); hand(60, r * .74, 5);
+  mk('circle', { cx, cy, r: 9, fill: COL.chalk }, g);
+  show(g, t0);
+  return { g, nums };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Римские цифры', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.8',
+    title: 'Римские цифры',
+    sub: 'Как записывают числа без разрядов и без нуля',
+    art: (g, t0) => {
+      // The seven symbols in a row; on «без разрядов» they light up one after another.
+      const w = c08Word(g, 'IVXLCDM', 800, 616, { s: 72, pitch: 80, t0, step: .1 });
+      w.forEach((e, i) => { const t = m('sub', 1.6 + i * .15); tw(e._t, { c_fill: RULE }, t, .25); tw(e._t, { c_fill: COL.chalk }, t + .6, .4); });
+    },
+  })],
+
+  ['symbols', 'Семь знаков', m => {
+    const p = panel(0);
+    klTitle(p, 'Семь римских знаков');
+    // The row the seven symbols settle into, with their values under them.
+    const SX = k => 800 + (k - 3) * 175, SY = 620, VY = 760;
+    const slotVal = (k, str, t) => c08M(p, str, SX(k), VY, t, { size: 50, fill: ADD });
+    // The seven empty places come first, dashed.
+    for (let k = 0; k < 7; k++) {
+      const e = mk('rect', { x: SX(k) - 52, y: SY - 60, width: 104, height: 120, rx: 12, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '9 8' }, p);
+      put(e, { o: 0 }); show(e, .3 + k * .12, .3);
+    }
+    // Counting sticks above the row: one, two, three, then five that turn into V.
+    const DY = 330, sx = i => 800 + (i - 2) * 56;
+    const sticks = [0, 1, 2, 3, 4].map(i => c08Tile(p, 'I', sx(i), DY, { s: 130, box: false }));
+    sticks.forEach(e => put(e, { o: 0 }));
+    const at = [2.4, m('ii'), m('iii'), m('v'), m('v', .25)];
+    sticks.forEach((e, i) => show(e, at[i], .3));
+    // The count under the sticks: 1, 2, 3, 5.
+    const cnt = ['1', '2', '3', '5'].map(s => { const e = c08M(p, s, 800, 470, undefined, { size: 50, fill: ADD }); put(e, { o: 0 }); return e; });
+    const ct = [m('i'), m('ii'), m('iii'), m('v', .4)];
+    cnt.forEach((e, k) => { show(e, ct[k], .3); if (k < 3) hide(e, ct[k + 1] - .2, .2); });
+    // «Палочка — это один»: the first stick's own tile appears in the row.
+    const iBox = c08Tile(p, 'I', SX(0), SY, { s: 120, t0: m('i', .4) }); slotVal(0, '1', m('i', .7));
+    // «поэтому для пяти есть свой знак»: the five sticks close up into one V, which drops into the row.
+    const vT = m('vv');
+    sticks.forEach((e, i) => { tw(e, { x: 800 }, vT, .6, io); hide(e, vT + .45, .25); });
+    const V = c08Tile(p, 'V', 800, DY, { s: 130, box: false });
+    put(V, { o: 0, s: .4 });
+    tw(V, { o: 1, s: 1 }, vT + .5, .4, back);
+    hide(cnt[3], m('x', -.3), .3);
+    tw(V, { x: SX(1), y: SY, s: 120 / 130 }, m('x', -.3), .7, io);
+    const vBox = c08Tile(p, 'V', SX(1), SY, { s: 120, t0: m('x', .35) });
+    hide(V, m('x', .5), .2);
+    slotVal(1, '5', m('x', .4));
+    // «Две пятёрки — это десять»: two V side by side merge into X.
+    const v1 = c08Tile(p, 'V', 720, DY, { s: 130, box: false, t0: m('x', -.1) }), v2 = c08Tile(p, 'V', 880, DY, { s: 130, box: false, t0: m('x', .15) });
+    const plus = c08M(p, '5 + 5', 800, 470, m('x', .3), { size: 50, fill: ADD });
+    const xT = m('xx', .4);
+    [v1, v2].forEach(e => { tw(e, { x: 800 }, xT, .6, io); hide(e, xT + .45, .25); });
+    hide(plus, xT + .4, .25);
+    const X = c08Tile(p, 'X', 800, DY, { s: 130, box: false });
+    put(X, { o: 0, s: .4 });
+    tw(X, { o: 1, s: 1 }, xT + .5, .4, back);
+    const ten = c08M(p, '10', 800, 470, xT + .6, { size: 50, fill: ADD });
+    hide(ten, m('l', -.3), .3);
+    tw(X, { x: SX(2), y: SY, s: 120 / 130 }, m('l', -.3), .7, io);
+    const xBox = c08Tile(p, 'X', SX(2), SY, { s: 120, t0: m('l', .35) });
+    hide(X, m('l', .5), .2);
+    slotVal(2, '10', m('l', .4));
+    // The other four, each on its word.
+    const rest = [['L', '50', 'l'], ['C', '100', 'c'], ['D', '500', 'd'], ['M', '1' + NBSP + '000', 'm']];
+    const tiles = rest.map(([ch, v, mk_], k) => { const e = c08Tile(p, ch, SX(3 + k), SY, { s: 120, t0: m(mk_, k ? 0 : .9) }); slotVal(3 + k, v, m(mk_, k ? .3 : 1.2)); return e; });
+    // «каждый всегда значит одно и то же»: the seven pulse in turn.
+    [iBox, vBox, xBox, ...tiles].forEach((e, k) => pulse(e, m('seven', 1 + k * .2), 1.15));
+    klText(p, 'знак всегда значит одно и то же', 800, 850, m('seven', 2.4), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['add', 'Знаки складывают', m => {
+    const p = panel(0);
+    klTitle(p, 'От больших к меньшим — складываем');
+    // Left: XVII, the value of each symbol drops out of it in turn.
+    const L = c08Word(p, 'XVII', 470, 330, { s: 130, pitch: 130, t0: .2 });
+    const VY = 520, marks = ['x', 'v', 'i1', 'i2'], vals = ['10', '5', '1', '1'];
+    L.forEach((e, i) => { const t = m(marks[i]); c08Drop(p, vals[i], L.xs[i], 400, VY, t); pulse(e, t, 1.12); });
+    [0, 1, 2].forEach(i => c08M(p, '+', (L.xs[i] + L.xs[i + 1]) / 2, VY, m('order', .2 + i * .15), { size: 48 }));
+    klArrow(p, L.xs[0] - 40, 590, L.xs[3] + 40, 590, 620, RULE, m('order'), .7);
+    klText(p, 'от больших к меньшим', 470, 660, m('order', .5), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    c08M(p, '= 17', L.xs[3] + 60, VY, m('sum'), { size: 60, anchor: 'start' });
+    path(p, 'M880 230V780', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .3, 'stroke-dasharray': '8 8' });
+    // Right: MDC, the same with the big symbols.
+    const R = c08Word(p, 'MDC', 1220, 330, { s: 130, pitch: 160, t0: m('big'), step: .3 });
+    const rv = ['1' + NBSP + '000', '500', '100'];
+    R.forEach((e, i) => { const t = m('bsum', i * .75); c08Drop(p, rv[i], R.xs[i], 400, VY, t, { size: 46 }); pulse(e, t, 1.12); });
+    [0, 1].forEach(i => c08M(p, '+', (R.xs[i] + R.xs[i + 1]) / 2 + 6, VY, m('bsum', .4 + i * .75), { size: 40 }));
+    c08M(p, '= 1' + NBSP + '600', 1220, 640, m('bsum', 3.4), { size: 60 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const w = c08Word(p, 'LXVI', 800, 320, { s: 150, pitch: 160, t0: .2, step: .1 });
+    const vals = ['50', '10', '5', '1'].map((v, i) => { const e = c08M(p, v, w.xs[i], 510, undefined, { size: 52, fill: ADD }); put(e, { o: 0, y: 470 }); return e; });
+    const plus = [0, 1, 2].map(i => { const e = c08M(p, '+', (w.xs[i] + w.xs[i + 1]) / 2, 510, undefined, { size: 46 }); put(e, { o: 0 }); return e; });
+    const res = c08M(p, '= 66', w.xs[3] + 80, 510, undefined, { size: 56, anchor: 'start' }); put(res, { o: 0 });
+    S.q1 = { vals, plus, res };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-lxvi', prompt: 'Какое число записано римскими цифрами: LXVI?',
+    build: blanks([{ parts: [{ box: '66' }], why: 'Знаки идут от больших к меньшим: 50 + 10 + 5 + 1 = 66.',
+      hint: 'L — 50, X — 10, V — 5, I — 1. Знаки идут от больших к меньшим, их складывают.',
+      fx: () => { const { vals, plus, res } = S.q1; vals.forEach((e, i) => fx(e, { o: 1, y: 510 }, i * .25, .45, out)); plus.forEach((e, i) => fx(e, { o: 1 }, .9 + i * .1, .3)); fx(res, { o: 1 }, 1.4, .4); } }]),
+  }], done) }],
+
+  ['sub', 'Слева вычитают', m => {
+    const p = panel(0);
+    klTitle(p, 'Меньший знак слева — вычитаем');
+    // Counting with sticks: I, II, III, then IIII, which is not written.
+    const groups = [[1, 210, 'c1'], [2, 380, 'c2'], [3, 590, 'c3'], [4, 860, 'c4']];
+    const cnt = groups.map(([n, x, mk_]) => {
+      const t = mk_ === 'c1' ? .3 : m(mk_);
+      const w = c08Word(p, 'I'.repeat(n), x, 290, { s: 100, pitch: 40, box: false, t0: t });
+      c08M(p, String(n), x, 400, mk_ === 'c1' ? m('c1') : t + .2, { size: 40, fill: COL.dim });
+      return w;
+    });
+    klStrike(p, 790, 330, 930, 245, m('c4', 1.8));
+    klText(p, 'больше трёх подряд нельзя', 990, 300, m('c4', 2.2), { size: 28, fill: COL.bad, weight: 600 });
+    // Four is five without one: V, and one I to its left, in the colour of what is taken away.
+    const CX = 800, CY = 590;
+    const V = c08Tile(p, 'V', CX, CY, { s: 140, t0: m('iv') });
+    const I = c08Tile(p, 'I', CX - 140, CY, { s: 140, fill: SUB });
+    put(I, { o: 0, y: CY - 60 });
+    tw(I, { o: 1, y: CY }, m('iv', 2.4), .5, out);
+    const minus = klRow(p, [{ m: '5 ' }, { m: '− 1', fill: SUB }, { m: ' = 4' }], CX, 760, m('minus'), { size: 44, msize: 60 });
+    // The same stick hops over V to the right and is added now.
+    hide(minus, m('move', -.2), .3);
+    c08Hop(I, CX - 140, CX + 140, CY, m('move', .3), .9, 170);
+    tw(I._t, { c_fill: ADD }, m('move', .7), .4);
+    klRow(p, [{ m: '5 ' }, { m: '+ 1', fill: ADD }, { m: ' = 6' }], CX, 760, m('plus'), { size: 44, msize: 60 });
+    pulse(I, m('plus', .9), 1.15); pulse(V, m('plus', 2.4), 1.12); pulse(I, m('plus', 2.7), 1.12);
+    // The rule: both places at once, the left one as a ghost.
+    const ghost = c08Tile(p, 'I', CX - 140, CY, { s: 140, fill: SUB });
+    put(ghost, { o: 0 });
+    tw(ghost, { o: .5 }, m('rule', 3.2), .4);
+    klText(p, 'слева: −', CX - 140, 470, m('rule', 3.4), { size: 30, fill: SUB, weight: 600, anchor: 'middle' });
+    klText(p, 'справа: +', CX + 140, 470, m('rule', .9), { size: 30, fill: ADD, weight: 600, anchor: 'middle' });
+    klText(p, 'IV = 4', CX - 330, CY + 14, m('rule', 3.7), { size: 40, fill: COL.dim, weight: 600, anchor: 'middle' });
+    klText(p, 'VI = 6', CX + 330, CY + 14, m('rule', 1.4), { size: 40, fill: COL.dim, weight: 600, anchor: 'middle' });
+  }],
+
+  ['pairs', 'Какие знаки вычитают', m => {
+    const p = panel(0);
+    klTitle(p, 'Вычитают только I, X и C');
+    // Three rows: the small symbol on the left flies into place before its two bigger neighbours.
+    const rows = [['I', 'V', 'X', '4', '9', 'i'], ['X', 'L', 'C', '40', '90', 'x'], ['C', 'D', 'M', '400', '900', 'c']];
+    const heads = [];
+    rows.forEach(([a, b, c, v1, v2, mk_], k) => {
+      const y = 300 + k * 170, t = m(mk_);
+      const head = c08Tile(p, a, 220, y, { s: 100, fill: SUB, t0: k ? t - .3 : .3 });
+      heads.push(head);
+      klText(p, 'перед', 300, y + 10, t, { size: 28, fill: COL.dim });
+      [[b, v1, 600], [c, v2, 1060]].forEach(([big, v, x], j) => {
+        const tj = t + .4 + j * 1.6;
+        c08Tile(p, big, x, y, { s: 100, t0: tj });
+        const fly = c08Tile(p, a, 220, y, { s: 100, fill: SUB });
+        put(fly, { o: 0 });
+        show(fly, tj + .2, .1);
+        tw(fly, { x: x - 96 }, tj + .2, .7, io);
+        c08M(p, '= ' + v, x + 70, y + 20, tj + .9, { size: 54, anchor: 'start' });
+      });
+    });
+    // «Вычитают всегда один, десять или сто»: the three heads pulse; under them the neighbours ×5 and ×10.
+    heads.forEach((e, k) => pulse(e, m('why', 1.3 + k * .6), 1.2));
+    klText(p, 'в 5 раз больше', 600, 820, m('why', 5.6), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'в 10 раз больше', 1060, 820, m('why', 6.6), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const w = c08Word(p, 'CXIX', 800, 320, { s: 150, pitch: 160, t0: .2, step: .1 });
+    const ans = G(p, { o: 0 });
+    c08Brace(ans, w.xs[2] - 60, w.xs[3] + 60, 425, '10 − 1 = 9', { fill: SUB, size: 34 });
+    c08M(ans, '100 + 10 + 9 = 119', 800, 560, undefined, { size: 50 });
+    S.q2 = { w, ans };
+  }, { ask: done => {
+    const { w, ans } = S.q2;
+    quiz(BAND, [{
+      id: 'c-vychit', prompt: 'Запись CXIX. Нажми на знак, который вычитается.',
+      build: pickEls(w.map((e, i) => ({ el: e, box: [w.xs[i] - 70, 240, 140, 160], label: 'CXIX'[i] })), 2,
+        'I стоит перед большим знаком X — его вычитают: IX = 9, а всё число — 119.',
+        i => i === 3 ? 'Этот X стоит последним: справа от него ничего нет, его прибавляют.' : 'Справа от этого знака нет большего — его прибавляют. Ищи меньший знак перед большим.',
+        () => { fx(w[2]._t, { c_fill: SUB }, 0, .3); pulseFx(w[2], 1.2); fx(ans, { o: 1 }, .4, .5); }),
+    }], done);
+  } }],
+
+  ['place', 'Наша запись и римская', m => {
+    const p = panel(0);
+    klTitle(p, 'Наша запись и римская');
+    path(p, 'M800 210V590', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .3, 'stroke-dasharray': '8 8' });
+    // Left: 333 — three equal digits worth 300, 30 and 3 by their places.
+    const xs = [340, 460, 580];
+    xs.forEach(x => c08M(p, '3', x, 370, .2, { size: 140 }));
+    ['сот.', 'дес.', 'ед.'].forEach((s, i) => klText(p, s, xs[i], 240, m('pos', .4 + i * .2), { size: 28, fill: PLACE, weight: 600, anchor: 'middle' }));
+    [['300', 'p3'], ['30', 'p2'], ['3', 'p1']].forEach(([v, mk_], i) => c08Drop(p, v, xs[i], 400, 480, m(mk_), { size: 44 }));
+    klText(p, 'значение — по месту', 460, 560, m('p1', 1.4), { size: 28, fill: PLACE, weight: 600, anchor: 'middle' });
+    // Right: XXX — three equal symbols worth 10 each wherever they stand.
+    const R = c08Word(p, 'XXX', 1140, 320, { s: 130, pitch: 140, t0: m('rom') });
+    R.forEach((e, i) => { const t = m('r', i * .7); c08Drop(p, '10', R.xs[i], 400, 480, t, { size: 44 }); pulse(e, t, 1.1); });
+    c08M(p, '+', (R.xs[0] + R.xs[1]) / 2, 480, m('r', 2.2), { size: 40 });
+    c08M(p, '+', (R.xs[1] + R.xs[2]) / 2, 480, m('r', 2.3), { size: 40 });
+    c08M(p, '= 30', R.xs[2] + 60, 480, m('r', 2.6), { size: 50, anchor: 'start' });
+    // «где бы он ни стоял»: the three pulse together.
+    R.forEach(e => pulse(e, m('r', 5), 1.12));
+    klText(p, 'значение — всегда одно', 1140, 560, m('r', 5.2), { size: 28, fill: ADD, weight: 600, anchor: 'middle' });
+    // No zero: 205 = CCV, the empty tens place is simply not written.
+    c08M(p, '2', 210, 720, m('zero', .8), { size: 70 });
+    c08M(p, '0', 255, 720, m('zero', .8), { size: 70, fill: COL.dim });
+    c08M(p, '5', 300, 720, m('zero', .8), { size: 70 });
+    c08M(p, '=', 375, 720, m('zero', 2), { size: 70 });
+    c08Word(p, 'CCV', 545, 698, { s: 90, pitch: 92, t0: m('zero', 2.5), step: .35 });
+    // No column: the symbols of one place do not stand under each other.
+    const C1 = c08Word(p, 'CCV', 1300, 650, { s: 70, pitch: 68, t0: m('col') });
+    const C2 = c08Word(p, 'XVII', 1266, 740, { s: 70, pitch: 68, t0: m('col', .3) });
+    c08M(p, '+', 1080, 712, m('col', .5), { size: 50 });
+    draw(path(p, 'M1100 790H1410', { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), m('col', .7), .4);
+    klText(p, '?', 1255, 860, m('col', 1.2), { size: 60, fill: COL.bad, weight: 700, anchor: 'middle' });
+    // Lined up on the right, C (hundreds) stands over V (units).
+    [C1[0], C2[1]].forEach(e => { tw(e._t, { c_fill: COL.bad }, m('col', 2.4), .3); });
+    klText(p, 'C над V', 1500, 700, m('col', 2.8), { size: 26, fill: COL.bad, weight: 600, anchor: 'middle' });
+  }],
+
+  ['build', 'Запись по разрядам', m => {
+    const p = panel(0);
+    klTitle(p, 'Большое число — по разрядам');
+    // The places of topic 1.1 come first; the number on its word.
+    const cx = [380, 660, 940, 1220], terms = ['1' + NBSP + '000', '900', '90', '4'];
+    const heads = ['тысячи', 'сотни', 'десятки', 'единицы'].map((s, i) => klText(p, s, cx[i], 320, .3 + i * .25, { size: 28, fill: PLACE, weight: 600, anchor: 'middle' }));
+    heads.forEach((e, i) => { tw(e, { c_fill: RULE }, 2.6 + i * .15, .25); tw(e, { c_fill: PLACE }, 3.4 + i * .15, .4); });
+    const top = c08M(p, '1' + NBSP + '994', 800, 240, m('n'), { size: 96 });
+    // Split into places.
+    const tm = terms.map((s, i) => {
+      const e = c08M(p, s, cx[i], 400, undefined, { size: 64 });
+      put(e, { o: 0, y: 290 });
+      tw(e, { o: 1, y: 400 }, m('split', .2 + i * .9), .6, out);
+      if (i) c08M(p, '+', (cx[i - 1] + cx[i]) / 2, 400, m('split', .5 + i * .9), { size: 56 });
+      return e;
+    });
+    // Each place gets its own Roman piece; the subtracted symbol in its colour.
+    const pieces = [['M', 'm', .3, 0], ['CM', 'cm', 2.4, .5], ['XC', 'xc', 2.2, .5], ['IV', 'iv', .8, .7]].map(([s, mk_, off, step], i) => {
+      pulse(tm[i], m(mk_), 1.15);
+      return c08Word(p, s, cx[i], 560, { s: 110, pitch: 100, t0: m(mk_, off), step, fills: (j) => s.length === 2 && j === 0 ? SUB : COL.chalk });
+    });
+    // «Ставим части рядом»: all seven slide into one line.
+    const all = pieces.flat(), lx = i => 800 + (i - 3) * 100;
+    all.forEach((e, i) => tw(e, { x: lx(i), y: 730 }, m('join', .1 + i * .05), .8, io));
+    // «обратно, по тем же кусочкам»: brackets under the groups with their values.
+    let k = 0;
+    [['1000', 1], ['900', 2], ['90', 2], ['4', 2]].forEach(([v, n], i) => {
+      const x1 = lx(k) - 44, x2 = lx(k + n - 1) + 44;
+      klBrace(p, x1 + 4, x2 - 4, 800, v === '1000' ? '1' + NBSP + '000' : v, m('back', 1 + i * .5), { up: false, fill: ADD, size: 30 });
+      k += n;
+    });
+    c08M(p, '= 1' + NBSP + '994', lx(6) + 70, 752, m('res', 1), { size: 60, fill: RULE, anchor: 'start' });
+    pulse(top, m('res', 1), 1.1);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const w = c08Word(p, 'MCMXLV', 800, 300, { s: 130, pitch: 125, t0: .2, step: .08 });
+    const ans = G(p, { o: 0 });
+    [[0, 0, '1' + NBSP + '000'], [1, 2, '900'], [3, 4, '40'], [5, 5, '5']].forEach(([a, b, v]) => c08Brace(ans, w.xs[a] - 52, w.xs[b] + 52, 395, v, { size: 34 }));
+    c08M(ans, '= 1' + NBSP + '945', 800, 540, undefined, { size: 54 });
+    S.q3 = { w, ans };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-1945', prompt: 'Какое число записано: MCMXLV? Читай по кусочкам: M, CM, XL, V.',
+    build: blanks([{ parts: [{ box: '1945' }], why: 'M = 1 000, CM = 900, XL = 40, V = 5. Вместе 1 945.',
+      hint: 'CM — сто до тысячи, это 900; XL — десять до пятидесяти, это 40.',
+      fx: () => { const { w, ans } = S.q3; [1, 3].forEach(i => fx(w[i]._t, { c_fill: SUB }, 0, .3)); fx(ans, { o: 1 }, .3, .5); } }]),
+  }], done) }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Как записать 99');
+    // The mistake: IC, «сто без одного».
+    c08M(p, '99 = ?', 360, 250, .3, { size: 64 });
+    const bad = c08Word(p, 'IC', 360, 370, { s: 130, pitch: 130, t0: m('wrong', .6), step: .4, fills: j => j ? COL.chalk : SUB });
+    c08M(p, '100 − 1', 360, 510, m('wrong', 1.8), { size: 50, fill: COL.dim });
+    klStrike(p, 250, 440, 470, 300, m('why'));
+    klText(p, 'I ставят только', 360, 590, m('why', 1.2), { size: 30, fill: COL.bad, weight: 600, anchor: 'middle' });
+    klText(p, 'перед V и X', 360, 630, m('why', 1.2), { size: 30, fill: COL.bad, weight: 600, anchor: 'middle' });
+    path(p, 'M640 230V790', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .3, 'stroke-dasharray': '8 8' });
+    // The right way: by places, 99 = 90 + 9.
+    c08M(p, '99 =', 900, 290, m('right'), { size: 64, anchor: 'end' });
+    c08M(p, '90', 1000, 290, m('right', .8), { size: 64 });
+    c08M(p, '+', 1110, 290, m('right', 1.1), { size: 64 });
+    c08M(p, '9', 1240, 290, m('right', 1.4), { size: 64 });
+    const g90 = c08Word(p, 'XC', 1000, 430, { s: 110, pitch: 100, t0: m('ninety', .8), step: .4, fills: j => j ? COL.chalk : SUB });
+    const g9 = c08Word(p, 'IX', 1240, 430, { s: 110, pitch: 100, t0: m('nine', .8), step: .4, fills: j => j ? COL.chalk : SUB });
+    const all = [...g90, ...g9], lx = i => 1120 + (i - 1.5) * 100;
+    all.forEach((e, i) => tw(e, { x: lx(i), y: 620 }, m('res', .1 + i * .05), .8, io));
+    klMark(p, lx(3) + 110, 620, m('res', 1.4));
+    klText(p, 'XCIX = 99', 1120, 760, m('res', 3), { size: 40, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    c08M(p, '40 = ?', 800, 300, .2, { size: 96 });
+    const X = c08Tile(p, 'X', 700, 470, { s: 130, t0: .4 }), Lt = c08Tile(p, 'L', 900, 470, { s: 130, t0: .5 });
+    const lab = klRow(p, [{ m: '50 ' }, { m: '− 10', fill: SUB }], 800, 610, undefined, { size: 40, msize: 50 });
+    put(lab, { o: 0 });
+    S.q4 = { X, Lt, lab };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sorok', prompt: 'Как записать римскими цифрами число 40?',
+    build: choice(['XXXX', 'XL', 'LX'], 1, 'Сорок — это десять до пятидесяти: X перед L, XL = 50 − 10.',
+      ['Четыре одинаковых знака подряд не пишут. Сорок — это 50 без 10.', null, 'LX — это 50 + 10 = 60: X справа прибавляется.'],
+      () => { const { X, Lt, lab } = S.q4; fx(X, { x: 752 }, 0, .5); fx(Lt, { x: 848 }, 0, .5); fx(X._t, { c_fill: SUB }, .3, .3); fx(lab, { o: 1 }, .5, .4); }),
+  }], done) }],
+
+  ['where', 'Где встречаются', m => {
+    const p = panel(0);
+    klTitle(p, 'Где встречаются римские цифры');
+    const cl = c08Clock(p, 400, 520, 250, .3);
+    [11, 2, 5, 8].forEach((k, i) => { const t = m('clock', .4 + i * .3); tw(cl.nums[k]._t, { c_fill: RULE }, t, .25); pulse(cl.nums[k], t, 1.3); });
+    // The century.
+    const cent = c08M(p, 'XXI', 1090, 330, m('cent'), { size: 80, anchor: 'end' });
+    klText(p, ' век', 1100, 330, m('cent'), { size: 56 });
+    klText(p, 'двадцать первый', 1100, 390, m('cent', 1.6), { size: 28, fill: COL.dim, anchor: 'middle' });
+    // A book with its volume and chapter.
+    const b = G(p, { o: 0 });
+    mk('rect', { x: 960, y: 470, width: 280, height: 330, rx: 10, fill: COL.chalk, 'fill-opacity': .06, stroke: COL.chalk, 'stroke-width': 3 }, b);
+    path(b, 'M990 470V800', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .4 });
+    T(b, 'Том II', { x: 1115, y: 560, size: 40, fill: COL.chalk, font: MATH, anchor: 'middle' });
+    path(b, 'M1040 600H1190', { stroke: COL.dim, 'stroke-width': 2 });
+    T(b, 'Глава IX', { x: 1115, y: 680, size: 44, fill: COL.chalk, font: MATH, anchor: 'middle' });
+    show(b, m('book'));
+    // «нашими цифрами»: under the Roman records, ours.
+    c08M(p, '= 21', 1260, 330, m('end', 1), { size: 56, fill: RULE, anchor: 'start' });
+    klText(p, 'том 2, глава 9', 1100, 850, m('end', 2.2), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    pulse(cent, m('end', 1), 1.08);
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'I = 1,  V = 5,  X = 10,  L = 50,  C = 100,  D = 500,  M = 1' + NBSP + '000',
+    'Меньший знак справа прибавляют, слева вычитают:  VI = 6,  IV = 4',
+    'Больше трёх одинаковых знаков подряд не ставят:  40 = XL',
+    'Большое число — по разрядам:  1' + NBSP + '994 = M CM XC IV',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-xxiv', prompt: 'Какое число записано римскими цифрами: XXIV?',
+    build: blanks([{ parts: [{ box: '24' }], why: 'XX = 20, IV = 4. Вместе 24.', hint: 'XX — два раза по десять. IV — пять без одного.' }]),
+  }, {
+    id: 'p-xlix', prompt: 'Какое число записано римскими цифрами: XLIX?',
+    build: blanks([{ parts: [{ box: '49' }], why: 'XL = 40, IX = 9. Вместе 49.', hint: 'Раздели на кусочки: XL и IX. В каждом меньший знак стоит слева и вычитается.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Какие записи верны?',
+    build: grid([
+      { parts: ['IV = 4'], ans: ['da'], why: 'I перед V вычитается: 5 − 1 = 4.' },
+      { parts: ['IIII = 4'], ans: ['net'], why: 'Больше трёх одинаковых знаков подряд не ставят: 4 = IV.' },
+      { parts: ['XC = 90'], ans: ['da'], why: 'X перед C вычитается: 100 − 10 = 90.' },
+      { parts: ['IC = 99'], ans: ['net'], why: 'I ставят только перед V и X. 99 = XCIX.' },
+      { parts: ['VX = 5'], ans: ['net'], why: 'V не вычитают никогда: вычитают только I, X и C. 5 = V.' },
+    ], [['da', 'верно', null, '1'], ['net', 'ошибка', null, '2']], { multi: false, text: true }),
+  }, {
+    id: 'p-mmxxvi', prompt: 'Какое число записано римскими цифрами: MMXXVI?',
+    build: blanks([{ parts: [{ box: '2026' }], why: 'MM = 2 000, XX = 20, VI = 6. Вместе 2 026.', hint: 'Знаки идут от больших к меньшим — все складываются.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-14', prompt: 'Как записать римскими цифрами число 14?',
+    build: choice(['XIIII', 'XIV', 'IVX'], 1, '14 = 10 + 4 = X + IV = XIV.',
+      ['Четыре палочки подряд не пишут: 4 = IV.', null, 'Пиши по разрядам, от больших к меньшим: сначала десять (X), потом четыре (IV).']),
+  }, {
+    id: 'p-99', prompt: 'Как правильно записать римскими цифрами число 99?',
+    build: choice(['IC', 'XCIX', 'LXLIX'], 1, '99 = 90 + 9 = XC + IX = XCIX.',
+      ['I ставят только перед V и X, а не перед C.', null, 'Девяносто записывают XC, а не LXL: пиши по разрядам, 90 + 9.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

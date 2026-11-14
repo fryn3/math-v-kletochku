@@ -191,8 +191,9 @@ const BEATS = [
     const arr = c03LR(p, A[0]._px, A[4]._px, 465, m('nm', .6), { col: MD });
     hide(arr, m('a', -.3), .3);
     const A1 = collapse(A, 0, 2, '6', m('a', .1), { color: MD });
-    collapse(A1, 0, 2, '12', m('b', .1), { color: MD });
+    const A2 = collapse(A1, 0, 2, '12', m('b', .1), { color: MD });
     klMark(p, 495, 370, m('b', 1.8), true);
+    pulse(A2[0], m('strike', 1.2), 1.25);   // after the crossed-out trap, back to the right way: left to right gives 12
     // The trap: multiplying first, as if multiplication outranked division.
     klMath(p, ['24 : 4 · 2'], 1200, 200, m('trap', -.2), { size: 52, fill: COL.dim });
     const B = c03Row(p, E, 1200, 400, m('trap'), { size: SZ });
@@ -278,7 +279,7 @@ const BEATS = [
     klMath(p, [' = 3'], 820, 380, .2, { size: 116, anchor: 'start', fill: RULE });
   }, { ask: done => quiz(BAND, [{
     id: 'c-skobki', prompt: 'Куда поставить скобки, чтобы получилось 3?',
-    build: choice([$m('(20 − 8) : 4'), $m('20 − (8 : 4)'), 'скобки не нужны'], 0,
+    build: choice([$m('(20 − 8) : 4'), $m('20 − (8 : 4)'), 'без скобок'], 0,
       'Скобки заставляют вычесть первым: (20 − 8) : 4 = 12 : 4 = 3.',
       [null, '20 − (8 : 4) = 20 − 2 = 18: деление и без скобок выполняли бы первым.', 'Без скобок первым идёт деление: 20 − 8 : 4 = 20 − 2 = 18.'],
       () => {

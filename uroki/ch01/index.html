@@ -110,10 +110,10 @@ function c01Line(p, { x0, x1, y, a, b, step, big = [], labels = [], t0, size = 3
   return { g, X, y, labs };
 }
 // A dot on a line at value v (hidden until t), with its label above.
-function c01Dot(p, L, v, t, { fill = DIG, label, r = 13 } = {}) {
+function c01Dot(p, L, v, t, { fill = DIG, label, r = 13, ly = -32 } = {}) {
   const g = G(p, { x: L.X(v), y: L.y, o: 0 });
   mk('circle', { r, fill, stroke: COL.board, 'stroke-width': 3 }, g);
-  if (label) T(g, label, { x: 0, y: -32, size: 32, fill, font: MATH, anchor: 'middle' });
+  if (label) T(g, label, { x: 0, y: ly, size: 32, fill, font: MATH, anchor: 'middle' });
   tw(g, { o: 1 }, t, .3);
   return g;
 }
@@ -136,9 +136,14 @@ const BEATS = [
       '3405'.split('').forEach((ch, i) => {
         const x = 620 + i * 90, c = G(g, { o: 0 });
         mk('rect', { x, y: 572, width: 90, height: 90, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 2.5 }, c);
-        T(c, heads[i], { x: x + 45, y: 558, size: 20, fill: COL.dim, anchor: 'middle', weight: 600 });
-        T(c, ch, { x: x + 45, y: 639, size: 60, font: MATH, fill: ch === '0' ? COL.dim : i === 0 ? DIG : COL.chalk, anchor: 'middle' });
+        const hd = T(c, heads[i], { x: x + 45, y: 558, size: 20, fill: COL.dim, anchor: 'middle', weight: 600 });
+        if (i) T(c, ch, { x: x + 45, y: 639, size: 60, font: MATH, fill: ch === '0' ? COL.dim : COL.chalk, anchor: 'middle' });
         show(c, t0 + i * .12);
+        if (i) return;
+        // «одна и та же цифра … и три, и три тысячи»: the 3 pulses, then its place «тыс.» lights up.
+        const d = c01Dig(c, ch, x + 45, 617, { size: 60, fill: DIG });
+        tw(d, { s: 1.3 }, m('sub', 2.1), .25, out); tw(d, { s: 1 }, m('sub', 2.35), .35);
+        tw(hd, { c_fill: RULE }, m('sub', 4.3), .3); tw(d, { s: 1.3 }, m('sub', 4.3), .25, out); tw(d, { s: 1 }, m('sub', 4.55), .35);
       });
     },
   })],
@@ -195,7 +200,10 @@ const BEATS = [
       klText(p, terms[k][2], x + (wd[k] + wr[k]) / 2, Y + 66, t + .6, { size: 28, fill: dim ? COL.dim : RULE, anchor: 'middle', weight: 600 });
       x += wd[k] + wr[k];
     });
-    c01M(p, '3' + NBSP + '405 = 3' + NBSP + '000 + 400 + 5', 800, 800, m('sum'), { size: 64 });
+    // The sum is said term by term: «три тысячи, четыре сотни и пять единиц».
+    const sum = ['3' + NBSP + '405 = ', '3' + NBSP + '000', ' + 400', ' + 5'], sw = sum.map(s => textW(s, 64));
+    let sx = 800 - sw.reduce((a, b) => a + b) / 2;
+    sum.forEach((s, k) => { c01M(p, s, sx, 800, m('sum', [0, 2.5, 3.8, 5.1][k]), { size: 64, anchor: 'start' }); sx += sw[k]; });
   }],
 
   ['q1', 'Проверь себя', () => {
@@ -228,7 +236,7 @@ const BEATS = [
     [[d3, 1], [d7, 0]].forEach(([d, k]) => { c01Hop(d, tb.X(k), tb.X(k + 1), tb.cy, h1, .7, 36); c01Hop(d, tb.X(k + 1), tb.X(k + 2), tb.cy, h2, .7, 36); });
     c01M(p, '· 10', 690, 570, h1 + .3, { size: 40, fill: RULE, anchor: 'end' });
     c01M(p, '· 10', 710, 570, h2 + .3, { size: 40, fill: RULE, anchor: 'start' });
-    c01M(p, '= · 100', 830, 570, h2 + 1, { size: 40, fill: RULE, anchor: 'start' });
+    c01M(p, '= · 100', 710 + textW('· 10 ', 40), 570, h2 + 1, { size: 40, fill: RULE, anchor: 'start' });
     [0, 1].forEach(k => c01Drop(p, '0', tb.X(k), tb.cy, m('zeros', .2 + k * .3), { size: 110 }));
     c01M(p, '= 3' + NBSP + '700', 810, 250, m('res'), { size: 72, anchor: 'start' });
     klText(p, 'умножить на 100 — дописать справа два нуля', 800, 700, m('res', 1.6), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
@@ -279,7 +287,10 @@ const BEATS = [
   ['trap', 'Пустой разряд — ноль', m => {
     const p = panel(0);
     klTitle(p, 'Пустой разряд записывают нулём');
-    klText(p, '«два миллиона сорок»', 800, 240, .2, { size: 46, weight: 600, anchor: 'middle' });
+    // «запишем цифрами» — a blank line to write on; «два миллиона сорок» — the words to write.
+    const slot = path(p, 'M520 392H760', { stroke: COL.dim, 'stroke-width': 3, 'stroke-dasharray': '10 9' }, { d: 0 });
+    draw(slot, 1.1, .6); hide(slot, m('wrong', 1.4), .3);
+    klText(p, '«два миллиона сорок»', 800, 240, 2.3, { size: 46, weight: 600, anchor: 'middle' });
     // The common mistake: «2 040» is two thousand forty.
     c01Num(p, '2040', 640, 350, { size: 80, pitch: 48, gap: 20, fill: COL.dim, t0: m('wrong', 1.6), step: .55 });
     klStrike(p, 535, 386, 745, 334, m('why'));
@@ -295,7 +306,8 @@ const BEATS = [
     const xs = c01Pos('2000040', 800, 56, 30);
     digs.forEach((d, i) => tw(d, { x: xs[i], y: 700 }, m('res', .2), .8, io));
     klMark(p, xs[6] + 90, 700, m('res', 1.2));
-    digs.forEach((d, i) => { if (i && i !== 5) { tw(d._t, { c_fill: RULE }, m('res', 3.4 + i * .1), .3); } });
+    // «Пустой разряд всегда записывают нулём»: the five zeros light up and pulse.
+    digs.forEach((d, i) => { if (i && i !== 5) { const t = m('res', 2.9 + i * .12); tw(d._t, { c_fill: RULE }, t, .3); tw(d, { s: 1.2 }, t, .2, out); tw(d, { s: 1 }, t + .2, .3); } });
   }],
 
   ['q2', 'Проверь себя', () => {
@@ -368,7 +380,8 @@ const BEATS = [
     const ghost1 = c01Dot(p, L1, 3748, m('line'), { label: '3' + NBSP + '748' });
     const dot1 = c01Dot(p, L1, 3748, m('line'));
     tw(ghost1, { o: .45 }, m('r1'), .3);
-    L1.labs.forEach((e, k) => { tw(e, { c_fill: RULE }, m('between', 1.4 + k * 2), .3); });
+    // «между тремя тысячами семьюстами и тремя тысячами восемьюстами»: the ends are named as they are said.
+    L1.labs.forEach((e, k) => { put(e, { o: 0 }); const t = m('between', 1.4 + k * 2); tw(e, { o: 1 }, t, .3); tw(e, { c_fill: RULE }, t, .3); });
     klBrace(p, L1.X(3700), L1.X(3748), 400, '48', m('near'), { up: false, fill: COL.good, size: 30 });
     klBrace(p, L1.X(3748), L1.X(3800), 400, '52', m('near', .5), { up: false, fill: COL.dim, size: 30 });
     prog(q => put(dot1, { x: L1.X(3748 - 48 * q) }), m('r1'), .8, io);
@@ -443,7 +456,7 @@ const BEATS = [
     const est = G(p, { x: L.X(1000), y: L.y, o: 0 });
     mk('rect', { x: -9, y: -30, width: 18, height: 60, rx: 4, fill: RULE }, est);
     show(est, m('est', 1.5), .3);
-    c01Dot(p, L, 1029, m('exact', 1), { label: '1' + NBSP + '029' });
+    c01Dot(p, L, 1029, m('exact', 1), { label: '1' + NBSP + '029', ly: -50 });   // above the estimate's bar
     klMark(p, L.X(1029) + 80, 620, m('exact', 3));
     klText(p, 'близко', L.X(1029) + 130, 632, m('exact', 4.4), { size: 28, fill: COL.good, weight: 600 });
     c01Dot(p, L, 129, m('bad', 1.2), { fill: COL.bad, label: '129' });

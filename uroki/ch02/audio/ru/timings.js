@@ -24,7 +24,9 @@ window.TIMINGS = {
    "arr": 12.537,
    "turn": 18.422,
    "after": 20.818,
-   "lawmul": 25.506
+   "lawmul": 25.506,
+   "both": 27.185,
+   "mul2": 28.123
   },
   "cues": [
    [

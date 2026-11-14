@@ -169,6 +169,7 @@ const BEATS = [
     [0, 1, 2].forEach(k => klText(p, String(k + 1), 80, A.rowY(k) + 12, m('q', .4 + k * .15), { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' }));
     name(5, ['остаток'], NUM, m('r', .2)); pulse(L[5].g, m('r', .1), 1.3);
     two.forEach(e => pulse(e, m('r', .3), 1.4));
+    A.sweets.forEach((e, i) => pulse(e, m('back', .1 + (16 - i) * .05), 1.3));
     // Back again: 5 boxes × 3 sweets + 2 = 17, then the same line in letters, every letter under its number.
     const sz = 72, y2 = 540, y3 = 660;
     const L2 = klExpr(p, [{ s: '17', t: m('two', 1) }, { s: '=', t: m('two', 1) }, { s: '5', fill: DEN, t: m('five') }, { s: '·', t: m('three') },
@@ -177,9 +178,10 @@ const BEATS = [
     klBrace(p, 110, 650, 612, '5 · 3 = 15', m('three', .4), { up: false, fill: WHOLE, size: 34 });
     two.forEach(e => pulse(e, m('two', .1), 1.4));
     const letters = ['a', '=', 'b', '·', 'q', '+', 'r'], fills = [COL.chalk, COL.chalk, DEN, COL.chalk, WHOLE, COL.chalk, NUM];
+    const tl = [1.1, 1.7, 2.2, 3, 4.2, 5.6, 6];   // each letter on its word: «делимое равно делителю, умноженному на …»
     letters.forEach((s, i) => {
-      klMath(p, [s], L2[i].c, y3 + sz * .35, m('gen', i * .25), { size: sz, fill: fills[i] });   // M() sets the letters italic
-      if (i % 2 === 0) pulse(L2[i].g, m('gen', i * .25), 1.25);
+      klMath(p, [s], L2[i].c, y3 + sz * .35, m('gen', tl[i]), { size: sz, fill: fills[i] });   // M() sets the letters italic
+      if (i % 2 === 0) pulse(L2[i].g, m('gen', tl[i]), 1.25);
     });
     klMark(p, L2.x1 + 70, y2 - 4, m('check'));
     klText(p, 'так проверяют деление', 880, 790, m('check', .3), { size: 32, fill: RULE, weight: 600 });
@@ -200,8 +202,8 @@ const BEATS = [
   ['trap', 'Остаток меньше делителя', m => {
     const p = panel(0);
     klTitle(p, 'Двадцать три конфеты, четыре коробки');
-    const A = c04Deal(p, { n: 23, b: 4, pileAt: i => [150 + i * 74, 730], bx: 110, by: 250, bw: 120, bh: 390, gap: 30, rg: 64, s: 1.2, t0: .2, pre: 4 });
-    [0, 1, 2, 3].forEach(k => klText(p, String(k + 1), 76, A.rowY(k) + 12, .3, { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' }));
+    const A = c04Deal(p, { n: 23, b: 4, pileAt: i => [150 + (i % 12) * 74, i < 12 ? 730 : 792], bx: 110, by: 250, bw: 120, bh: 390, gap: 30, rg: 64, s: 1.2, t0: .2 });
+    [0, 1, 2, 3].forEach(k => { const e = A.deal(k, .9 + k * 1.1, { per: .15, dur: .45 }); klText(p, String(k + 1), 76, A.rowY(k) + 12, e - .2, { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' }); });
     // The mistake: four rounds, seven left.
     const W = klExpr(p, c04Div('23', '4', '4', '7', [m('wrong'), m('wrong', .3), m('wrong', .6), m('wrong', 1)]), 780, 310, { size: 64 });
     const seven = A.left(4);
@@ -217,7 +219,14 @@ const BEATS = [
     const R = klExpr(p, c04Div('23', '4', '5', '3', [m('right', .4), m('right', .4), m('right', .9), m('right', 2.2)]), 780, 440, { size: 64 });
     klMark(p, R.x1 + 50, 436, m('right', 2.8));
     // The rule and the remainders that division by 4 can leave.
-    klRow(p, ['остаток меньше делителя:  ', { m: '3', fill: NUM }, { m: ' < ' }, { m: '4', fill: DEN }], 780, 580, m('rule', 2.5), { size: 34, msize: 54, anchor: 'start', fill: RULE, weight: 600 });
+    // «раздачу можно продолжать»: the fifth round lights up in its boxes; «поэтому остаток меньше»: the three left.
+    A.sweets.slice(3, 7).forEach((e, i) => pulse(e, m('rule', 2.2 + i * .08), 1.3));
+    A.boxes.forEach((e, j) => { tw(e, { 'a_stroke-width': 8 }, m('rule', 2.2 + j * .06), .2); tw(e, { 'a_stroke-width': 4 }, m('rule', 2.8 + j * .06), .4); });
+    A.left(5).forEach((e, i) => pulse(e, m('rule', 4.2 + i * .08), 1.3));
+    klRow(p, ['остаток меньше делителя:  ', { m: '3', fill: NUM }, { m: ' < ' }, { m: '4', fill: DEN }], 780, 580, m('rule', .3), { size: 34, msize: 54, anchor: 'start', fill: RULE, weight: 600 });
+    // «Поэтому остаток всегда меньше делителя»: the rule is framed, and the remainder of the right line nods.
+    const fr = path(p, 'M768 532H1412V606H768Z', { fill: 'none', stroke: RULE, 'stroke-width': 3, 'stroke-linejoin': 'round' }, { d: 0 });
+    tw(fr, { d: 1 }, m('rule', 4.3), 1.4, io); pulse(R[5].g, m('rule', 4.4), 1.3);
     klText(p, 'остатки при делении на 4:', 780, 680, m('list'), { size: 30, fill: COL.dim });
     [0, 1, 2, 3].forEach(k => c04Chip(p, 830 + k * 110, 760, 84, k, m('list', 1.2 + k * .45), { size: 46 }));
   }],
@@ -267,6 +276,7 @@ const BEATS = [
     klText(p, 'чётное', 440, 750, m('even', 3), { size: 36, weight: 700 });
     klExpr(p, c04Div('9', '2', '4', '1', [m('odd', .4), m('odd', .4), O.e - .3, O.e + .2]), 1100, 660, { size: 50 });
     klText(p, 'нечётное', 1100, 750, m('odd', 2.8), { size: 36, weight: 700 });
+    O.B.left(4).forEach(e => pulse(e, m('rule', 3), 1.3));
     klRow(p, ['при делении на 2 остаток — только  ', { m: '0', fill: NUM }, '  или  ', { m: '1', fill: NUM }], 800, 862, m('rule'), { size: 32, msize: 48, fill: RULE, weight: 600 });
   }],
 
@@ -274,7 +284,7 @@ const BEATS = [
     const p = panel(0);
     klTitle(p, 'Сколько нужно автобусов?');
     klRow(p, [{ m: '130' }, ' учеников, в автобусе ', { m: '40', fill: DEN }, ' мест'], 100, 196, m('task'), { size: 32, msize: 44, anchor: 'start', fill: COL.dim });
-    const buses = [80, 450, 820].map((x, k) => c04Bus(p, x, 270, .2 + k * .1));
+    const buses = [80, 450, 820].map((x, k) => c04Bus(p, x, 270, m('task', 2.3 + k * .15)));
     const bus4 = c04Bus(p, 1720, 270);
     // The queue: 130 pupils in columns of five; they board from the front, 40 to a bus.
     const kids = Array.from({ length: 130 }, (_, i) => {

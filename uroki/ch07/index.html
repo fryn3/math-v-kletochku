@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Простые уравнения · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.7 «Простые уравнения» (5 класс). Beat ids match papermorph/content/uroki/ch07/narration.ru.json.
+const CHAPTER = { number: 7, label: '1.7', title: 'Простые уравнения', minutes: 8, language: 'ru', next: '../ch08/' };
+
+// Meanings in this lesson: the unknown x (a closed box) in LET, known numbers and cubes in VAL, the action done to x
+// in OP, the inverse action that undoes it and the rules in RULE.
+const LET = KL.DEN, VAL = KL.NUM, OP = KL.TWO, RULE = KL.RULE;
+
+// A cube of size s centred on (x, y).
+function c07Cube(p, x, y, s = 26, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { x: -s / 2, y: -s / 2, width: s, height: s, rx: 3, fill: mix(COL.board, VAL, .45), stroke: VAL, 'stroke-width': 2.5 }, g);
+  return g;
+}
+// A closed box of width w centred on (x, y) with «x» on it. open(val, t0) lifts its lid and shows the number inside;
+// fxOpen(val, delay) does the same on the question clock.
+function c07Box(p, x, y, w = 64, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { x: -w / 2, y: -w / 2, width: w, height: w, rx: 6, fill: mix(COL.board, LET, .16), stroke: LET, 'stroke-width': 3.5 }, g);
+  const lid = G(g, { x: -w / 2 - 5, y: -w / 2 });
+  path(lid, `M0 0H${w + 10}`, { stroke: LET, 'stroke-width': 7, 'stroke-linecap': 'round' });
+  const lab = M(g, ['x'], { y: w * .2, size: w * .66, fill: LET });
+  let val = null;
+  const num = v => (val = M(g, [String(v)], { y: w * .2, size: w * (String(v).length > 1 ? .52 : .66), fill: VAL, o: 0 }));
+  g.open = (v, t0) => { tw(lid, { r: -38, y: -w / 2 - 6 }, t0, .5, back); hide(lab, t0, .3); show(num(v), t0 + .3, .3); };
+  g.fxOpen = (v, d = 0) => { fx(lid, { r: -38, y: -w / 2 - 6 }, d, .5); fx(lab, { o: 0 }, d, .3); fx(num(v), { o: 1 }, d + .3, .3); };
+  return g;
+}
+// An arrow from (x1, y) to (x2, y) bending through cy (cy = y: straight), its label at (lx, ly) set as maths in col.
+// Drawn on at t0; with t0 undefined it is built hidden and returned for fx({ o: 1 }).
+function c07Arrow(p, x1, x2, y, cy, label, col, t0, { lx, ly, dur = .6, y2 = y } = {}) {
+  const g = G(p, { o: t0 === undefined ? 0 : 1 }), mx = (x1 + x2) / 2;
+  const line = path(g, `M${x1} ${y}Q${mx} ${cy} ${x2} ${y2}`, { stroke: col, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round' }, t0 === undefined ? {} : { d: 0 });
+  const a = Math.atan2(y2 - cy, x2 - mx), L = 20;
+  const pt = da => `${(x2 - L * Math.cos(a + da)).toFixed(1)} ${(y2 - L * Math.sin(a + da)).toFixed(1)}`;
+  const head = path(g, `M${pt(.45)}L${x2} ${y2}L${pt(-.45)}`, { stroke: col, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, t0 === undefined ? {} : { o: 0 });
+  const lab = M(g, [label], { x: lx ?? mx, y: ly ?? (cy === y ? y - 22 : (y + 2 * cy + y2) / 4 + 52), size: 48, fill: col, o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) { draw(line, t0, dur); show(head, t0 + dur * .85, .2); show(lab, t0 + dur * .5, .3); }
+  g.lab = lab;
+  return g;
+}
+// One worked line aligned on its «=» at xEq: L and R are klRow pieces ({ m, fill }).
+// steps = [tL, tEq, tR] writes the three parts one after another instead of all at t0.
+function c07Line(p, L, R, xEq, y, t0, msize = 60, steps) {
+  const g = G(p, { o: t0 === undefined || steps ? 1 : 0 });
+  const parts = [klRow(g, L, xEq - msize * .55, y, undefined, { anchor: 'end', msize }), M(g, ['='], { x: xEq, y, size: msize }),
+    klRow(g, R, xEq + msize * .55, y, undefined, { anchor: 'start', msize })];
+  if (steps) parts.forEach((e, k) => { put(e, { o: 0 }); show(e, steps[k], .35); });
+  else if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A row of tokens where some fly in from tokens already on the board and the rest fade in after them (as c06Fly).
+function c07Fly(p, items, x, y, t0, { size = 100, anchor = 'middle', fade = .7 } = {}) {
+  const row = tokens(p, items.map(it => it.from ? { t: it.t, fill: it.fill } : it), { x, y, size, anchor, o: 0 });
+  row.forEach((e, k) => {
+    const it = items[k];
+    if (it.from) {
+      const { x: sx, y: sy } = st(it.from);
+      put(e, { x: sx, y: sy, s: it.s0 ?? 1 });
+      show(e, t0, .15);
+      tw(e, { x: e._px, y, s: 1 }, t0, .9, io);
+    } else show(e, (typeof it === 'object' && it.at) || t0 + fade, .3);
+  });
+  return row;
+}
+// A bar of n cells of width c at (x, y), height h: faint cells, their lines and a frame. Returns the group.
+function c07Bar(p, x, y, n, c, h, t0) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x, y, width: n * c, height: h, fill: COL.chalk, 'fill-opacity': .07 }, g);
+  let d = '';
+  for (let j = 1; j < n; j++) d += `M${x + j * c} ${y}V${y + h}`;
+  path(g, d, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .4 });
+  mk('rect', { x, y, width: n * c, height: h, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5, rx: 2 }, g);
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A dashed box over a stretch of a bar: the unknown part, with «x» in its middle. Returns { g, lab }.
+function c07Part(p, x, y, w, h, o = 0) {
+  const g = G(p, { o });
+  mk('rect', { x, y, width: w, height: h, rx: 4, fill: mix(COL.board, LET, .2), stroke: LET, 'stroke-width': 4, 'stroke-dasharray': '14 9' }, g);
+  const lab = M(g, ['x'], { x: x + w / 2, y: y + h / 2 + 17, size: 52, fill: LET });
+  return { g, lab };
+}
+const X_ = { m: 'x', fill: LET };
+const v_ = s => ({ m: s, fill: VAL });
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Простые уравнения', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.7',
+    title: 'Простые уравнения',
+    sub: 'Как найти неизвестное число обратным действием и проверить ответ',
+    art: (g, t0) => {
+      const b = c07Box(g, 650, 620, 76, 0); show(b, t0);
+      klRow(g, [{ m: '+ 3 = 8' }], 712, 646, t0 + .3, { anchor: 'start', msize: 68 });
+    },
+  })],
+
+  ['scales', 'Уравнение — как весы', m => {
+    const p = panel(0);
+    klTitle(p, 'Уравнение — как весы в равновесии');
+    const B = balance(p, { x: 540, y: 300, L: 260 });
+    show(B.g, .2);
+    const box = c07Box(B.L, -38, 76, 64, 0); show(box, m('box'));
+    const three = [[25, 95], [55, 95], [40, 67]].map(([x, y], i) => { const c = c07Cube(B.L, x, y, 26, 0); show(c, m('three', i * .15), .25); return c; });
+    const eight = [];
+    [95, 67].forEach((y, r) => [-45, -15, 15, 45].forEach((x, k) => { const c = c07Cube(B.R, x, y, 26, 0); show(c, m('eight', (r * 4 + k) * .1), .25); eight.push(c); }));
+    const level = path(p, 'M250 300H830', { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '12 10' }, { d: 0 });
+    draw(level, m('eight', 2.2), .6); hide(level, m('take', .2), .3);
+    pulse(box, m('eq', .9), 1.15); three.forEach(c => pulse(c, m('eq', 1.7), 1.3)); eight.forEach(c => pulse(c, m('eq', 2.9), 1.3));
+    const qm = klMath(B.L, ['?'], -38, 18, m('name', 3.6), { size: 52, fill: COL.dim });
+    pulse(qm, m('name', 5.6), 1.3); hide(qm, m('open', .1), .3);
+    klRow(p, ['решить — значит найти ', X_], 1195, 500, m('name', 4), { size: 32, msize: 48, fill: RULE, weight: 600 });
+    const XQ = 1230;
+    const L1 = c07Line(p, [X_, { m: ' + 3' }], [v_('8')], XQ, 380, m('eq'), 60, [m('eq', 1.5), m('eq', 2.6), m('eq', 3.2)]);
+    klBrace(p, 1010, 1380, 412, 'уравнение', m('name'), { up: false, fill: RULE, size: 34 });
+    // three cubes off the left pan: it rises; three off the right: level again
+    three.forEach((c, i) => tw(c, { y: st(c).y - 150, o: 0 }, m('take', .2 + i * .1), .6));
+    B.tilt(-8, m('take', .8));
+    eight.slice(4, 7).forEach((c, i) => tw(c, { y: st(c).y - 150, o: 0 }, m('both', .2 + i * .1), .6));
+    B.tilt(0, m('both', .8));
+    c07Line(p, [X_], [{ m: '8 − 3 = ' }, v_('5')], XQ, 600, m('five', .3));
+    box.open(5, m('open', .2));
+    klRow(p, [v_('5'), { m: ' + 3 = 8' }], 1180, 750, m('check'), { msize: 60 });
+    klMark(p, 1360, 730, m('check', 2.4), true, 1.1);
+    pulse(L1, m('check', .2), 1.15);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const B = balance(p, { x: 800, y: 200, L: 300 });
+    put(B.g, { o: 1 });
+    S.q1box = c07Box(B.L, -40, 76, 64);
+    [[22, 95], [52, 95], [82, 95], [37, 67]].forEach(([x, y]) => c07Cube(B.L, x, y));
+    [[-60, 95], [-30, 95], [0, 95], [30, 95], [60, 95], [-45, 67], [-15, 67], [15, 67], [45, 67]].forEach(([x, y]) => c07Cube(B.R, x, y));
+    klRow(p, [X_, { m: ' + 4 = 9' }], 800, 620, undefined, { msize: 64 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-vesy', prompt: 'Весы в равновесии. Сколько кубиков в коробке?',
+    build: blanks([{ parts: ['x + 4 = 9,   x = ', { box: '5' }], why: ['Из суммы вычтем известное слагаемое: ', $m('x = 9 − 4 = 5'), '.'],
+      hint: 'Сними четыре кубика с обеих чашек: сколько останется справа?', fx: () => S.q1box.fxOpen(5) }]),
+  }], done) }],
+
+  ['undo', 'Обратное действие', m => {
+    const p = panel(0);
+    klTitle(p, 'Обратное действие отменяет прямое');
+    const Y = 330;
+    path(p, 'M800 250V700', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    // x + 15 = 40: forward with +15, back with −15
+    const b1 = c07Box(p, 230, Y - 20, 90, 0); show(b1, .2);
+    const a15 = c07Arrow(p, 300, 520, Y - 20, Y - 20, '+ 15', OP, m('add', .3));
+    const n40 = klMath(p, ['40'], 600, Y, m('add', 1.6), { size: 76, fill: VAL });
+    pulse(n40, m('ruleA', 2.6), 1.25); pulse(a15.lab, m('ruleA', 4.4), 1.3);
+    c07Arrow(p, 600, 230, Y + 50, Y + 190, '− 15', RULE, m('back', .2), { dur: .9 });
+    b1.open(25, m('ans', .4));
+    c07Line(p, [X_, { m: ' + 15' }], [v_('40')], 420, 600, m('add', 2));
+    c07Line(p, [X_], [{ m: '40 − 15 = ' }, v_('25')], 420, 690, m('ans', .6));
+    klText(p, 'слагаемое = сумма − другое слагаемое', 450, 775, m('ruleA'), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    // 6x = 42: forward with ·6, back with :6
+    const b2 = c07Box(p, 1010, Y - 20, 90, 0); show(b2, m('mul'));
+    c07Arrow(p, 1080, 1300, Y - 20, Y - 20, '· 6', OP, m('mul', .6));
+    klMath(p, ['42'], 1380, Y, m('mul', 1.9), { size: 76, fill: VAL });
+    c07Arrow(p, 1380, 1010, Y + 50, Y + 190, ': 6', RULE, m('back2', .1), { dur: .9 });
+    b2.open(7, m('ans2', .4));
+    pulse(b2, m('ruleB', 2.6), 1.12);
+    c07Line(p, [{ m: '6' }, X_], [v_('42')], 1170, 600, m('mul', 2.3));
+    c07Line(p, [X_], [{ m: '42 : 6 = ' }, v_('7')], 1170, 690, m('ans2', .6));
+    klText(p, 'множитель = произведение : другой множитель', 1170, 775, m('ruleB'), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, [{ m: '+', fill: OP }, '  отменяют  ', { m: '−', fill: RULE }], 450, 855, m('pair', .2), { size: 34, msize: 60, weight: 600 });
+    klRow(p, [{ m: '·', fill: OP }, '  отменяют  ', { m: ':', fill: RULE }], 1170, 855, m('pair', 2.2), { size: 34, msize: 60, weight: 600 });
+  }],
+
+  ['minus', 'Уменьшаемое и делимое', m => {
+    const p = panel(0);
+    klTitle(p, 'Неизвестное уменьшаемое и делимое');
+    const NY = 400, NX = v => 160 + v * 64;
+    // the number line 0…20
+    const nl = G(p, { o: 0 });
+    path(nl, `M130 ${NY}H1470`, { stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linecap': 'round' });
+    let d = '';
+    for (let v = 0; v <= 20; v++) d += `M${NX(v)} ${NY - (v % 5 ? 9 : 15)}V${NY + (v % 5 ? 9 : 15)}`;
+    path(nl, d, { stroke: COL.chalk, 'stroke-width': 3 });
+    const labs = {};
+    [0, 5, 10, 15, 20].forEach(v => (labs[v] = T(nl, String(v), { x: NX(v), y: NY + 50, size: 34, fill: COL.chalk, font: MATH, anchor: 'middle' })));
+    show(nl, .2);
+    const top = tokens(p, [X_.m, ' − 7 = ', '10'].map((t, k) => k === 0 ? { t, fill: LET } : t), { x: 400, y: 240, size: 64, anchor: 'middle', o: 0 });
+    top.forEach(e => show(e, m('line')));
+    const box = c07Box(p, NX(17), 300, 56, 0); show(box, m('line', .3));
+    c07Arrow(p, NX(17), NX(10), NY - 12, NY - 150, '− 7', OP, m('line', 1.8), { dur: 1.3, ly: 286 });
+    const dot = put(mk('circle', { cx: NX(10), cy: NY, r: 13, fill: VAL, stroke: COL.board, 'stroke-width': 3 }, p), { o: 0 });
+    show(dot, m('hop'), .25); pulse(dot, m('hop', .2), 1.5);
+    tw(labs[10], { c_fill: VAL }, m('hop'), .3);
+    const a7 = c07Arrow(p, NX(10), NX(17), NY + 70, NY + 200, '+ 7', RULE, m('undo', .2), { dur: 1.2, y2: NY + 70, ly: 590 });
+    klMath(p, ['17'], NX(17), NY + 50, m('ans', .3), { size: 34, fill: VAL });
+    box.open(17, m('ans', .4));
+    klRow(p, [X_, { m: ' = 10 + 7 = ' }, v_('17')], 400, 320, m('ans', .5), { msize: 64 });
+    pulse(dot, m('ruleA', 2.2), 1.5); pulse(a7.lab, m('ruleA', 3.6), 1.3);
+    klText(p, 'уменьшаемое = разность + вычитаемое', 400, 640, m('ruleA'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    // x : 4 = 9: x is four parts of nine
+    const SX = 160, SW = 150, SY = 700, SH = 66;
+    const strip = c07Part(p, SX, SY, 4 * SW, SH, 0);
+    show(strip.g, m('div'));
+    hide(strip.lab, m('parts'), .3);
+    [1, 2, 3].forEach(k => draw(path(p, `M${SX + k * SW} ${SY}V${SY + SH}`, { stroke: LET, 'stroke-width': 4 }, { d: 0 }), m('parts', .1 + k * .12), .3));
+    [0, 1, 2, 3].forEach(k => klMath(p, ['9'], SX + (k + .5) * SW, SY + 48, m('parts', .5 + k * .3), { size: 46, fill: VAL }));
+    klBrace(p, SX, SX + 4 * SW, SY + SH + 18, '', m('parts', 1.8), { up: false });
+    const xl = klMath(p, ['x'], SX + 2 * SW, SY + SH + 76, m('parts', 2), { size: 50, fill: LET });
+    hide(xl, m('ans2', .3), .3);
+    klMath(p, ['36'], SX + 2 * SW, SY + SH + 76, m('ans2', .6), { size: 50, fill: VAL });
+    klRow(p, [X_, { m: ' : 4 = 9' }], 1150, 730, m('div', .4), { msize: 64 });
+    klRow(p, [X_, { m: ' = 9 · 4 = ' }, v_('36')], 1150, 805, m('ans2', .3), { msize: 64 });
+    klText(p, 'делимое = частное · делитель', 1150, 870, m('ruleB'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const top = tokens(p, [{ t: 'x', fill: LET }, ' − ', '7', ' = ', '10'], { x: 800, y: 250, size: 100, anchor: 'middle', o: 0 });
+    top.forEach(e => show(e, m('ask')));
+    path(p, 'M800 330V760', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    // the mistake: 10 − 7
+    c07Fly(p, [{ from: top[0], t: 'x', fill: LET }, ' = ', { from: top[4], t: '10' }, ' − ', { from: top[2], t: '7' }, ' = ', { t: '3', at: m('wrong', 1.6) }], 410, 440, m('wrong', .3), { size: 72 });
+    klStrike(p, 180, 470, 640, 390, m('strike'));
+    klText(p, 'ошибка!', 410, 515, m('strike', .3), { size: 32, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klRow(p, [{ m: '3 − 7 = 10 ?' }], 410, 640, m('test', .3), { msize: 64, fill: COL.dim });
+    klMark(p, 410, 720, m('test', 2), false, 1);
+    // the right way: 10 + 7
+    c07Fly(p, [{ from: top[0], t: 'x', fill: LET }, ' = ', { from: top[4], t: '10' }, { t: ' + ', fill: RULE }, { from: top[2], t: '7' }, ' = ', { t: '17', fill: VAL, at: m('ans', .3) }], 1190, 440, m('right', .2), { size: 72 });
+    klRow(p, [v_('17'), { m: ' − 7 = 10' }], 1190, 640, m('ok', .2), { msize: 64 });
+    klMark(p, 1190, 720, m('ok', 2), true, 1);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const Y = 330;
+    S.q2box = c07Box(p, 330, Y - 20, 90);
+    put(c07Arrow(p, 400, 700, Y - 20, Y - 20, '− 18', OP), { o: 1 });
+    klMath(p, ['25'], 790, Y, undefined, { size: 76, fill: VAL });
+    S.q2back = c07Arrow(p, 790, 330, Y + 50, Y + 190, '+ 18', RULE);
+    klRow(p, [X_, { m: ' − 18 = 25' }], 1240, Y, undefined, { msize: 72 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-umenshaemoe', prompt: ['Каким действием найти x в уравнении ', $m('x − 18 = 25'), '?'],
+    build: choice([$m('x = 25 − 18'), $m('x = 25 + 18'), $m('x = 18 − 25')], 1,
+      'Отняли восемнадцать — значит, чтобы вернуться к x, восемнадцать прибавляют.',
+      ['Это обратное действие наоборот: вычитание отменяют сложением. Проверь: 7 − 18 не даст 25.', null, 'Из восемнадцати не отнять двадцать пять, и вычитание отменяют не вычитанием.'],
+      () => fx(S.q2back, { o: 1 }, 0, .5)),
+  }, {
+    id: 'c-umenshaemoe2', prompt: ['Реши уравнение ', $m('x − 18 = 25'), '.'],
+    build: blanks([{ parts: ['x = ', { box: '43' }], why: ['Уменьшаемое — разность плюс вычитаемое: ', $m('25 + 18 = 43'), '. Проверка: ', $m('43 − 18 = 25'), '.'],
+      hint: 'Сложи разность и вычитаемое: 25 + 18.', fx: () => S.q2box.fxOpen(43) }]),
+  }], done) }],
+
+  ['sub', 'Вычитаемое и делитель', m => {
+    const p = panel(0);
+    klTitle(p, 'Неизвестное вычитаемое и делитель');
+    const BX = 300, BY = 270, C = 50, H = 64;
+    c07Bar(p, BX, BY, 20, C, H, m('bar'));
+    klBrace(p, BX, BX + 20 * C, BY - 18, '20', m('bar', .3), { size: 38 });
+    // the taken part: twelve cells lift out of the bar and become the unknown x
+    const piece = G(p, { o: 0 });
+    mk('rect', { x: BX, y: BY, width: 12 * C, height: H, fill: VAL, 'fill-opacity': .45 }, piece);
+    show(piece, m('bar', .6), .3);
+    const rest = put(mk('rect', { x: BX + 12 * C, y: BY, width: 8 * C, height: H, fill: VAL, 'fill-opacity': .45 }, p), { o: 0 });
+    show(rest, m('bar', .6), .3);
+    tw(piece, { y: 170, o: 0 }, m('bar', 1.6), .9, io);
+    const part = c07Part(p, BX, BY + 170, 12 * C, H, 0);
+    show(part.g, m('bar', 2.2), .4);
+    klBrace(p, BX + 12 * C, BX + 20 * C, BY + H + 18, '8', m('left'), { up: false, size: 38, fill: VAL });
+    const hole = c07Part(p, BX, BY, 12 * C, H, 0);
+    show(hole.g, m('part', .2), .4); hide(hole.g, m('ans', .2), .4);
+    hide(part.lab, m('ans', .4), .3);
+    klMath(p, ['12'], BX + 6 * C, BY + 170 + H / 2 + 17, m('ans', .7), { size: 52, fill: VAL });
+    klRow(p, [{ m: '20 − ' }, X_, { m: ' = 8' }], 1120, 470, m('left', .6), { msize: 60 });
+    klRow(p, [X_, { m: ' = 20 − 8 = ' }, v_('12')], 1120, 550, m('ans', .5), { msize: 60 });
+    klText(p, 'вычитаемое = уменьшаемое − разность', 800, 625, m('ruleA'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    // 48 : x = 6: 48 cubes in a block of 8 columns, the columns move apart into heaps of six
+    const CX = 210, CY = 690, CS = 22, SP = 26, GAPX = 52;
+    const cols = Array.from({ length: 8 }, (_, k) => {
+      const g = G(p, { x: CX + k * SP, o: 0 });
+      for (let r = 0; r < 6; r++) c07Cube(g, 0, CY + r * SP, CS);
+      show(g, m('div', .4 + k * .06), .3);
+      tw(g, { x: CX + k * GAPX }, m('six', .1), .9, io);
+      return g;
+    });
+    klBrace(p, CX - 13, CX + 13, CY - 26, '6', m('six', 1.2), { size: 30, fill: VAL });
+    klCount(p, cols.map((_, k) => [CX + k * GAPX, CY + 6 * SP + 20]), m('ans2', .5), { step: .2, size: 30, fill: LET });
+    klRow(p, [{ m: '48 : ' }, X_, { m: ' = 6' }], 1120, 730, m('div', 1.2), { msize: 60 });
+    klRow(p, [X_, { m: ' = 48 : 6 = ' }, v_('8')], 1120, 805, m('ans2', 2.2), { msize: 60 });
+    klText(p, 'делитель = делимое : частное', 1120, 870, m('ruleB'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const BX = 300, BY = 300, C = 20, H = 64;
+    c07Bar(p, BX, BY, 50, C, H);
+    mk('rect', { x: BX + 36 * C, y: BY, width: 14 * C, height: H, fill: VAL, 'fill-opacity': .45 }, p);
+    const part = c07Part(p, BX, BY, 36 * C, H, 1);
+    S.q3part = part;
+    S.q3num = klMath(p, ['36'], BX + 18 * C, BY + H / 2 + 17, undefined, { size: 52, fill: VAL });
+    put(S.q3num, { o: 0 });
+    klBrace(p, BX, BX + 50 * C, BY - 18, '50', 0, { size: 38 });
+    klBrace(p, BX + 36 * C, BX + 50 * C, BY + H + 18, '14', 0, { up: false, size: 38, fill: VAL });
+    klRow(p, [{ m: '50 − ' }, X_, { m: ' = 14' }], 800, 540, undefined, { msize: 72 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-vychitaemoe', prompt: ['Реши уравнение ', $m('50 − x = 14'), '.'],
+    build: blanks([{ parts: ['x = ', { box: '36' }], why: ['Вычитаемое — уменьшаемое минус разность: ', $m('x = 50 − 14 = 36'), '. Проверка: ', $m('50 − 36 = 14'), '.'],
+      hint: 'Из пятидесяти убрали x и осталось четырнадцать. Вычти: 50 − 14.',
+      fx: () => { fx(S.q3part.lab, { o: 0 }, 0, .3); fx(S.q3num, { o: 1 }, .3, .3); } }]),
+  }], done) }],
+
+  ['two', 'Уравнение в два шага', m => {
+    const p = panel(0);
+    klTitle(p, 'Уравнение в два шага');
+    const B = balance(p, { x: 560, y: 250, L: 260 });
+    show(B.g, .2);
+    const boxes = [-60, 0, 60].map((x, i) => { const b = c07Box(B.L, x, 83, 50, 0); show(b, m('load', .2 + i * .15), .3); return b; });
+    const five = [-52, -26, 0, 26, 52].map((x, i) => { const c = c07Cube(B.L, x, 45, 22, 0); show(c, m('load', .8 + i * .08), .25); return c; });
+    const rows = [97, 71, 45, 19].map((y, r) => [-52, -26, 0, 26, 52].map((x, k) => { const c = c07Cube(B.R, x, y, 22, 0); show(c, m('load', 2.2 + (r * 5 + k) * .05), .25); return c; }));
+    const XQ = 1210;
+    const L1 = c07Line(p, [{ m: '3' }, X_, { m: ' + 5' }], [v_('20')], XQ, 320, m('eq'), 56);
+    boxes.forEach(b => pulse(b, m('eq', .3), 1.15)); five.forEach(c => pulse(c, m('eq', 1.3), 1.3)); rows.flat().forEach(c => pulse(c, m('eq', 2.2), 1.25));
+    boxes.forEach((b, i) => pulse(b, m('step1', .8 + i * .2), 1.15));
+    // five cubes off each pan
+    five.forEach((c, i) => tw(c, { y: st(c).y - 140, o: 0 }, m('step1', 2.3 + i * .06), .6));
+    B.tilt(-7, m('step1', 2.8));
+    rows[3].forEach((c, i) => tw(c, { y: st(c).y - 140, o: 0 }, m('step1', 3.5 + i * .06), .6));
+    B.tilt(0, m('step1', 4));
+    c07Line(p, [{ m: '3' }, X_], [{ m: '20 − 5 = ' }, v_('15')], XQ, 410, m('s15', .3), 56);
+    // three equal rows of five: one for each box
+    [0, 1, 2].forEach(r => {
+      const t = m('step2', .3 + (2 - r) * .5);
+      rows[r].forEach(c => pulse(c, t, 1.25));
+      pulse(boxes[2 - r], t, 1.15);
+    });
+    boxes.forEach((b, i) => b.open(5, m('x5', .2 + i * .15)));
+    c07Line(p, [X_], [{ m: '15 : 3 = ' }, v_('5')], XQ, 500, m('x5', .4), 56);
+    klRow(p, [{ m: '3 · ' }, v_('5'), { m: ' + 5 = 15 + 5 = 20' }], 1150, 680, m('check', .2), { msize: 50 });
+    klMark(p, 1450, 662, m('check', 3.4), true, 1);
+    pulse(L1, m('check', 3.4), 1.12);
+  }],
+
+  ['bracket', 'Скобка — тоже компонент', m => {
+    const p = panel(0);
+    klTitle(p, 'Скобка — тоже компонент');
+    const Y = 330;
+    const box = c07Box(p, 230, Y - 20, 90, 0); show(box, m('fwd'));
+    c07Arrow(p, 300, 510, Y - 20, Y - 20, '− 3', OP, m('fwd', 1.2));
+    const q = klMath(p, ['?'], 600, Y, m('fwd', 1.8), { size: 76, fill: COL.dim });
+    c07Arrow(p, 690, 900, Y - 20, Y - 20, '· 4', OP, m('fwd2', .2));
+    klMath(p, ['20'], 990, Y, m('fwd2', 1), { size: 76, fill: VAL });
+    klText(p, 'скобка', 600, Y - 110, m('fwd', 2.2), { size: 30, fill: COL.dim, anchor: 'middle' });
+    // undo from the end
+    c07Arrow(p, 990, 600, Y + 50, Y + 190, ': 4', RULE, m('d4'), { dur: .8 });
+    hide(q, m('d4', 1.6), .3);
+    klMath(p, ['5'], 600, Y, m('d4', 1.8), { size: 76, fill: VAL });
+    c07Arrow(p, 600, 230, Y + 50, Y + 190, '+ 3', RULE, m('p3'), { dur: .8 });
+    box.open(8, m('p3', 1.4));
+    const XQ = 540;
+    c07Line(p, [{ m: '(' }, X_, { m: ' − 3) · 4' }], [v_('20')], XQ, 640, m('eq'), 56);
+    c07Line(p, [X_, { m: ' − 3' }], [{ m: '20 : 4 = ' }, v_('5')], XQ, 725, m('d4', 1.6), 56);
+    c07Line(p, [X_], [{ m: '5 + 3 = ' }, v_('8')], XQ, 810, m('p3', 1.4), 56);
+    klRow(p, [v_('8'), { m: ' − 3 = 5' }], 1270, 650, m('check', .5), { msize: 54 });
+    klRow(p, [{ m: '5 · 4 = 20' }], 1270, 730, m('check', 2.4), { msize: 54 });
+    klMark(p, 1270, 810, m('check', 4), true, 1);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const Y = 330;
+    S.q4box = c07Box(p, 230, Y - 20, 90);
+    put(c07Arrow(p, 300, 510, Y - 20, Y - 20, '· 4', OP), { o: 1 });
+    S.q4q = klMath(p, ['?'], 600, Y, undefined, { size: 76, fill: COL.dim });
+    S.q4mid = put(klMath(p, ['32'], 600, Y, undefined, { size: 76, fill: VAL }), { o: 0 });
+    put(c07Arrow(p, 690, 900, Y - 20, Y - 20, '+ 7', OP), { o: 1 });
+    klMath(p, ['39'], 990, Y, undefined, { size: 76, fill: VAL });
+    S.q4b1 = c07Arrow(p, 990, 600, Y + 50, Y + 190, '− 7', RULE);
+    S.q4b2 = c07Arrow(p, 600, 230, Y + 50, Y + 190, ': 4', RULE);
+    klRow(p, [{ m: '4' }, X_, { m: ' + 7 = 39' }], 1300, Y, undefined, { msize: 68 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-dva-shaga', prompt: ['Реши уравнение ', $m('4x + 7 = 39'), ' в два шага.'],
+    build: blanks([
+      { parts: ['4x = ', { box: '32' }], why: ['Сначала слагаемое ', $m('4x'), ' целиком: ', $m('39 − 7 = 32'), '.'], hint: 'Отмени последнее действие: из 39 вычти 7.',
+        fx: () => { fx(S.q4b1, { o: 1 }, 0, .4); fx(S.q4q, { o: 0 }, .3, .3); fx(S.q4mid, { o: 1 }, .5, .3); } },
+      { parts: ['x = ', { box: '8' }], why: ['Потом множитель: ', $m('32 : 4 = 8'), '. Проверка: ', $m('4 · 8 + 7 = 39'), '.'], hint: 'Произведение 32 раздели на известный множитель 4.',
+        fx: () => { fx(S.q4b2, { o: 1 }, 0, .4); S.q4box.fxOpen(8, .4); } },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Уравнение — равенство с неизвестным числом x',
+    ['Обратные действия:  ', { m: '+' }, ' и ', { m: '−' }, ',   ', { m: '·' }, ' и ', { m: ':' }],
+    ['', { m: 'x − 7 = 10' }, ':  ', { m: 'x = 10 + 7' }, ';     ', { m: '20 − x = 8' }, ':  ', { m: 'x = 20 − 8' }],
+    ['В два шага — с конца:  ', { m: '3x + 5 = 20,  3x = 15,  x = 5' }],
+    'Проверка: подставь найденное число в уравнение',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['Из ', $m('x + 15 = 40'), ' следует ', $m('x = 40 − 15')], ans: ['yes'], why: 'Неизвестное слагаемое: из суммы вычитают известное слагаемое.' },
+      { parts: ['Из ', $m('x − 9 = 6'), ' следует ', $m('x = 9 − 6')], ans: ['no'], why: 'Уменьшаемое находят сложением: x = 6 + 9 = 15.' },
+      { parts: ['Из ', $m('6x = 42'), ' следует ', $m('x = 42 : 6')], ans: ['yes'], why: 'Неизвестный множитель: произведение делят на известный множитель.' },
+      { parts: ['Из ', $m('48 : x = 6'), ' следует ', $m('x = 48 · 6')], ans: ['no'], why: 'Делитель: делимое делят на частное, x = 48 : 6 = 8.' },
+      { parts: ['Число 12 — решение уравнения ', $m('20 − x = 8')], ans: ['yes'], why: 'Проверка: 20 − 12 = 8 — верно.' },
+    ], [['yes', 'верно', null, '1'], ['no', 'неверно', null, '2']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-reshi', prompt: 'Реши уравнения.',
+    build: blanks([
+      { parts: ['x + 27 = 60,   x = ', { box: '33' }], why: 'x = 60 − 27 = 33. Проверка: 33 + 27 = 60.', hint: 'Из суммы вычти известное слагаемое.' },
+      { parts: ['72 : x = 8,   x = ', { box: '9' }], why: 'x = 72 : 8 = 9. Проверка: 72 : 9 = 8.', hint: 'Неизвестный делитель: делимое раздели на частное.' },
+      { parts: ['x : 5 = 12,   x = ', { box: '60' }], why: 'x = 12 · 5 = 60. Проверка: 60 : 5 = 12.', hint: 'Неизвестное делимое: частное умножь на делитель.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-skobka', prompt: ['Реши уравнение ', $m('(x + 4) · 3 = 27'), '.'],
+    build: blanks([{ parts: ['x = ', { box: '5' }], why: ['Скобка: ', $m('27 : 3 = 9'), ', потом ', $m('x = 9 − 4 = 5'), '. Проверка: ', $m('(5 + 4) · 3 = 27'), '.'], hint: 'Сначала найди, чему равна скобка: 27 : 3.' }]),
+  }, {
+    id: 'p-proverka', prompt: ['Какое число — решение уравнения ', $m('48 : x = 6'), '?'],
+    build: choice([$m('288'), $m('8'), $m('42')], 1, ['Проверка: ', $m('48 : 8 = 6'), ' — верно.'],
+      ['Это 48 · 6. Проверь: 48 : 288 не даст 6.', null, 'Это 48 − 6. Проверь: 48 : 42 не даст 6.']),
+  }, {
+    id: 'p-zadumali', prompt: 'Задумали число, умножили его на 3 и прибавили 5. Получилось 26. Какое число задумали?',
+    build: blanks([{ parts: ['3x + 5 = 26,   x = ', { box: '7' }], why: ['С конца: ', $m('26 − 5 = 21'), ', ', $m('21 : 3 = 7'), '. Проверка: ', $m('3 · 7 + 5 = 26'), '.'], hint: 'Отмени действия с конца: сначала вычти 5, потом раздели на 3.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

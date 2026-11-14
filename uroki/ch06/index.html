@@ -129,8 +129,10 @@ const BEATS = [
     hide(q, m('r2', -.1), .2);
     tw(a, { o: 1, s: 1 }, m('rule', .7), .5, back);
     show(q, m('rule', .9), .3);
-    klText(p, 'Подставить число вместо буквы и сосчитать — значит', 800, 760, m('rule', 2.9), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
-    klText(p, 'найти значение выражения', 800, 812, m('rule', 4.6), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'Подставить число вместо буквы и сосчитать — значит', 800, 760, m('val'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'найти значение выражения', 800, 812, m('name'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    // the value: the question mark is answered once more on the words, the box lights as the number goes in
+    pulse(box, m('val', .4), 1.3);
   }],
 
   ['subst', 'Подстановка', m => {
