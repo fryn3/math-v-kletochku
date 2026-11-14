@@ -154,7 +154,7 @@ svg text { fill: var(--ink); font-family: var(--f-body); }
 .task .q { display: flex; gap: 10px; }
 .task .q .k { color: var(--muted); font-variant-numeric: tabular-nums; }
 .task form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.task input { font: inherit; font-size: 1rem; width: 9.5em; max-width: 100%; padding: 6px 10px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.task input:not([type="radio"]) { font: inherit; font-size: 1rem; width: 9.5em; max-width: 100%; padding: 6px 10px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
 .task input:focus { border-color: var(--pen); }
 .btn { font: 600 0.95rem/1 var(--f-body); padding: 9px 14px; border-radius: 6px; border: 1.5px solid var(--pen); background: var(--pen); color: var(--card); cursor: pointer; }
 .btn.ghost { background: transparent; color: var(--pen); }
@@ -166,6 +166,22 @@ svg text { fill: var(--ink); font-family: var(--f-body); }
 .hint { font-size: 0.95rem; color: var(--muted); background: var(--pen-soft); border-radius: 6px; padding: 8px 12px; }
 .task.solved .q .k { color: var(--green); }
 .format { font-size: 0.86rem; color: var(--muted); margin: 4px 0 2px; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--pen); }
+.task.wrong .q .k { color: var(--red); }
+
+/* Экзамен */
+.seg { display: inline-flex; gap: 2px; padding: 2px; margin: 2px 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.seg a { padding: 7px 14px; border-radius: 999px; text-decoration: none; color: var(--muted); font-weight: 500; font-size: 0.92rem; }
+.seg a[aria-current="page"] { background: var(--pen); color: var(--card); }
+.result { background: var(--card); border: 2px solid var(--pen); border-radius: 8px; padding: 6px 16px; margin-top: 16px; }
+.result .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+a.btn { display: inline-block; text-decoration: none; }
+.exam-link { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 0.95rem; }
+.score { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
+.score.low { color: var(--muted); }
+.nw { white-space: nowrap; }
 
 /* Навигация по темам */
 .pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 36px; }
@@ -219,15 +235,17 @@ footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
   <footer>Математика 5–6 класса коротко и по-простому. Прогресс сохраняется только в этом браузере.</footer>
 </div>
 
-<script src="js/visuals.js?v=4"></script>
-<script src="js/ch1-natural.js?v=4"></script>
-<script src="js/ch2-divisibility.js?v=4"></script>
-<script src="js/ch3-fractions.js?v=4"></script>
-<script src="js/ch4-decimals.js?v=4"></script>
-<script src="js/ch5-ratio.js?v=4"></script>
-<script src="js/ch6-negative.js?v=4"></script>
-<script src="js/ch7-geometry.js?v=4"></script>
-<script src="js/ch8-problems.js?v=4"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/visuals.js?v=5"></script>
+<script src="js/core.js?v=5"></script>
+<script src="js/ch1-natural.js?v=5"></script>
+<script src="js/ch2-divisibility.js?v=5"></script>
+<script src="js/ch3-fractions.js?v=5"></script>
+<script src="js/ch4-decimals.js?v=5"></script>
+<script src="js/ch5-ratio.js?v=5"></script>
+<script src="js/ch6-negative.js?v=5"></script>
+<script src="js/ch7-geometry.js?v=5"></script>
+<script src="js/ch8-problems.js?v=5"></script>
+<script src="js/exams.js?v=5"></script>
+<script src="js/app.js?v=5"></script>
 </body>
 </html>
