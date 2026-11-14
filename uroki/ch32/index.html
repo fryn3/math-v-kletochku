@@ -63,7 +63,7 @@ function c32Rot(q, P0, a, ang) {
 // faces, edges: [{ e, a, b, hid }], verts, edge(a, b) }.
 function c32Solid(p, V, F, view, { t0 = .2, fop = .1, w = 3.5 } = {}) {
   const g = G(p, { o: 0 });
-  if (t0 !== undefined) show(g, t0);
+  if (t0 != null) show(g, t0);
   const lo = [0, 1, 2].map(i => Math.min(...V.map(v => v[i]))), hi = [0, 1, 2].map(i => Math.max(...V.map(v => v[i])));
   const vw = c32View({ ...view, look: lo.map((v, i) => (v + hi[i]) / 2) });
   const P = V.map(vw.P), C = V.reduce((s, v) => s.map((q, i) => q + v[i] / V.length), [0, 0, 0]);
@@ -225,11 +225,12 @@ const BEATS = [
     unit: 'Глава 7 · Геометрия · Тема 7.4',
     title: 'Многогранники и развёртки',
     sub: 'Из чего состоит поверхность куба, призмы и пирамиды',
+    // a small cube that opens into its net on «разложить»
     art: (g, t0) => {
-      const [V, Fs] = c32Cube();
-      const S = c32Solid(g, V, Fs, { cx: 690, cy: 640, s: 100 }, { t0, fop: .3 });
-      c32Faces(S, [1, 3, 4], t0, .55);
-      c32Net(g, c32Dice.map(([c, r]) => [c, r]), 860, 560, 40, { t0: t0 + .4 });
+      const a = G(g, { o: 0 });
+      show(a, t0);
+      const cube = { cx: 800, cy: 650, s: 80, az: 28, el: 32, look: [1.5, 1.5, .5] }, top = { cx: 800, cy: 650, s: 40, az: 0, el: 90, look: [1.5, 2, 0] };
+      c32Fold(a, c32Dice.map(([c, r, par]) => [c, r, par]), { D, view: t => c32Blend(cube, top, c32R(t, m('flat'), 1.6)), ang: (k, t) => k ? 90 * (1 - c32R(t, m('flat'), 1.6)) : 0 });
     },
   })],
 
@@ -283,7 +284,7 @@ const BEATS = [
     klTitle(p, 'Призма и пирамида');
     const [V, Fs] = c32Prism(3, .66, 1.05, -15);
     const A = c32Solid(p, V, Fs, { cx: 430, cy: 440, s: 230, el: 34 }, { t0: .2 });
-    klText(p, 'призма', 430, 225, .3, { size: 34, anchor: 'middle', fill: COL.dim, weight: 600 });
+    klText(p, 'призма', 430, 195, .3, { size: 34, anchor: 'middle', fill: COL.dim, weight: 600 });
     c32Faces(A, [0, 1], m('bases'), .55);
     c32Faces(A, [2, 3, 4], m('sides'), .22);
     c32Verts(A, [3, 4, 5], m('pv'), .1); c32Verts(A, [0, 1, 2], m('pv', .45), .1);
@@ -296,7 +297,7 @@ const BEATS = [
     c32Faces(A, [2, 3, 4], m('pf'), .5);
     const [W, Gs] = c32Pyr(4, .66, 1.1);
     const B = c32Solid(p, W, Gs, { cx: 1170, cy: 440, s: 240, el: 30 }, { t0: m('base', -1.2) });
-    klText(p, 'пирамида', 1170, 225, m('base', -1.2), { size: 34, anchor: 'middle', fill: COL.dim, weight: 600 });
+    klText(p, 'пирамида', 1170, 195, m('base', -1.2), { size: 34, anchor: 'middle', fill: COL.dim, weight: 600 });
     c32Faces(B, [0], m('base'), .55);
     c32Verts(B, [4], m('apex'));
     c32Faces(B, [1, 2, 3, 4], m('apex', .4), .22);
@@ -332,7 +333,7 @@ const BEATS = [
     c32Chain(p, ['В', '− Р', '+ Г'], XE + 30, 250, [m('t3', 1.6), m('t3', 3.4), m('t3', 5)], { size: 40, fills: [VERT, EDGE, FACE] });
     path(p, 'M170 278H1460', { stroke: COL.faint, 'stroke-width': 2 });
     rows.forEach(([name, v, e, f, [VV, FF]], i) => {
-      const y = 360 + i * 105, t = m('t' + (i + 1));
+      const y = 350 + i * 95, t = m('t' + (i + 1));
       c32Solid(p, VV, FF, { cx: 225, cy: y - 12, s: 62, el: 24 }, { t0: t, w: 2.5 });
       klText(p, name, 300, y, t, { size: 36, weight: 600 });
       const nums = [v, e, f].map((n, j) => klMath(p, [String(n)], CX[j], y, t + .1, { size: 48, fill: [VERT, EDGE, FACE][j] }));
@@ -342,15 +343,15 @@ const BEATS = [
       pulse(two, m('c3r', 2.2 + i * .25), 1.35);
     });
     const box = G(p, { o: 0 });
-    mk('rect', { x: 170, y: 640, width: 560, height: 150, rx: 18, fill: RULE, 'fill-opacity': .08, stroke: RULE, 'stroke-width': 3 }, box);
+    mk('rect', { x: 170, y: 670, width: 560, height: 140, rx: 18, fill: RULE, 'fill-opacity': .08, stroke: RULE, 'stroke-width': 3 }, box);
     show(box, m('rule'));
-    klText(p, 'формула Эйлера', 450, 622, m('rule', 4.2), { size: 28, fill: RULE, weight: 700, anchor: 'middle' });
-    klRow(p, [{ m: 'В', fill: VERT }, { m: ' − ' }, { m: 'Р', fill: EDGE }, { m: ' + ' }, { m: 'Г', fill: FACE }, { m: ' = 2', fill: RULE }], 450, 728, m('rule'), { size: 64, msize: 64 });
-    klText(p, 'для многогранника без сквозных дыр', 450, 830, m('rule', 1.2), { size: 26, fill: COL.dim, anchor: 'middle' });
-    const unk = klRow(p, [{ m: 'Г', fill: FACE }, { m: ' = ?' }], 1150, 770, m('rule', 7.4), { size: 34, msize: 50 });
+    klText(p, 'формула Эйлера', 450, 652, m('rule', 4.2), { size: 28, fill: RULE, weight: 700, anchor: 'middle' });
+    klRow(p, [{ m: 'В', fill: VERT }, { m: ' − ' }, { m: 'Р', fill: EDGE }, { m: ' + ' }, { m: 'Г', fill: FACE }, { m: ' = 2', fill: RULE }], 450, 752, m('rule'), { size: 64, msize: 64 });
+    klText(p, 'для многогранника без сквозных дыр', 450, 850, m('rule', 1.2), { size: 26, fill: COL.dim, anchor: 'middle' });
+    const unk = klRow(p, [{ m: 'Г', fill: FACE }, { m: ' = ?' }], 1150, 790, m('rule', 7.4), { size: 34, msize: 50 });
     hide(unk, m('exr', -.3), .3);
-    klRow(p, [{ m: 'В = 12', fill: VERT }, ',   ', { m: 'Р = 18', fill: EDGE }], 1150, 680, m('ex'), { size: 34, msize: 46 });
-    c32Chain(p, ['Г', '= 2 − 12 + 18', '= 8'], 960, 770, [m('exr'), m('exr'), m('exa')], { size: 50, fills: [FACE, null, RULE] });
+    klRow(p, [{ m: 'В = 12', fill: VERT }, ',   ', { m: 'Р = 18', fill: EDGE }], 1150, 705, m('ex'), { size: 34, msize: 46 });
+    c32Chain(p, ['Г', '= 2 − 12 + 18', '= 8'], 960, 790, [m('exr'), m('exr'), m('exa')], { size: 50, fills: [FACE, null, RULE] });
   }],
 
   ['q3', 'Проверь себя', () => {
@@ -358,7 +359,7 @@ const BEATS = [
     klRow(p, [{ m: 'В', fill: VERT }, { m: ' − ' }, { m: 'Р', fill: EDGE }, { m: ' + ' }, { m: 'Г', fill: FACE }, { m: ' = 2', fill: RULE }], 560, 260, .2, { size: 64, msize: 64 });
     klRow(p, [{ m: 'В = 10', fill: VERT }, ',    ', { m: 'Р = 15', fill: EDGE }, ',    ', { m: 'Г = ?', fill: FACE }], 560, 420, .5, { size: 40, msize: 56 });
     const [V, Fs] = c32Prism(5, .62, 1);
-    S.q3 = c32Solid(p, V, Fs, { cx: 1220, cy: 360, s: 210, el: 24 }, { t0: undefined, fop: .2 });
+    S.q3 = c32Solid(p, V, Fs, { cx: 1220, cy: 360, s: 210, el: 24 }, { t0: null, fop: .2 });
     S.q3cap = klText(p, 'пятиугольная призма', 1220, 560, undefined, { size: 28, fill: COL.dim, anchor: 'middle' });
     put(S.q3cap, { o: 0 });
   }, { ask: done => quiz(BAND, [{
@@ -385,7 +386,8 @@ const BEATS = [
       view: t => {
         let v = c32Blend(cube, mid, c32R(t, m('open'), 6));
         v = c32Blend(v, top, c32R(t, m('top'), 1.6));
-        return c32Blend(v, cube, c32R(t, tf, 1.8));
+        v = c32Blend(v, cube, c32R(t, tf, 1.8));
+        return { ...v, az: v.az + 90 * c32R(t, m('eleven', -1), 3.6) };   // the folded die turns round
       },
     });
     // the cuts: the visible edges that are not hinges (three upright, three round the lid)
@@ -401,7 +403,7 @@ const BEATS = [
     const l2 = klText(p, 'шесть квадратов —', 1130, 470, m('net', 1.4), { size: 28, fill: COL.dim }), l3 = klText(p, 'вся поверхность куба', 1130, 506, m('net', 3.2), { size: 28, fill: COL.dim });
     hide(l2, tf, .5); hide(l3, tf, .5);
     hide(lab, tf, .5);
-    klText(p, 'у куба 11 разных развёрток', 800, 830, tf + 2.2, { size: 32, fill: COL.dim, anchor: 'middle' });
+    klText(p, 'у куба 11 разных развёрток', 800, 830, m('eleven'), { size: 32, fill: COL.dim, anchor: 'middle' });
   }],
 
   ['opposite', 'Противоположные грани', (m, D) => {
@@ -434,12 +436,12 @@ const BEATS = [
     const B = c32Fold(p, [[1, 1, -1], [0, 1, 0], [2, 1, 0], [3, 1, 2], [0, 0, 1], [2, 0, 2]], { D, view: view(1180, [1.5, 1.5, .5]), ang: fold,
       fill: (k, t) => k >= 4 && t >= m('clash') ? COL.bad : null });
     klMark(p, 420, 760, m('ok'), true);
-    klText(p, 'две грани на одном месте', 1180, 300, m('clash', .2), { size: 28, fill: COL.bad, weight: 600, anchor: 'middle' });
+    klText(p, 'две грани на одном месте', 1180, 285, m('clash', .2), { size: 28, fill: COL.bad, weight: 600, anchor: 'middle' });
     // the open side: the square where the front face should be
     const q = [[1, 2, 0], [2, 2, 0], [2, 2, 1], [1, 2, 1]].map(v => B.at(D, v));
     const hole = path(p, 'M' + q.map(v => v.map(x => x.toFixed(1)).join(' ')).join('L') + 'Z', { stroke: COL.bad, 'stroke-width': 5, 'stroke-dasharray': '12 9', fill: COL.bad, 'fill-opacity': .12 }, { o: 0 });
     show(hole, m('hole'), .4);
-    klStrike(p, 1000, 300, 1360, 700, m('no'));
+    klStrike(p, 1040, 340, 1330, 690, m('no'));
     klText(p, 'не развёртка куба', 1180, 760, m('no', .3), { size: 32, fill: COL.bad, weight: 700, anchor: 'middle' });
     klText(p, 'ряд из четырёх: два других квадрата — по разные стороны от него', 800, 850, m('rule'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
   }],
@@ -467,7 +469,7 @@ const BEATS = [
     const c = i => N.at(D, [c32Dice[i][0] + .5, c32Dice[i][1] + .5, 0]);
     // the edge «2 см» under face 3, then «4» in every square
     const [ex, ey] = c(2);
-    klBrace(p, ex - 52, ex + 52, ey + 70, '2 см', m('a'), { up: false, size: 30, fill: RULE });
+    klBrace(p, ex - 52, ex + 52, ey - 70, '2 см', m('a'), { size: 30, fill: RULE });
     c32Dice.forEach((_, i) => { const [x, y] = c(i); const e = klMath(p, ['4'], x, y + 16, m(i === 2 ? 'sq' : 'sum', i === 2 ? .6 : i * .1), { size: 44, fill: COL.board }); pulse(e, m('sum', 1 + i * .3), 1.5); });
     klRow(p, [{ m: '2 · 2 = 4' }, ' см²'], 1060, 300, m('sq', .3), { size: 34, msize: 46 });
     klRow(p, [{ m: 'S = 6 · 4 = 24' }, ' см²'], 1060, 390, m('sum', 2.8), { size: 34, msize: 46 });
@@ -483,9 +485,10 @@ const BEATS = [
 
   ['wrap', 'Главное', m => klWrap(m, [
     'У многогранника есть грани, рёбра и вершины',
-    ['Призма на n-угольнике: ', { m: '2n' }, ' вершин, ', { m: '3n' }, ' рёбер, ', { m: 'n + 2' }, ' граней'],
+    ['Считаем по основанию: у призмы ', { m: 'n + n' }, ' вершин, у пирамиды ', { m: 'n + 1' }],
     ['Формула Эйлера:  ', { m: 'В − Р + Г = 2', fill: RULE }],
-    ['Развёртка — вся поверхность на плоскости:  ', { m: ['S = 6a', E('2')] }],
+    'Развёртка — вся поверхность на плоскости',
+    ['Площадь поверхности куба:  ', { m: ['S = 6a', E('2')] }],
   ])],
 
   ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
