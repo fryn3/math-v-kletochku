@@ -1,6 +1,6 @@
 /* Оглавление, страницы тем, экзамены, шпаргалка, прогресс и переключатель темы. */
 (function () {
-  const { rich, esc, check, fmtAnswer, grade, scale } = window.MVK;
+  const { rich, esc, check, fmtAnswer, grade, scale, examVer, examBest } = window.MVK;
   const chapters = (window.COURSE || []).slice().sort((a, b) => a.n - b.n);
   const topics = [];
   chapters.forEach(ch => ch.topics.forEach((t, i) => {
@@ -30,8 +30,8 @@
   function markSolved(t, i) {
     const s = solvedSet(t.id); s.add(i); progress.solved[t.id] = [...s]; save();
   }
-  // Лучший результат экзамена: { ok: верных, n: всего задач }.
-  const bestOf = (n, v) => { const b = progress.exams[`${n}-${v}`]; return b && typeof b === 'object' ? b : null; };
+  // Лучший результат экзамена: { ok: верных, n: всего задач, ver: версия экзамена }.
+  const bestOf = (n, v) => examBest(progress.exams, n, v);
   const scoreHtml = (n, v) => {
     const b = bestOf(n, v);
     return b ? ` — <span class="score${grade(b.ok, b.n) < 4 ? ' low' : ''}" title="Лучший результат">${b.ok} из ${b.n}</span>` : '';
@@ -187,7 +187,7 @@
     [...form.elements].forEach(el => { el.disabled = true; });
     form.querySelector('[type="submit"]').hidden = true;
     const key = `${n}-${v}`, prev = bestOf(n, v);
-    if (!prev || prev.n !== tasks.length || ok > prev.ok) { progress.exams[key] = { ok, n: tasks.length }; save(); }
+    if (!prev || prev.n !== tasks.length || ok > prev.ok) { progress.exams[key] = { ok, n: tasks.length, ver: examVer(n) }; save(); }
     const other = 3 - v, res = document.getElementById('exam-result');
     res.innerHTML = `<div class="result">
         <p class="big"><b>${ok} из ${tasks.length}</b> — оценка «${grade(ok, tasks.length)}»</p>

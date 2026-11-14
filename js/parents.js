@@ -1,6 +1,6 @@
 /* Страница для родителей: вариант 3 по главам для печати и ключ ответов с решениями. */
 (function () {
-  const { rich, fmtAnswer, grade, scale } = window.MVK;
+  const { rich, fmtAnswer, grade, scale, examBest } = window.MVK;
   const E = window.EXAMS3 || {};
   const chapters = (window.COURSE || []).slice().sort((a, b) => a.n - b.n).filter(ch => E[ch.n]);
   const topicName = {};
@@ -10,7 +10,7 @@
   let exams = {};
   try { exams = (JSON.parse(localStorage.getItem('mvk-progress-v1')) || {}).exams || {}; } catch (e) { /* хранилище недоступно */ }
   function siteLine(n) {
-    const done = [1, 2].map(v => [v, exams[`${n}-${v}`]]).filter(([, b]) => b && typeof b === 'object');
+    const done = [1, 2].map(v => [v, examBest(exams, n, v)]).filter(([, b]) => b);
     return done.length ? 'на сайте: ' + done.map(([v, b]) => `вариант ${v} — ${b.ok} из ${b.n} («${grade(b.ok, b.n)}»)`).join(', ') : '';
   }
   const anyResults = chapters.some(ch => siteLine(ch.n));

@@ -69,5 +69,15 @@
       .map(g => `«${g}» — ${by[g].length > 1 ? `${by[g][0]}–${by[g][by[g].length - 1]}` : by[g][0]}`).join(', ');
   }
 
-  window.MVK = { rich, esc, parseNum, check, fmtAnswer, grade, scale };
+  // Версия экзамена главы. Её увеличивают, когда в экзамене меняют задачи: результат,
+  // полученный на прежних задачах, перестаёт показываться как лучший. Нет в списке — версия 1.
+  const EXAM_VER = { 1: 2, 2: 2, 4: 2, 7: 2, 8: 2 };
+  const examVer = n => EXAM_VER[n] || 1;
+  // Сохранённый лучший результат варианта v экзамена главы n, если он получен на текущей версии экзамена.
+  function examBest(saved, n, v) {
+    const b = (saved || {})[`${n}-${v}`];
+    return b && typeof b === 'object' && (b.ver || 1) === examVer(n) ? b : null;
+  }
+
+  window.MVK = { rich, esc, parseNum, check, fmtAnswer, grade, scale, examVer, examBest };
 })();
