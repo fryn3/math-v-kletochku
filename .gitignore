@@ -1,1 +1,4 @@
 .claude/
+# Papermorph: storyboard sheets, strips and timings made during review (rebuilt by strip.py, perf.py)
+papermorph/books/*/review/
+*.pdf

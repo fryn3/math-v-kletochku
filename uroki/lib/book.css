@@ -1,0 +1,16 @@
+/* This book's own settings, imported by engine.css. The engine files next to this one are the same in every book
+   and are replaced when the engine is updated; this file is not.
+
+   «Математика в клеточку — уроки у доски»: the engine's green chalkboard, ruled in faint squares like a school board
+   («доска в клеточку»). The squares are a static CSS background of the SVG stage (no SVG filter, no animated layer),
+   so they cost nothing while the picture moves. 50 px cells: the 1600 × 900 stage holds 32 × 18 of them.
+   The layers are engine.css's own (the vignette, the engine's noise texture --grain, the board colour) with the two
+   grid gradients added; ':root #stage' outranks the engine's '#stage', which comes later in the cascade. */
+:root #stage {
+  background:
+    radial-gradient(75% 75% at 50% 45%, rgba(0, 0, 0, 0) 60%, var(--vignette)),
+    linear-gradient(rgba(236, 232, 220, .06) 2px, transparent 2px) -1px -1px / 50px 50px,
+    linear-gradient(90deg, rgba(236, 232, 220, .06) 2px, transparent 2px) -1px -1px / 50px 50px,
+    var(--grain, none),
+    var(--board);
+}

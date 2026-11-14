@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Математика в клеточку — уроки у доски</title>
+<meta name="description" content="Анимированные уроки математики 5–6 класса с озвучкой: картинка объясняет, голос рассказывает, проверки — прямо в кадре.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="lib/units.css">
+<link rel="stylesheet" href="lib/contents.css">
+<script src="lib/units.js"></script>
+<script src="lib/contents.js"></script>
+<script src="unit-art.js"></script>
+<link rel="expect" href="#ch13" blocking="render">
+<style>
+/* The cover's way back to the reference site, beside the main button. */
+#cover .acts .ref { color: var(--dim); }
+</style>
+</head>
+<body>
+<section id="cover">
+  <div class="chalk" aria-hidden="true"><!-- faint formulas from the lessons, drawn in chalk -->
+    <span style="left:7%;top:13%;--d:1.6">3 : 4 = ¾</span>
+    <span style="right:8%;top:17%;--d:1.9">½ = 2/4 = 4/8</span>
+    <span style="left:5%;bottom:20%;--d:2.2">17/5 = 3 2/5</span>
+    <span style="right:6%;bottom:15%;--d:2.5">⅛ &lt; ¼ &lt; ½</span>
+  </div>
+  <svg class="mascot draw" id="guide" width="210" height="147" aria-hidden="true"></svg>
+  <h1>Математика в&nbsp;клеточку</h1>
+  <p class="kicker">Уроки у доски · 5–6 класс</p>
+  <p class="lede">Анимированные уроки с озвучкой: картинка объясняет, голос рассказывает, а проверки — прямо в кадре. Пока готова глава 3 «Обыкновенные дроби».</p>
+  <div class="acts">
+    <a class="btn go" href="#contents" data-t="open">Открыть книгу<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5 11.5 8 6 13.5 4.6 12.1 8.7 8 4.6 3.9z"/></svg></a>
+    <a class="btn quiet" id="resume" hidden></a>
+    <a class="btn quiet ref" href="../">Справочник</a>
+  </div>
+  <p class="meta" id="meta"></p>
+</section>
+
+<main id="contents">
+  <header class="top">
+    <a class="home" href="#book" aria-label="К обложке" data-t-label="toCover"><svg class="mascot" id="guideSmall" width="52" height="36" aria-hidden="true"></svg><strong>Математика в&nbsp;клеточку</strong></a>
+    <span class="prog" id="prog"></span>
+  </header>
+  <div id="units"></div>
+  <p class="refs-more" id="refsMore" hidden><a href="#references"><b data-t="references">Список литературы</b><span id="refsCount"></span><i data-t="viewAll">Весь список →</i></a></p>
+</main>
+
+<main id="refpage" aria-labelledby="refsTitle">
+  <header class="top">
+    <a class="back" href="#contents" data-t="backToContents">← Оглавление</a>
+    <span class="rp-book" id="rpBook"></span>
+  </header>
+  <section class="refs" id="references">
+    <h1 id="refsTitle" tabindex="-1" data-t="references">Список литературы</h1>
+    <p class="lead" data-t="refsLead">Все работы, которые цитируются в уроках.</p>
+    <ol id="refList"></ol>
+  </section>
+</main>
+
+<script>
+// Units are the chapters (главы) of the reference site, chapters are its topics (темы). Folders keep the topic's
+// place in the whole course (3.1 is the 13th topic, ch13), and each card shows the topic's own number. Add a lesson
+// here when it is ready, and set the previous lesson's CHAPTER.next.
+Contents.book({
+  start: { unit: 3, chapter: 13 },
+  units: [   // [unit title, [[lesson title, minutes, { chapter: number shown }], ...]]
+    ['Обыкновенные дроби', [
+      ['Дробь — это деление', 7, { chapter: '3.1' }],
+      ['Основное свойство дроби', 8, { chapter: '3.2' }],
+      ['Сложение и вычитание дробей', 7, { chapter: '3.3' }],
+      ['Умножение и деление дробей', 8, { chapter: '3.4' }],
+    ]],
+  ],
+  hues: ['#f4a48c', '#86c9e8', '#f3c95c', '#e8a0c8', '#8fd6b0', '#bba8ee', '#f0b45a'],   // one colour per unit, cycling
+});
+
+// The engine's Russian words count «главы» in «разделах»; this book follows the reference site: темы in главы.
+{
+  // (?![а-яё]) ends a word: \b does not see Cyrillic letters. Главы become темы before разделы become главы.
+  const end = '(?![а-яё])', w = (s, to) => [new RegExp(s + end, 'g'), to];
+  const words = [w('главы', 'темы'), w('глава', 'тема'), w('глав', 'тем'), w('Глава', 'Тема'),
+    w('разделов', 'глав'), w('раздела', 'главы'), w('раздел', 'глава')];
+  const fix = el => { if (el) el.textContent = words.reduce((s, [re, to]) => s.replace(re, to), el.textContent); };
+  ['meta', 'resume'].forEach(id => fix(document.getElementById(id)));
+  const prog = document.getElementById('prog');
+  if (prog && !prog.querySelector('b')) fix(prog);
+  else if (prog) prog.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = words.reduce((s, [re, to]) => s.replace(re, to), n.textContent); });
+  document.querySelectorAll('#units .unit h2 .label').forEach(el => { el.textContent = el.textContent.replace(/^Раздел/, 'Глава'); });
+}
+</script>
+</body>
+</html>

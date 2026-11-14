@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сложение и вычитание дробей · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 3.3 «Сложение и вычитание дробей» (6 класс). Beat ids match papermorph/content/uroki/ch15/narration.ru.json.
+const CHAPTER = { number: 15, label: '3.3', title: 'Сложение и вычитание дробей', minutes: 7, language: 'ru', next: '../ch16/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, WHOLE = KL.WHOLE, RULE = KL.RULE;
+
+/* ---------- chapter helpers ---------- */
+// A row of mathematics laid out left to right with its fraction bars on y: items are
+//   { f: [n, d], num?, den? } a fraction (numerator NUM, denominator DEN unless given),
+//   { w: '2', fill? }         the whole part of a mixed number (set tight against the fraction after it),
+//   { s: '+', fill? }         a sign or a plain number.
+// Each item fades in at its own t (or the row's t0; neither: shown at once). Returns the items, each with
+// g (a group centred on the item, so pulse() grows it in place), fr (the klFrac parts) and c (its centre x).
+function c15Expr(p, items, x, y, { size = 80, gap, anchor = 'start', t0 } = {}) {
+  gap = gap ?? size * .28;
+  const big = size * 1.2;
+  const ws = items.map(it => it.f ? Math.max(textW(String(it.f[0]), size), textW(String(it.f[1]), size)) + size * .36
+    : textW(String(it.w ?? it.s), it.w !== undefined ? big : size));
+  const sep = i => items[i - 1].w !== undefined && items[i].f ? size * .06 : gap;
+  let total = 0;
+  ws.forEach((w, i) => { total += w + (i ? sep(i) : 0); });
+  let cx = x - (anchor === 'middle' ? total / 2 : anchor === 'end' ? total : 0);
+  const out = items.map((it, i) => {
+    if (i) cx += sep(i);
+    const c = cx + ws[i] / 2, t = it.t ?? t0;
+    cx += ws[i];
+    if (it.f) {
+      const fr = klFrac(p, it.f[0], it.f[1], c, y, t, { size, numFill: it.num || NUM, denFill: it.den || DEN });
+      return { g: fr.g, fr, c, w: ws[i] };
+    }
+    const g = G(p, { x: c, y, o: t === undefined ? 1 : 0 });
+    const sz = it.w !== undefined ? big : size;
+    T(g, String(it.w ?? it.s), { x: 0, y: size * .35, size: sz, fill: it.fill || (it.w !== undefined ? WHOLE : COL.chalk), font: MATH, anchor: 'middle' });
+    if (t !== undefined) show(g, t);
+    return { g, c, w: ws[i] };
+  });
+  out.x0 = x - (anchor === 'middle' ? total / 2 : anchor === 'end' ? total : 0);
+  out.x1 = out.x0 + total;
+  return out;
+}
+// One line of a worked column aligned on its "=" at xEq: L ends left of it, R starts right of it (c15Expr items).
+// The sign appears at tEq (default t0); items keep their own t.
+function c15Eq(p, L, R, y, t0, { xEq = 760, size = 60, tEq, sym = '=' } = {}) {
+  const gap = size * .3;
+  const l = L.length ? c15Expr(p, L, xEq - gap - size * .3, y, { size, anchor: 'end', t0 }) : [];
+  const eq = c15Expr(p, [{ s: sym, t: tEq ?? t0 }], xEq, y, { size, anchor: 'middle' });
+  const r = c15Expr(p, R, xEq + gap + size * .3, y, { size, t0: tEq ?? t0 });
+  return { l, eq, r };
+}
+// A shaded block w × h at (x, y): a whole stretch of a strip before it is cut, with a chalk edge like klPieces.
+function c15Block(p, x, y, w, h, fill, { o = 1 } = {}) {
+  const g = G(p, { x, y, o });
+  g._rect = mk('rect', { width: w, height: h, fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2 }, g);
+  return g;
+}
+// New cut lines over a strip at (x, y), w × h, into d parts (all d − 1 lines), hidden until drawn from t0.
+// With t0 undefined they stay hidden (ready for fx(c, { d: 1 }) in a question).
+function c15Cuts(p, x, y, w, h, d, t0, { width = 3, step = .05 } = {}) {
+  return Array.from({ length: d - 1 }, (_, i) => {
+    const c = path(p, `M${x + (i + 1) * w / d} ${y}V${y + h}`, { stroke: DEN, 'stroke-width': width }, { d: 0 });
+    if (t0 !== undefined) draw(c, t0 + i * step, .35);
+    return c;
+  });
+}
+// A loose slice of a circle: a group at (x, y) holding sector i of d (from the top, clockwise), so it can fly to
+// another circle and turn about its centre (r in degrees).
+function c15Slice(p, x, y, r, i, d, fill) {
+  const g = G(p, { x, y, r: 0 });
+  g._path = path(g, klSectorD(r, i * 360 / d, (i + 1) * 360 / d), { fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2, 'stroke-linejoin': 'round' });
+  return g;
+}
+// A circle cut into d parts with nothing shaded, in a group at (x, y) so the whole circle can move.
+function c15Plate(p, x, y, r, d, t0) {
+  const g = G(p, { x, y, o: 0 });
+  klPie(g, { x: 0, y: 0, r, d });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A whole circle in KL.WHOLE (no cuts), in a group at (x, y).
+function c15WholePie(p, x, y, r, t0) {
+  const g = G(p, { x, y, o: 0 });
+  mk('circle', { r, fill: WHOLE, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 3.5 }, g);
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A strip that is one whole, filled in KL.WHOLE without cuts (a klStrip of one cell).
+const c15Whole = (p, x, y, w, h, t0) => klStrip(p, { x, y, w, h, d: 1, n: 1, fill: WHOLE, t0 });
+// Flash a group: dim it and bring it back, to point at it without moving it.
+function c15Blink(e, t0) { tw(e, { o: .35 }, t0, .2); tw(e, { o: 1 }, t0 + .2, .35); }
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Сложение и вычитание дробей', (m, D) => klIntro(m, D, {
+    unit: 'Глава 3 · Обыкновенные дроби · Тема 3.3',
+    title: 'Сложение и вычитание дробей',
+    sub: 'Как складывать и вычитать доли — одинаковые и разные',
+    art: (g, t0) => {
+      klStrip(g, { x: 560, y: 560, w: 320, h: 60, d: 5, n: 2, t0 });
+      klPieces(g, { n: 1, d: 5, w: 320, h: 60, x: 688, y: 560, fill: TWO, t0: t0 + .2 });
+      c15Expr(g, [{ f: [2, 5] }, { s: '+' }, { f: [1, 5], num: TWO }, { s: '=' }, { f: [3, 5] }], 930, 590, { size: 40, t0: t0 + .3 });
+    },
+  })],
+
+  ['same', 'Одинаковые доли', m => {
+    const p = panel(0);
+    klTitle(p, 'Складываем одинаковые доли');
+    const SX = 260, W = 700, H = 80, CW = W / 7, YA = 230, YB = 370, YC = 590;
+    const sA = klStrip(p, { x: SX, y: YA, w: W, h: H, d: 7, t0: .2 });
+    const sB = klStrip(p, { x: SX, y: YB, w: W, h: H, d: 7, t0: m('b', -.3) });
+    const sC = klStrip(p, { x: SX, y: YC, w: W, h: H, d: 7, t0: m('join') });
+    const pa = klPieces(p, { n: 3, d: 7, w: W, h: H, x: SX, y: YA, t0: m('a'), step: .15 });
+    const pb = klPieces(p, { n: 2, d: 7, w: W, h: H, x: SX, y: YB, fill: TWO, t0: m('b', .1), step: .15 });
+    klFrac(p, 3, 7, 160, YA + H / 2, m('a'), { size: 50 });
+    klFrac(p, 2, 7, 160, YB + H / 2, m('b', .1), { size: 50, numFill: TWO });
+    // The pieces slide into one strip: three from the first, two from the second, side by side.
+    pa.forEach((e, i) => tw(e, { x: SX + i * CW, y: YC }, m('join', .5 + i * .1), .9, io));
+    pb.forEach((e, i) => tw(e, { x: SX + (3 + i) * CW, y: YC }, m('join', 1 + i * .1), .9, io));
+    [sA, sB].forEach(s => tw(s.g, { o: .4 }, m('join', 2), .5));
+    for (let i = 0; i < 5; i++) klCount(p, [[SX + (i + .5) * CW, YC + H / 2 + 12]], m('c' + (i + 1)), { size: 36, fill: COL.board, from: i + 1 });
+    klFrac(p, 5, 7, 160, YC + H / 2, m('ans'), { size: 50 });
+    // The same sum written out, beside the strips.
+    const e = c15Expr(p, [{ f: [3, 7], t: m('a') }, { s: '+', t: m('b') }, { f: [2, 7], num: TWO, t: m('b') }, { s: '=', t: m('ans') }, { f: [5, 7], t: m('ans', .2) }], 1050, 450, { size: 84 });
+    const mid = (e.x0 + e.x1) / 2;
+    klText(p, 'числители складываем', mid, 270, m('num'), { size: 30, fill: NUM, weight: 700, anchor: 'middle' });
+    klMath(p, ['3 + 2 = 5'], mid, 325, m('num', .2), { size: 46, fill: NUM });
+    [0, 2, 4].forEach((k, i) => pulse(e[k].fr.num, m('num', .3 + i * .15), 1.4));
+    klText(p, 'знаменатель — размер куска', mid, 585, m('den'), { size: 32, fill: DEN, weight: 700, anchor: 'middle' });
+    klText(p, 'он не меняется', mid, 627, m('den', .3), { size: 28, fill: COL.dim, anchor: 'middle' });
+    [0, 2, 4].forEach((k, i) => pulse(e[k].fr.den, m('den', .3 + i * .15), 1.4));
+    sC.cuts.forEach(c => { tw(c, { 'a_stroke-width': 7 }, m('den', .4), .3); tw(c, { 'a_stroke-width': 3 }, m('den', 1.8), .5); });
+  }],
+
+  ['minus', 'Вычитание', m => {
+    const p = panel(0);
+    klTitle(p, 'Вычитаем одинаковые доли');
+    const PX = 480, PY = 500, R = 220;
+    const pie = klPie(p, { x: PX, y: PY, r: R, d: 6, n: 5, t0: m('a') });
+    // Two sixths are taken away: they turn green, slide out of the circle and leave.
+    [3, 4].forEach((i, k) => {
+      const s = pie.sectors[i], path0 = s.firstChild, a = (i + .5) * 60 * Math.PI / 180;
+      tw(path0, { c_fill: TWO }, m('take'), .35);
+      tw(s, { x: PX + 90 * Math.sin(a), y: PY - 90 * Math.cos(a) }, m('take', .5 + k * .1), .7, io);
+      tw(s, { o: 0 }, m('take', 1.5), .6);
+    });
+    pie.sectors.slice(0, 3).forEach((s, i) => { tw(s, { s: 1.05 }, m('left', .2 + i * .12), .25, out); tw(s, { s: 1 }, m('left', .45 + i * .12), .35); });
+    // Three sixths are exactly the right half: the cuts inside it fade, a diameter marks the half.
+    pie.sectors.slice(0, 3).forEach(s => tw(s.firstChild, { 'a_stroke-width': 0 }, m('half', .3), .4));
+    [1, 2].forEach(i => tw(pie.cuts[i], { o: 0 }, m('half', .3), .4));
+    draw(path(p, `M${PX} ${PY - R - 14}V${PY + R + 14}`, { stroke: RULE, 'stroke-width': 6, 'stroke-linecap': 'round' }, { d: 0 }), m('half'), .5);
+    klText(p, 'половина', PX + 118, PY + 12, m('half', .6), { size: 36, fill: COL.board, weight: 700, anchor: 'middle' });
+    const e = c15Expr(p, [{ f: [5, 6], t: m('a') }, { s: '−', t: m('take') }, { f: [2, 6], num: TWO, t: m('take') },
+      { s: '=', t: m('left') }, { f: [3, 6], t: m('left', .2) }, { s: '=', t: m('red') }, { f: [1, 2], t: m('red', .2) }], 830, 430, { size: 84 });
+    klText(p, 'сократили на 3', e[6].c, 575, m('red', .5), { size: 28, fill: COL.dim, anchor: 'middle' });
+    klMath(p, [F('a', 'c'), ' ± ', F('b', 'c'), ' = ', F('a ± b', 'c')], 1150, 745, m('rule'), { size: 64, fill: RULE });
+    klText(p, 'знаменатель остаётся тем же', 1150, 845, m('rule', .4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const SX = 300, Y = 230, W = 1000, H = 100, CW = W / 8;
+    klStrip(p, { x: SX, y: Y, w: W, h: H, d: 8, t0: .2 });
+    klPieces(p, { n: 3, d: 8, w: W, h: H, x: SX, y: Y, t0: .3, step: .08 });
+    klPieces(p, { n: 1, d: 8, w: W, h: H, x: SX + 3 * CW, y: Y, fill: TWO, t0: .6 });
+    klFrac(p, 3, 8, SX + 1.5 * CW, 440, .5, { size: 56 });
+    klMath(p, ['+'], SX + 2.5 * CW, 460, .6, { size: 56 });
+    klFrac(p, 1, 8, SX + 3.5 * CW, 440, .7, { size: 56, numFill: TWO });
+    S.q1half = path(p, `M${SX + 4 * CW} ${Y - 26}V${Y + H + 26}`, { stroke: RULE, 'stroke-width': 7, 'stroke-linecap': 'round' }, { d: 0 });
+    S.q1lab = klText(p, 'ровно половина', SX + 2 * CW, Y - 34, undefined, { size: 32, fill: RULE, weight: 700, anchor: 'middle' });
+    put(S.q1lab, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-vosmye', prompt: 'Сложи дроби и сократи ответ.',
+    build: blanks([{ parts: [F('3', '8'), ' + ', F('1', '8'), ' = ', { box: '1/2', lowest: true }],
+      why: [$m(F('3', '8'), ' + ', F('1', '8'), ' = ', F('4', '8'), ' = ', F('1', '2')), ': четыре восьмых — ровно половина полоски.'],
+      hint: ['Сложи числители, знаменатель 8 оставь: получится ', $m(F('4', '8')), '. Потом сократи.'],
+      fx: () => { fx(S.q1half, { d: 1 }, 0, .5); fx(S.q1lab, { o: 1 }, .3, .4); } }]),
+  }], done) }],
+
+  ['trap', 'Знаменатели не складывают', m => {
+    const p = panel(0);
+    klTitle(p, 'Разные доли: частая ошибка');
+    const SX = 420, W = 800, H = 70;
+    klStrip(p, { x: SX, y: 220, w: W, h: H, d: 2, n: 1, t0: m('a') });
+    klFrac(p, 1, 2, 320, 255, m('a'), { size: 50 });
+    klStrip(p, { x: SX, y: 330, w: W, h: H, d: 3, n: 1, fill: TWO, t0: m('a', .5) });
+    klFrac(p, 1, 3, 320, 365, m('a', .5), { size: 50, numFill: TWO });
+    const e = c15Expr(p, [{ f: [1, 2], t: m('a') }, { s: '+', t: m('a', .5) }, { f: [1, 3], num: TWO, t: m('a', .5) },
+      { s: '=', t: m('wrong', .8) }, { f: [2, 5], num: COL.bad, den: COL.bad, t: m('wrong', 1.1) }], 560, 730, { size: 76, anchor: 'middle' });
+    // The "sum" 2/5 drawn to the same scale: it is shorter than the half alone.
+    klStrip(p, { x: SX, y: 470, w: W, h: H, d: 5, n: 2, fill: COL.bad, op: .6, t0: m('look') });
+    klFrac(p, 2, 5, 320, 505, m('look'), { size: 50, numFill: COL.bad, denFill: COL.bad });
+    draw(path(p, `M${SX + W / 2} 196V566`, { stroke: RULE, 'stroke-width': 4, 'stroke-dasharray': '12 9' }, { d: 0 }), m('less'), .6);
+    klMath(p, [F('2', '5'), ' < ', F('1', '2')], 1370, 520, m('less', .5), { size: 54, fill: COL.bad });
+    klStrike(p, e.x0 - 16, 770, e.x1 + 16, 690, m('strike'));
+    klText(p, 'ошибка!', 560, 845, m('strike', .3), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klText(p, 'половины и трети —', 1200, 715, m('why'), { size: 34, weight: 600, anchor: 'middle' });
+    klText(p, 'куски разного размера', 1200, 762, m('why', .3), { size: 34, weight: 600, anchor: 'middle' });
+  }],
+
+  ['common', 'Общий знаменатель', m => {
+    const p = panel(0);
+    klTitle(p, 'Режем на одинаковые куски');
+    const SX = 300, W = 900, H = 80, CW = W / 6, YA = 210, YB = 340, YC = 570;
+    klStrip(p, { x: SX, y: YA, w: W, h: H, d: 2, t0: .2 });
+    klStrip(p, { x: SX, y: YB, w: W, h: H, d: 3, t0: .3 });
+    klFrac(p, 1, 2, 200, YA + H / 2, .2, { size: 50 });
+    klFrac(p, 1, 3, 200, YB + H / 2, .3, { size: 50, numFill: TWO });
+    klStrip(p, { x: SX, y: YC, w: W, h: H, d: 6, t0: m('join') });
+    const bA = c15Block(p, SX, YA, W / 2, H, NUM, { o: 0 }), bB = c15Block(p, SX, YB, W / 3, H, TWO, { o: 0 });
+    show(bA, .2); show(bB, .3);
+    const pa = klPieces(p, { n: 3, d: 6, w: W, h: H, x: SX, y: YA }), pb = klPieces(p, { n: 2, d: 6, w: W, h: H, x: SX, y: YB, fill: TWO });
+    [...pa, ...pb].forEach(e => put(e, { o: 0 }));
+    c15Cuts(p, SX, YA, W, H, 6, m('six'));
+    c15Cuts(p, SX, YB, W, H, 6, m('six', .3));
+    // The re-cut strips: the same shaded length, now in sixths (the block gives way to its three or two pieces).
+    hide(bA, m('half'), .15); pa.forEach(e => show(e, m('half'), .15));
+    hide(bB, m('third'), .15); pb.forEach(e => show(e, m('third'), .15));
+    c15Expr(p, [{ s: '=' }, { f: [3, 6] }], SX + W + 30, YA + H / 2, { size: 50, t0: m('half', .2) });
+    c15Expr(p, [{ s: '=' }, { f: [2, 6], num: TWO }], SX + W + 30, YB + H / 2, { size: 50, t0: m('third', .2) });
+    klText(p, 'закрашено столько же — только куски мельче', SX + W / 2, 485, m('same'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    pa.forEach((e, i) => tw(e, { x: SX + i * CW, y: YC }, m('join', .4 + i * .1), .9, io));
+    pb.forEach((e, i) => tw(e, { x: SX + (3 + i) * CW, y: YC }, m('join', .9 + i * .1), .9, io));
+    klFrac(p, 5, 6, 200, YC + H / 2, m('ans'), { size: 50 });
+    const e = c15Expr(p, [{ f: [3, 6] }, { s: '+' }, { f: [2, 6], num: TWO }, { s: '=' }, { f: [5, 6] }], SX + W / 2, 775, { size: 72, anchor: 'middle', t0: m('ans') });
+    klMark(p, e.x1 + 60, 770, m('ans', .5));
+  }],
+
+  ['lcm', 'Наименьший общий знаменатель', m => {
+    const p = panel(0);
+    klTitle(p, 'Какой знаменатель взять общим?');
+    const SX = 330, W = 960, H = 70, YA = 200, YB = 310;
+    klStrip(p, { x: SX, y: YA, w: W, h: H, d: 6, n: 1, t0: m('q') });
+    klFrac(p, 1, 6, 230, YA + H / 2, m('q'), { size: 46 });
+    klStrip(p, { x: SX, y: YB, w: W, h: H, d: 4, n: 3, fill: TWO, t0: m('q', .5) });
+    klFrac(p, 3, 4, 230, YB + H / 2, m('q', .5), { size: 46, numFill: TWO });
+    // Both strips re-cut into twelfths: thin cuts drawn over the old ones, the shading stays.
+    c15Cuts(p, SX, YA, W, H, 12, m('nok', 1.2), { width: 2.5, step: .03 });
+    c15Cuts(p, SX, YB, W, H, 12, m('nok', 1.5), { width: 2.5, step: .03 });
+    klText(p, 'делится и на 6, и на 4', 1310, 490, m('lcm'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    klMath(p, ['НОК(6, 4) = 12'], 1310, 570, m('twelve'), { size: 54, fill: RULE });
+    klText(p, 'наименьшее общее кратное', 1310, 622, m('nok'), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    c15Expr(p, [{ s: '=' }, { f: [2, 12] }], SX + W + 24, YA + H / 2, { size: 44, t0: m('a', 1) });
+    c15Expr(p, [{ s: '=' }, { f: [9, 12], num: TWO }], SX + W + 24, YB + H / 2, { size: 44, t0: m('b', 1) });
+    // The worked column, aligned on "=".
+    c15Eq(p, [{ f: [1, 6] }], [{ f: ['1 · 2', '6 · 2'], t: m('am') }, { s: '=', t: m('a', 2.4) }, { f: [2, 12], t: m('a', 2.4) }], 520, m('a'), { xEq: 560, size: 58 });
+    c15Eq(p, [{ f: [3, 4], num: TWO }], [{ f: ['3 · 3', '4 · 3'], num: TWO, t: m('bm') }, { s: '=', t: m('b', 2.2) }, { f: [9, 12], num: TWO, t: m('b', 2.2) }], 655, m('b'), { xEq: 560, size: 58 });
+    const last = c15Eq(p, [{ f: [2, 12] }, { s: '+' }, { f: [9, 12], num: TWO }], [{ f: [11, 12], t: m('sum', 2.2) }], 795, m('sum'), { xEq: 560, size: 58, tEq: m('sum', 2.2) });
+    klMark(p, last.r[0].c + 90, 790, m('sum', 2.8));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const SX = 420, W = 840, H = 80;
+    klStrip(p, { x: SX, y: 190, w: W, h: H, d: 3, n: 2, t0: .2 });
+    klFrac(p, 2, 3, 320, 230, .2, { size: 50 });
+    klStrip(p, { x: SX, y: 320, w: W, h: H, d: 4, n: 1, fill: TWO, t0: .4 });
+    klFrac(p, 1, 4, 320, 360, .4, { size: 50, numFill: TWO });
+    S.q2cuts = [...c15Cuts(p, SX, 190, W, H, 12, undefined, { width: 2.5 }), ...c15Cuts(p, SX, 320, W, H, 12, undefined, { width: 2.5 })];
+    S.q2labs = [c15Expr(p, [{ s: '=' }, { f: [8, 12] }], SX + W + 24, 230, { size: 44 }), c15Expr(p, [{ s: '=' }, { f: [3, 12], num: TWO }], SX + W + 24, 360, { size: 44 })]
+      .flat().map(it => { put(it.g, { o: 0 }); return it.g; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-obshij', prompt: 'Приведи дроби к общему знаменателю и сложи.',
+    build: blanks([{ parts: [F('2', '3'), ' + ', F('1', '4'), ' = ', { box: '11/12' }],
+      why: ['Общий знаменатель 12: ', $m(F('2', '3'), ' = ', F('8', '12'), ', ', F('1', '4'), ' = ', F('3', '12')), ', вместе ', $m(F('11', '12')), '.'],
+      hint: 'Найди наименьшее число, которое делится и на 3, и на 4. Знаменатели не складывай!',
+      fx: () => { S.q2cuts.forEach((c, i) => fx(c, { d: 1 }, (i % 11) * .04, .35)); S.q2labs.forEach((g, i) => fx(g, { o: 1 }, .5 + (i >> 1) * .3, .4)); } }]),
+  }], done) }],
+
+  ['mixed', 'Смешанные числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Целые — с целыми, дроби — с дробями');
+    const W = 260, H = 70, XW = [280, 570, 860], XF = 1200, YA = 210, YB = 340, YC = 540, CW = W / 5;
+    const w1 = c15Whole(p, XW[0], YA, W, H, m('a'));
+    const fA = klStrip(p, { x: XF, y: YA, w: W, h: H, d: 5, t0: m('a') });
+    const pa = klPieces(p, { n: 2, d: 5, w: W, h: H, x: XF, y: YA, t0: m('a', .1) });
+    c15Expr(p, [{ w: '1' }, { f: [2, 5] }], 150, YA + H / 2, { size: 44, anchor: 'middle', t0: m('a') });
+    const w2 = c15Whole(p, XW[0], YB, W, H, m('a', 1.6)), w3 = c15Whole(p, XW[1], YB, W, H, m('a', 1.7));
+    const fB = klStrip(p, { x: XF, y: YB, w: W, h: H, d: 5, t0: m('a', 1.8) });
+    const pb = klPieces(p, { n: 1, d: 5, w: W, h: H, x: XF, y: YB, fill: TWO, t0: m('a', 1.9) });
+    c15Expr(p, [{ w: '2' }, { f: [1, 5], num: TWO }], 150, YB + H / 2, { size: 44, anchor: 'middle', t0: m('a', 1.6) });
+    // Wholes slide down into one row; then the fifths slide into one strip.
+    [w1, w2, w3].forEach((s, i) => tw(s.g, { x: XW[i], y: YC }, m('wh', .3 + i * .2), .9, io));
+    klMath(p, ['1 + 2 = 3'], (XW[0] + XW[2] + W) / 2, 690, m('wh', 1.6), { size: 50, fill: WHOLE });
+    klStrip(p, { x: XF, y: YC, w: W, h: H, d: 5, t0: m('fr') });
+    pa.forEach((e, i) => tw(e, { x: XF + i * CW, y: YC }, m('fr', .4 + i * .1), .9, io));
+    pb.forEach(e => tw(e, { x: XF + 2 * CW, y: YC }, m('fr', .8), .9, io));
+    [fA, fB].forEach(s => tw(s.g, { o: .35 }, m('fr', 1.8), .5));
+    c15Expr(p, [{ f: [2, 5] }, { s: '+' }, { f: [1, 5], num: TWO }, { s: '=' }, { f: [3, 5] }], XF + W / 2, 680, { size: 44, anchor: 'middle', t0: m('fr', 2) });
+    c15Expr(p, [{ w: '3' }, { f: [3, 5] }], 150, YC + H / 2, { size: 44, anchor: 'middle', t0: m('ans') });
+    c15Expr(p, [{ w: '1' }, { f: [2, 5] }, { s: '+' }, { w: '2' }, { f: [1, 5], num: TWO }, { s: '=' }, { w: '3' }, { f: [3, 5] }], 800, 810, { size: 60, anchor: 'middle', t0: m('ans', .3) });
+  }],
+
+  ['carry', 'Лишнее целое', m => {
+    const p = panel(0);
+    klTitle(p, 'Из дробей набралось целое');
+    const R = 85, XW = 330, XF = 560, YA = 250, YB = 470, YC = 715, XC = [300, 510, 720, 930];
+    const wA = c15WholePie(p, XW, YA, R, m('a')), wB = c15WholePie(p, XW, YB, R, m('a', 1.8));
+    const pA = c15Plate(p, XF, YA, R, 4, m('a'));
+    [0, 1, 2].forEach(i => c15Slice(pA, 0, 0, R, i, 4, NUM));
+    const pB = c15Plate(p, XF, YB, R, 4, m('a', 1.8));
+    const sB = [0, 1].map(i => { const s = c15Slice(p, XF, YB, R, i, 4, TWO); put(s, { o: 0 }); show(s, m('a', 1.9)); return s; });
+    c15Expr(p, [{ w: '1' }, { f: [3, 4] }], 150, YA, { size: 46, anchor: 'middle', t0: m('a') });
+    c15Expr(p, [{ w: '1' }, { f: [2, 4], num: TWO }], 150, YB, { size: 46, anchor: 'middle', t0: m('a', 1.8) });
+    const XE = 1250, SZ = 52;
+    c15Eq(p, [{ w: '1' }, { s: '+' }, { w: '1' }], [{ w: '2' }], 270, m('wh'), { xEq: XE, size: SZ });
+    [wA, wB].forEach((g, i) => { tw(g, { s: 1.06 }, m('wh', i * .2), .25, out); tw(g, { s: 1 }, m('wh', .25 + i * .2), .35); });
+    c15Eq(p, [{ f: [3, 4] }, { s: '+' }, { f: [2, 4], num: TWO }], [{ f: [5, 4] }, { s: '=', t: m('full', 1.5) }, { w: '1', t: m('full', 1.5) }, { f: [1, 4], t: m('full', 1.5) }], 420, m('fr'), { xEq: XE, size: SZ });
+    // One green quarter fills the gap in the first circle: four quarters make a whole circle.
+    tw(sB[0], { x: XF, y: YA, r: -90 }, m('full', -.2), 1, io);
+    const ring = path(pA, `M${-R - 12} 0a${R + 12} ${R + 12} 0 1 0 ${2 * R + 24} 0a${R + 12} ${R + 12} 0 1 0 ${-2 * R - 24} 0`, { stroke: RULE, 'stroke-width': 5, fill: 'none' }, { d: 0 });
+    draw(ring, m('full', .9), .6);
+    const fl = c15Expr(p, [{ f: [4, 4] }, { s: '=' }, { s: '1' }], XF + R + 30, YA, { size: 40, t0: m('full', 1.1) });
+    // The full circle joins the wholes; the last quarter goes to a circle of its own.
+    c15Plate(p, XC[3], YC, R, 4, m('carry'));
+    tw(wA, { x: XC[0], y: YC }, m('carry', .2), .9, io);
+    tw(wB, { x: XC[1], y: YC }, m('carry', .35), .9, io);
+    tw(pA, { x: XC[2], y: YC }, m('carry', .5), .9, io);
+    tw(sB[0], { x: XC[2], y: YC }, m('carry', .5), .9, io);
+    tw(sB[1], { x: XC[3], y: YC }, m('carry', .8), .9, io);
+    tw(ring, { o: 0 }, m('carry', 1.6), .4);
+    fl.forEach(it => hide(it.g, m('carry'), .3));
+    hide(pB, m('carry', .2), .4);
+    bracketH(p, XC[0] - R, XC[2] + R, YC + R + 28, '3 целых', WHOLE, m('carry', 1.6));
+    const last = c15Eq(p, [{ w: '2' }, { s: '+' }, { w: '1' }, { f: [1, 4] }], [{ w: '3' }, { f: [1, 4] }], 570, m('ans'), { xEq: XE, size: SZ });
+    klMark(p, last.r[1].c + 80, 570, m('ans', .6));
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const R = 80, Y = 280;
+    c15WholePie(p, 375, Y, R, .2);
+    const pa = c15Plate(p, 575, Y, R, 4, .2);
+    [0, 1, 2].forEach(i => c15Slice(pa, 0, 0, R, i, 4, NUM));
+    klMath(p, ['+'], 700, Y + 22, .4, { size: 70 });
+    c15WholePie(p, 825, Y, R, .5);
+    c15WholePie(p, 1025, Y, R, .55);
+    const pb = c15Plate(p, 1225, Y, R, 2, .6);
+    c15Slice(pb, 0, 0, R, 0, 2, TWO);
+    c15Expr(p, [{ w: '1' }, { f: [3, 4] }], 475, 460, { size: 46, anchor: 'middle', t0: .3 });
+    c15Expr(p, [{ w: '2' }, { f: [1, 2], num: TWO }], 1025, 460, { size: 46, anchor: 'middle', t0: .6 });
+    S.q3cut = path(p, `M${1225 - R} ${Y}H${1225 + R}`, { stroke: DEN, 'stroke-width': 3 }, { d: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-smeshannye', prompt: 'Сложи смешанные числа. Ответ запиши смешанным числом.',
+    build: blanks([{ parts: ['1', F('3', '4'), ' + 2', F('1', '2'), ' = ', { box: '4' }, ' ', { box: '1/4', lowest: true }],
+      why: ['Целые: 1 + 2 = 3. Дроби: ', $m(F('3', '4'), ' + ', F('2', '4'), ' = ', F('5', '4'), ' = 1', F('1', '4')), '. Всего ', $m('4', F('1', '4')), '.'],
+      hint: ['Сначала ', $m(F('1', '2'), ' = ', F('2', '4')), '. Целые сложи с целыми, дроби с дробями; в ', $m(F('5', '4')), ' есть ещё одно целое.'],
+      fx: () => fx(S.q3cut, { d: 1 }, 0, .5) }]),
+  }], done) }],
+
+  ['borrow', 'Занимаем целое', m => {
+    const p = panel(0);
+    klTitle(p, 'Занимаем одно целое');
+    const W = 260, H = 70, Y = 250, XW = [200, 490, 780], XF = 1070, CW = W / 4;
+    const w1 = c15Whole(p, XW[0], Y, W, H, m('a')), w2 = c15Whole(p, XW[1], Y, W, H, m('a', .1));
+    const f3 = klStrip(p, { x: XW[2], y: Y, w: W, h: H, d: 4, cuts: false, t0: m('a', .2) });
+    const b3 = c15Block(p, XW[2], Y, W, H, WHOLE, { o: 0 });
+    show(b3, m('a', .2));
+    const fF = klStrip(p, { x: XF, y: Y, w: W, h: H, d: 4, t0: m('a', .3) });
+    const pF = klPieces(p, { n: 1, d: 4, w: W, h: H, x: XF, y: Y, t0: m('a', .4) });
+    c15Expr(p, [{ w: '3' }, { f: [1, 4] }], 110, Y + H / 2, { size: 44, anchor: 'middle', t0: m('a') });
+    // 1/4 < 3/4: not enough quarters.
+    tw(pF[0], { o: .35 }, m('no', .2), .2); tw(pF[0], { o: 1 }, m('no', .45), .3);
+    klMath(p, [F('1', '4'), ' < ', F('3', '4')], XF + W / 2, 420, m('no', .4), { size: 44, fill: COL.bad });
+    // Borrow: the third whole turns into four quarters.
+    c15Cuts(p, XW[2], Y, W, H, 4, m('cut'));
+    tw(b3._rect, { c_fill: NUM }, m('cut', .4), .5);
+    const p3 = klPieces(p, { n: 4, d: 4, w: W, h: H, x: XW[2], y: Y });
+    p3.forEach(e => { put(e, { o: 0 }); show(e, m('cut', 1), .1); });
+    hide(b3, m('cut', 1.05), .1);
+    klMath(p, ['1 = ', F('4', '4')], XW[2] + W / 2, 205, m('cut', .6), { size: 40, fill: RULE });
+    // Take away 1 3/4: the second whole and three of the quarters turn green and leave.
+    tw(w2.cells[0].firstChild, { c_fill: TWO }, m('take'), .35);
+    tw(w2.g, { y: Y + 120, o: 0 }, m('take', .6), .8, io);
+    p3.slice(1).forEach((e, i) => { tw(e.firstChild, { c_fill: TWO }, m('take', .3 + i * .1), .35); tw(e, { y: Y + 120, o: 0 }, m('take', .9 + i * .1), .8, io); });
+    // What is left: one whole and two quarters; then the quarters meet in one strip: a half.
+    [w1.g, p3[0], pF[0]].forEach((e, i) => c15Blink(e, m('left', .3 + i * .2)));
+    tw(pF[0], { x: XW[2] + CW, y: Y }, m('red', -.2), .9, io);
+    hide(fF.g, m('red', .5), .4);
+    bracketH(p, XW[2], XW[2] + W / 2, Y + H + 30, 'половина', RULE, m('red', .8));
+    // The worked column, aligned on "=".
+    const XE = 740, SZ = 60;
+    c15Eq(p, [{ w: '3' }, { f: [1, 4] }, { s: '−' }, { w: '1' }, { f: [3, 4], num: TWO }], [{ w: '2' }, { f: [5, 4] }, { s: '−' }, { w: '1' }, { f: [3, 4], num: TWO }], 520, m('a'), { xEq: XE, size: SZ, tEq: m('now') });
+    c15Eq(p, [], [{ w: '1' }, { f: [2, 4] }], 650, m('left'), { xEq: XE, size: SZ });
+    const last = c15Eq(p, [], [{ w: '1' }, { f: [1, 2] }], 780, m('red'), { xEq: XE, size: SZ });
+    klMark(p, last.r[1].c + 80, 780, m('red', .6));
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const ray = klRay(p, { x0: 250, y: 330, u: 1100, max: 1, d: 10, t0: .2 });
+    S.q4ray = ray;
+    S.q4ticks = Array.from({ length: 11 }, (_, k) => { const c = G(p, { x: ray.X(k / 10), y: ray.y }); mk('circle', { r: 7, fill: COL.chalk, 'fill-opacity': .5 }, c); return c; });
+    S.q4dot = G(p, { x: ray.X(.7), y: ray.y, o: 0 });
+    mk('circle', { r: 15, fill: NUM, stroke: COL.board, 'stroke-width': 3 }, S.q4dot);
+    show(S.q4dot, .5);
+    klFrac(p, 7, 10, ray.X(.7), 220, .6, { size: 50 });
+    S.q4ans = c15Expr(p, [{ f: [5, 10] }, { s: '=' }, { f: [1, 2] }], ray.X(.5) - 50, 220, { size: 50, anchor: 'middle' }).map(it => { put(it.g, { o: 0 }); return it.g; });
+    S.q4arc = path(p, `M${ray.X(.7)} ${ray.y + 30}Q${ray.X(.6)} ${ray.y + 110} ${ray.X(.5)} ${ray.y + 30}`, { stroke: TWO, 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '8 7' }, { d: 0 });
+    S.q4arcLab = c15Expr(p, [{ f: [1, 5], num: TWO }, { s: '=' }, { f: [2, 10], num: TWO }], ray.X(.6), ray.y + 170, { size: 40, anchor: 'middle' }).map(it => { put(it.g, { o: 0 }); return it.g; });
+  }, { ask: done => {
+    const ray = S.q4ray;
+    quiz(BAND, [{
+      id: 'c-luch', prompt: ['Отметь на луче точку ', $m(F('7', '10'), ' − ', F('1', '5')), '.'],
+      build: pickEls(S.q4ticks.map((e, k) => ({ el: e, box: [ray.X(k / 10) - 27, ray.y - 42, 54, 84], label: `${k}/10` })), 5,
+        [$m(F('1', '5'), ' = ', F('2', '10')), ': от ', $m(F('7', '10')), ' отступаем на две десятых влево и попадаем в ', $m(F('5', '10'), ' = ', F('1', '2')), '.'],
+        k => k > 7 ? 'Вычитание — шаг влево, к нулю.' : k === 6 ? ['Ты отступил одну десятую, а ', $m(F('1', '5'), ' = ', F('2', '10')), '.'] : ['Переведи ', $m(F('1', '5')), ' в десятые: это две десятых.'],
+        () => {
+          const a = ray.X(.7), b = ray.X(.5);
+          fxp(q => put(S.q4dot, { x: a + (b - a) * q, y: ray.y - Math.sin(Math.PI * q) * 50 }), 0, .8);
+          fx(S.q4arc, { d: 1 }, 0, .8);
+          S.q4arcLab.forEach(g => fx(g, { o: 1 }, .5, .4));
+          S.q4ans.forEach(g => fx(g, { o: 1 }, .8, .4));
+        }),
+    }], done);
+  } }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Одинаковые доли:  ', { m: [F('a', 'c'), ' ± ', F('b', 'c'), ' = ', F('a ± b', 'c')] }],
+    ['Разные знаменатели — к общему (НОК):  ', { m: [F('1', '6'), ' + ', F('3', '4'), ' = ', F('2', '12'), ' + ', F('9', '12')] }],
+    ['Целые — с целыми, дроби — с дробями:  ', { m: ['1', F('3', '4'), ' + 1', F('2', '4'), ' = 3', F('1', '4')] }],
+    ['Знаменатели не складывают:  ', { m: [F('1', '2'), ' + ', F('1', '3'), ' ≠ ', F('2', '5')] }, ';  ответ сокращают'],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Где посчитали верно, а где — с ошибкой?',
+    build: grid([
+      { parts: [F('3', '8'), ' + ', F('1', '8'), ' = ', F('1', '2')], ans: ['da'], why: '3/8 + 1/8 = 4/8, а 4/8 = 1/2.' },
+      { parts: [F('1', '2'), ' + ', F('1', '3'), ' = ', F('2', '5')], ans: ['net'], why: 'Знаменатели не складывают: 1/2 + 1/3 = 3/6 + 2/6 = 5/6.' },
+      { parts: [F('5', '6'), ' − ', F('1', '3'), ' = ', F('1', '2')], ans: ['da'], why: '1/3 = 2/6, 5/6 − 2/6 = 3/6 = 1/2.' },
+      { parts: ['3', F('1', '4'), ' − 1', F('3', '4'), ' = 2', F('1', '2')], ans: ['net'], why: '3 1/4 = 2 5/4, 2 5/4 − 1 3/4 = 1 2/4 = 1 1/2.' },
+    ], [['da', 'верно', null, '1'], ['net', 'ошибка', null, '2']], { multi: false }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-vychisli', prompt: 'Вычисли. Где можно, сократи ответ.',
+    build: blanks([
+      { parts: [F('3', '10'), ' + ', F('1', '2'), ' = ', { box: '4/5', lowest: true }], why: '1/2 = 5/10; 3/10 + 5/10 = 8/10 = 4/5.', hint: 'Общий знаменатель 10. Ответ сократи.' },
+      { parts: [F('5', '6'), ' − ', F('1', '4'), ' = ', { box: '7/12' }], why: '5/6 = 10/12, 1/4 = 3/12; 10/12 − 3/12 = 7/12.', hint: 'Наименьшее общее кратное 6 и 4 — это 12.' },
+      { parts: ['1 − ', F('3', '8'), ' = ', { box: '5/8' }], why: '1 = 8/8; 8/8 − 3/8 = 5/8.', hint: 'Запиши единицу восьмыми: 1 = 8/8.' },
+    ]),
+  }, {
+    id: 'p-kniga', prompt: ['В понедельник Маша прочитала ', $m(F('2', '5')), ' книги, во вторник — ', $m(F('1', '3')), ' книги. Какую часть книги она прочитала за два дня?'],
+    build: blanks([{ parts: [{ box: '11/15' }, ' книги'], why: ['2/5 = 6/15, 1/3 = 5/15; вместе ', $m(F('11', '15')), '.'], hint: 'Сложи дроби. Общий знаменатель — 15.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-smesh', prompt: 'Вычисли. Ответ запиши смешанным числом.',
+    build: blanks([
+      { parts: ['2', F('1', '3'), ' + 1', F('1', '2'), ' = ', { box: '3' }, ' ', { box: '5/6', lowest: true }], why: '2 + 1 = 3; 1/3 + 1/2 = 2/6 + 3/6 = 5/6.', hint: 'Целые сложи с целыми. Дроби приведи к знаменателю 6.' },
+      { parts: ['4', F('1', '5'), ' − 1', F('3', '5'), ' = ', { box: '2' }, ' ', { box: '3/5', lowest: true }], why: '4 1/5 = 3 6/5; 3 6/5 − 1 3/5 = 2 3/5.', hint: 'Из 1/5 не вычесть 3/5: займи единицу, 4 1/5 = 3 6/5.' },
+    ]),
+  }, {
+    id: 'p-nok', prompt: ['Какой общий знаменатель удобнее всего для дробей ', $m(F('1', '4')), ' и ', $m(F('1', '6')), '?'],
+    build: choice(['10', '12', '24'], 1, '12 — наименьшее число, которое делится и на 4, и на 6.',
+      ['4 + 6 = 10, но знаменатели не складывают: 10 не делится на 4.', null, '24 подходит, но есть число меньше: 12 тоже делится и на 4, и на 6.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
