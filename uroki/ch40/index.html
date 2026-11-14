@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вероятность · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 9.3 «Вероятность» (6 класс). Beat ids match papermorph/content/uroki/ch40/narration.ru.json.
+// The last topic of the course: CHAPTER has no next.
+const CHAPTER = { number: 40, label: '9.3', title: 'Вероятность', minutes: 7, language: 'ru' };
+
+// Colours: favourable outcomes KL.NUM (the numerator), all outcomes KL.DEN (the denominator), the opposite event
+// KL.TWO, the rule KL.RULE (style.json).
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, RULE = KL.RULE;
+const RED = '#d9604c', GOLD = '#d8b56a', SILVER = '#aab6be';
+
+/* ---------- coins: О (орёл) and Р (решка) ---------- */
+// A coin of radius r at (x, y) showing side 'О' or 'Р'. The outer group carries the state (x, y, s, o); the face is
+// an inner group that flips by squashing (c40Flip). Hidden until t0 when t0 is given.
+function c40Coin(p, x, y, r, side, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  const face = mk('g', {}, g);
+  g._disc = mk('circle', { r, fill: side === 'О' ? GOLD : SILVER, 'fill-opacity': .25, stroke: side === 'О' ? GOLD : SILVER, 'stroke-width': Math.max(3, r * .06) }, face);
+  g._rim = mk('circle', { r: r * .84, fill: 'none', stroke: side === 'О' ? GOLD : SILVER, 'stroke-width': 1.5, 'stroke-opacity': .6 }, face);
+  g._t = T(face, side, { x: 0, y: r * .36, size: r * .95, fill: COL.chalk, font: MATH, anchor: 'middle', weight: 700 });
+  g._face = face; g._side = side; g._y = y; g._r = r;
+  if (t0 !== undefined) show(g, t0, .3);
+  return g;
+}
+// Show a coin's side (letter and colours) at once; used inside c40Flip's frames.
+function c40Side(c, side) {
+  if (c._shown === side) return;
+  c._shown = side;
+  const col = side === 'О' ? GOLD : SILVER;
+  c._t.textContent = side;
+  [c._disc, c._rim].forEach(e => e.setAttribute('stroke', col));
+  c._disc.setAttribute('fill', col);
+}
+// Toss a coin: it hops and turns `turns` half-turns from t0 (each crossing of the edge shows the other side).
+function c40Flip(c, t0, dur = 1.3, turns = 6, hop = 120) {
+  const s0 = c._side, s1 = s0 === 'О' ? 'Р' : 'О';
+  prog(q => {
+    const a = q * turns * Math.PI;
+    c._face.setAttribute('transform', `scale(${Math.max(.05, Math.abs(Math.cos(a))).toFixed(3)} 1)`);
+    c40Side(c, Math.floor(q * turns + .5) % 2 ? s1 : s0);
+    put(c, { y: c._y - Math.sin(Math.PI * q) * hop });
+  }, t0, dur, lin);
+}
+// A frame round a set of outcomes (hidden; bring it in with show or fx).
+function c40Frame(p, x, y, w, h, col = NUM) {
+  return put(mk('rect', { x, y, width: w, height: h, rx: 16, fill: col, 'fill-opacity': .08, stroke: col, 'stroke-width': 4 }, p), { o: 0 });
+}
+
+/* ---------- dice ---------- */
+// A row of the six faces of a die (math.js die), centred on y, x of face k (1…6) = x0 + (k − 1) · step.
+// Each face keeps its own place (_x, _y). Faces pop in one by one from t0 (no t0: shown at once).
+function c40Faces(p, x0, y, step, size, t0, every = .15) {
+  return [1, 2, 3, 4, 5, 6].map((n, i) => {
+    const f = die(p, n, x0 + i * step, y, size, t0 === undefined ? 1 : 0);
+    f._x = x0 + i * step; f._y = y;
+    if (t0 !== undefined) tw(f, { o: 1, s: 1 }, t0 + i * every, .4, back);
+    return f;
+  });
+}
+// Light a face as an outcome that counts: it lifts and its edge takes the colour. run is tw or fx.
+function c40Lit(f, t, col = NUM, run = tw) {
+  run(f._box, { c_stroke: col, 'a_stroke-width': 7 }, t, .3);
+  run(f, { y: f._y - 22 }, t, .35, out);
+}
+// Put a face back as it was.
+function c40Unlit(f, t) {
+  tw(f._box, { c_stroke: COL.chalk, 'a_stroke-width': 3 }, t, .3);
+  tw(f, { y: f._y, o: 1 }, t, .35);
+}
+
+/* ---------- balls and a bag ---------- */
+// A ball of radius r: red or white, with a hidden ring for lighting it.
+function c40Ball(p, x, y, red, t0, r = 26) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('circle', { r, fill: red ? RED : COL.chalk, stroke: red ? '#f08a72' : '#b9b4a8', 'stroke-width': 2.5 }, g);
+  mk('circle', { cx: -r * .32, cy: -r * .32, r: r * .22, fill: '#ffffff', 'fill-opacity': .35 }, g);
+  g._ring = put(mk('circle', { r: r + 9, fill: 'none', stroke: NUM, 'stroke-width': 4 }, g), { o: 0 });
+  g._y = y;
+  if (t0 !== undefined) show(g, t0, .3);
+  return g;
+}
+// A bag (a sack tied at the neck) centred on (x, y): 300 wide, from y − 150 to y + 150.
+function c40Bag(p, x, y, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  path(g, 'M-58 -142Q0 -122 58 -142L38 -104Q150 -62 150 40Q150 150 0 150Q-150 150 -150 40Q-150 -62 -38 -104Z',
+    { fill: COL.chalk, 'fill-opacity': .07, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+  path(g, 'M-44 -112Q0 -98 44 -112', { stroke: '#c9a45c', 'stroke-width': 6, fill: 'none', 'stroke-linecap': 'round' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// Places for up to ten balls inside a bag centred on (x, y): rows of 4, 3 and 3.
+const C40_IN = [[-78, 95], [-26, 95], [26, 95], [78, 95], [-52, 50], [0, 50], [52, 50], [-52, 5], [0, 5], [52, 5]];
+// Move e along a quadratic curve through the control point (cx, cy) to (x, y) from t0.
+function c40Arc(e, x, y, cx, cy, t0, dur = .8) {
+  const { x: x0, y: y0 } = st(e);
+  const a = x0, b = y0;
+  prog(q => put(e, { x: (1 - q) * (1 - q) * a + 2 * q * (1 - q) * cx + q * q * x, y: (1 - q) * (1 - q) * b + 2 * q * (1 - q) * cy + q * q * y }), t0, dur, io);
+}
+
+/* ---------- probability lines ---------- */
+// «P(event) = n/d = …» with the bar of the fractions on y: the label ends at x, then klExpr items follow
+// ({ f: [n, d], num?, den?, t? } or { s: '=', t? }). Returns { label, items }.
+function c40P(p, ev, items, x, y, t0, { size = 64, fill = COL.chalk } = {}) {
+  const label = klRow(p, [{ m: 'P' }, `(${ev})`], x - 14, y + size * .26, t0, { size: size * .52, msize: size * .72, anchor: 'end', fill });
+  const out = klExpr(p, [{ s: '=', t: t0 }, ...items], x, y, { size, t0 });
+  return { label, items: out };
+}
+
+/* ---------- the scale from 0 to 1 ---------- */
+// A horizontal scale from 0 (at x0) to 1 (at x1) on y, drawn on at t0. Returns { g, X(v), y }.
+function c40Scale(p, x0, x1, y, t0) {
+  const g = G(p);
+  draw(path(g, `M${x0} ${y}H${x1}`, { stroke: COL.chalk, 'stroke-width': 4, 'stroke-linecap': 'round' }, { d: 0 }), t0, .6);
+  [x0, x1].forEach(x => draw(path(g, `M${x} ${y - 20}V${y + 20}`, { stroke: COL.chalk, 'stroke-width': 4 }, { d: 0 }), t0 + .4, .3));
+  return { g, X: v => x0 + (x1 - x0) * v, y };
+}
+// A tick of the scale at v, drawn on at t.
+function c40Tick(p, sc, v, t, col = COL.chalk) {
+  const e = path(p, `M${sc.X(v)} ${sc.y - 14}V${sc.y + 14}`, { stroke: col, 'stroke-width': 3 }, { d: 0 });
+  draw(e, t, .3);
+  return e;
+}
+// A dot that drops onto the scale at v at t.
+function c40Dot(p, sc, v, t, col = NUM) {
+  const g = G(p, { x: sc.X(v), y: sc.y - 40, o: 0 });
+  mk('circle', { r: 14, fill: col, stroke: COL.board, 'stroke-width': 3 }, g);
+  tw(g, { o: 1, y: sc.y }, t, .45, back);
+  return g;
+}
+
+/* ---------- a run of coin tosses (seeded, the same on every replay) ---------- */
+// 1000 tosses: 3 heads in the first 5, 8 in 10, 59 in 100, 501 in 1000 (seed 164 of a plain LCG).
+const C40_HEADS = (() => {
+  let s = 164, k = 0;
+  const c = [0];
+  for (let i = 0; i < 1000; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; k += (s >>> 16) & 1; c.push(k); }
+  return c;
+})();
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Вероятность', (m, D) => klIntro(m, D, {
+    unit: 'Глава 9 · Диаграммы, перебор, вероятность · Тема 9.3',
+    title: 'Вероятность',
+    sub: 'Как измерить числом, насколько возможно событие',
+    art: g => {
+      const d = die(g, 5, 640, 610, 100, 1);
+      d._box.setAttribute('stroke', NUM);
+      c40Coin(g, 800, 610, 52, 'О');
+      klFrac(g, 1, 2, 950, 610, undefined, { size: 56 });
+    },
+  })],
+
+  ['coin', 'Монета: два исхода', m => {
+    const p = panel(0);
+    klTitle(p, 'Монета: два исхода');
+    const o = c40Coin(p, 630, 340, 92, 'О', .2);
+    c40Flip(o, m('flip'), 1.4, 6, 130);
+    const r = c40Coin(p, 630, 340, 92, 'Р');
+    put(r, { o: 0 });
+    p.insertBefore(r, o);
+    // The coin that landed moves left and the other side slides out from behind it: two outcomes.
+    tw(o, { x: 480 }, m('two'), .6, io);
+    tw(r, { o: 1, x: 780 }, m('two'), .6, io);
+    klText(p, 'орёл', 480, 480, m('two', .3), { size: 32, anchor: 'middle', weight: 600 });
+    klText(p, 'решка', 780, 480, m('two', .3), { size: 32, anchor: 'middle', weight: 600 });
+    klBrace(p, 370, 890, 222, 'все исходы: 2', m('two', .6), { fill: DEN, size: 30 });
+    klText(p, 'равновозможны', 630, 545, m('equal'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    [o, r].forEach((c, i) => { tw(c, { s: 1.08 }, m('equal', .2 + i * .25), .25, out); tw(c, { s: 1 }, m('equal', .45 + i * .25), .3); });
+    const fr = c40Frame(p, 372, 232, 216, 270);
+    show(fr, m('fav'), .4);
+    tw(o, { s: 1.06 }, m('fav'), .3, out); tw(o, { s: 1 }, m('fav', .3), .3);
+    const P = c40P(p, 'орёл', [{ f: [1, 2] }], 1150, 350, m('frac'), { size: 80 });
+    pulse(P.items[1].fr.num, m('frac', .6), 1.25);
+    // The rule as a fraction of words.
+    klText(p, 'вероятность  =', 600, 728, m('rule'), { size: 38, weight: 600, anchor: 'end' });
+    klText(p, 'число благоприятных исходов', 940, 694, m('num'), { size: 36, fill: NUM, weight: 600, anchor: 'middle' });
+    draw(path(p, 'M630 716H1250', { stroke: COL.chalk, 'stroke-width': 4, 'stroke-linecap': 'round' }, { d: 0 }), m('rule', .3), .5);
+    klText(p, 'число всех исходов', 940, 766, m('den'), { size: 36, fill: DEN, weight: 600, anchor: 'middle' });
+    klText(p, 'если исходы равновозможны', 800, 842, m('rule', .6), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['die', 'Кубик: шесть исходов', m => {
+    const p = panel(0);
+    klTitle(p, 'Кубик: шесть исходов');
+    const F6 = c40Faces(p, 300, 270, 200, 120, .2, .1);
+    klBrace(p, 230, 1370, 368, 'все исходы: 6', m('six'), { up: false, fill: DEN, size: 30 });
+    F6.forEach((f, i) => { tw(f, { s: 1.1 }, m('six', .2 + i * .1), .2, out); tw(f, { s: 1 }, m('six', .4 + i * .1), .25); });
+    // Three events, one after another: the faces that count lift, and the line is written beside them.
+    const ev = (keys, t0, t1) => keys.forEach(k => { c40Lit(F6[k - 1], t0); c40Unlit(F6[k - 1], t1); });
+    ev([6], m('p6'), m('even', -.3));
+    c40P(p, 'шестёрка', [{ f: [1, 6], t: m('p6', 2.2) }], 760, 520, m('p6', .3), { size: 56 });
+    [2, 4, 6].forEach((k, i) => { c40Lit(F6[k - 1], m('even', 1 + i * .7)); c40Unlit(F6[k - 1], m('big', -.3)); });
+    [2, 4, 6].forEach((k, i) => { tw(F6[k - 1], { s: 1.12 }, m('even2', i * .3), .2, out); tw(F6[k - 1], { s: 1 }, m('even2', .2 + i * .3), .25); });
+    const E = c40P(p, 'чётное', [{ f: [3, 6], t: m('even2', 1) }], 760, 650, m('even', .4), { size: 56 });
+    klExpr(p, [{ s: '=' }, { f: [1, 2] }], E.items.x1 + 16, 650, { size: 56, t0: m('even2', 2.6) });
+    ev([5, 6], m('big'), m('big2', 2.4));
+    const B = c40P(p, 'больше 4', [{ f: [2, 6], t: m('big2', .1) }], 760, 780, m('big', .3), { size: 56 });
+    klExpr(p, [{ s: '=' }, { f: [1, 3] }], B.items.x1 + 16, 780, { size: 56, t0: m('big2', 1.3) });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q1 = c40Faces(p, 350, 300, 180, 130, .2, .08);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-kubik', prompt: 'Бросают кубик. Какова вероятность, что выпадет число, которое делится на 3?',
+    build: blanks([{ parts: ['P = ', { box: '1/3' }], why: ['Подходят 3 и 6 — два исхода из шести: ', $m(F('2', '6')), ' = ', $m(F('1', '3')), '.'],
+      hint: 'Найди грани, числа на которых делятся на 3, и раздели их число на 6.',
+      fx: () => [3, 6].forEach((k, i) => c40Lit(S.q1[k - 1], i * .2, NUM, fx)) }]),
+  }], done) }],
+
+  ['bag', 'Шары в мешке', m => {
+    const p = panel(0);
+    klTitle(p, 'Шары в мешке');
+    const bag = c40Bag(p, 330, 530, .2);
+    const reds = [1, 4, 8];
+    // In the bag: the three red balls among the white ones; out of it: one row of ten outcomes.
+    const balls = C40_IN.map(([dx, dy], i) => c40Ball(p, 330 + dx, 530 + dy, reds.includes(i), m('balls', .1 + i * .06)));
+    reds.forEach((k, i) => { tw(balls[k], { s: 1.2 }, m('balls', .8 + i * .12), .2, out); tw(balls[k], { s: 1 }, m('balls', 1 + i * .12), .25); });
+    // «не глядя»: the bag and the balls in it are shaken together.
+    const shake = [bag, ...balls].map(e => ({ e, x: st(e).x }));
+    prog(q => shake.forEach(({ e, x }) => put(e, { x: x + Math.sin(q * Math.PI * 8) * 14 * Math.sin(q * Math.PI) })), m('balls', 3.4), 1.4, lin);
+    balls.forEach((b, i) => c40Arc(b, 720 + i * 78, 300, 330 + (720 + i * 78 - 330) * .3, 150, m('out', i * .12), .8));
+    klCount(p, balls.map((b, i) => [720 + i * 78, 370]), m('out', 1.6), { step: .1, size: 26, fill: COL.dim });
+    klBrace(p, 690, 1452, 392, 'все исходы: 10', m('out', 2.6), { up: false, fill: DEN, size: 30 });
+    reds.forEach((k, i) => { tw(balls[k], { y: 278 }, m('red', i * .15), .3, out); show(balls[k]._ring, m('red', i * .15), .3); });
+    c40P(p, 'красный', [{ f: [3, 10] }], 1080, 560, m('frac'), { size: 64 });
+    reds.forEach(k => { tw(balls[k], { y: 300 }, m('white'), .3); hide(balls[k]._ring, m('white'), .3); });
+    balls.forEach((b, i) => { if (reds.includes(i)) return; tw(b, { y: 278 }, m('white', .2), .3, out); tw(b, { y: 300 }, m('white', 1.4), .3); });
+    c40P(p, 'белый', [{ f: [7, 10] }], 1080, 720, m('white', .3), { size: 64 });
+  }],
+
+  ['scale', 'От нуля до единицы', m => {
+    const p = panel(0);
+    klTitle(p, 'Вероятность — от 0 до 1');
+    const sc = c40Scale(p, 200, 1400, 470, .2);
+    klMath(p, ['0'], sc.X(0), 548, .5, { size: 48 });
+    klMath(p, ['1'], sc.X(1), 548, .5, { size: 48 });
+    // The ends first, then the events between them.
+    c40Dot(p, sc, 0, m('zero'), COL.dim);
+    klText(p, '7 на кубике', sc.X(0), 400, m('zero', 3.6), { size: 30, anchor: 'middle' });
+    klText(p, 'невозможное', sc.X(0), 640, m('imp'), { size: 32, fill: RULE, weight: 700, anchor: 'middle' });
+    c40Dot(p, sc, 1, m('one'), NUM);
+    klText(p, 'меньше 7', sc.X(1), 400, m('one', 3.6), { size: 30, anchor: 'middle' });
+    klText(p, 'достоверное', sc.X(1), 640, m('cert'), { size: 32, fill: RULE, weight: 700, anchor: 'middle' });
+    draw(path(p, `M${sc.X(0) + 30} ${sc.y}H${sc.X(1) - 30}`, { stroke: NUM, 'stroke-width': 10, 'stroke-linecap': 'round' }, { d: 0, o: .4 }), m('mid'), .8);
+    c40Tick(p, sc, 1 / 6, m('m6'));
+    c40Dot(p, sc, 1 / 6, m('m6', .2), NUM);
+    klText(p, 'шестёрка', sc.X(1 / 6), 400, m('m6', .3), { size: 30, anchor: 'middle' });
+    klFrac(p, 1, 6, sc.X(1 / 6), 555, m('m6', .5), { size: 42 });
+    c40Tick(p, sc, 1 / 2, m('m2'));
+    c40Dot(p, sc, 1 / 2, m('m2', .2), NUM);
+    klText(p, 'чётное', sc.X(1 / 2), 400, m('m2', .3), { size: 30, anchor: 'middle' });
+    klFrac(p, 1, 2, sc.X(1 / 2), 555, m('m2', .5), { size: 42 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    c40Bag(p, 360, 290, .2);
+    [[-52, 95, 1], [0, 95, 1], [52, 95, 1], [0, 45, 0]].forEach(([dx, dy, red], i) => c40Ball(p, 360 + dx, 290 + dy, !!red, .3 + i * .05));
+    klText(p, '3 красных, 1 белый', 360, 480, .4, { size: 30, fill: COL.dim, anchor: 'middle' });
+    const sc = S.q2sc = c40Scale(p, 700, 1460, 330, .2);
+    S.q2ticks = [0, .25, .5, .75, 1].map(v => {
+      const g = G(p);
+      path(g, `M${sc.X(v)} ${sc.y - 16}V${sc.y + 16}`, { stroke: COL.chalk, 'stroke-width': 3 });
+      if (v === 0 || v === 1) klMath(g, [String(v)], sc.X(v), 416, undefined, { size: 42 });
+      else klFrac(g, v * 4, 4, sc.X(v), 404, undefined, { size: 40, numFill: COL.chalk, denFill: COL.chalk });
+      put(g, { o: 0 }); show(g, .4);
+      return g;
+    });
+    klText(p, 'P(красный)', 1080, 250, .5, { size: 30, fill: NUM, weight: 600, anchor: 'middle' });
+    S.q2dot = G(p, { x: sc.X(0), y: sc.y, o: 0 });
+    mk('circle', { r: 14, fill: NUM, stroke: COL.board, 'stroke-width': 3 }, S.q2dot);
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-shkala', prompt: 'Из мешка не глядя достают шар. Нажми на шкале, где вероятность, что он красный.',
+    build: pickEls(S.q2ticks.map((g, i) => ({ el: g, box: [S.q2sc.X(i / 4) - 42, S.q2sc.y - 34, 84, 136], label: ['0', '1/4', '1/2', '3/4', '1'][i] })), 3,
+      ['Всего 4 шара, красных 3: ', $m(F('3', '4')), '.'],
+      i => i === 4 ? 'Единица — если бы все шары были красными. Один шар белый.' : i === 0 ? 'Ноль — если бы красных шаров не было вовсе.' : 'Сосчитай: всего четыре шара, а сколько из них красных?',
+      () => { fx(S.q2dot, { o: 1 }, 0, .2); fx(S.q2dot, { x: S.q2sc.X(.75) }, .1, .8, io); pulseFx(S.q2ticks[3], 1.2); }),
+  }], done) }],
+
+  ['not', 'Событие не наступило', m => {
+    const p = panel(0);
+    klTitle(p, 'Шестёрка — или не шестёрка');
+    const F6 = c40Faces(p, 300, 230, 200, 120, .2, .06);
+    c40Lit(F6[5], m('six'));
+    klFrac(p, 1, 6, 1300, 375, m('six', .3), { size: 52 });
+    F6.slice(0, 5).forEach((f, i) => c40Lit(f, m('rest', i * .12), TWO));
+    klFrac(p, 5, 6, 700, 375, m('five'), { size: 52, numFill: TWO });
+    // The six outcomes as one whole strip: five cells of «not six», one cell of «six».
+    const s = klStrip(p, { x: 200, y: 470, w: 1200, h: 80, d: 6, n: 0, t0: m('sum') });
+    s.g.insertBefore(put(mk('rect', { width: 1000, height: 80, fill: TWO, 'fill-opacity': .8 }, null), {}), s.g.children[1]);
+    s.g.insertBefore(put(mk('rect', { x: 1000, width: 200, height: 80, fill: NUM, 'fill-opacity': .85 }, null), {}), s.g.children[1]);
+    klBrace(p, 200, 1400, 578, '', m('sum', .6), { up: false, fill: COL.chalk, size: 32 });
+    klExpr(p, [{ f: [5, 6], num: TWO, t: m('sum', 2.4) }, { s: '+', t: m('sum', 2.8) }, { f: [1, 6], t: m('sum', 3) }, { s: '=', t: m('sum', 3.6) }, { s: '1', t: m('sum', 3.8) }], 800, 650, { size: 48, anchor: 'middle' });
+    c40P(p, 'не 6', [{ s: '1', t: m('minus', 3.6) }, { s: '−', t: m('minus', 4.2) }, { f: [1, 6], t: m('minus', 4.6) }, { s: '=', t: m('minus', 5.6) }, { f: [5, 6], num: TWO, t: m('minus', 5.8) }], 700, 800, m('minus', .8), { size: 56 });
+  }],
+
+  ['two', 'Два броска монеты', m => {
+    const p = panel(0);
+    klTitle(p, 'Монету бросают два раза');
+    const CX = [560, 760, 960, 1160], R1 = 290, R2 = 440;
+    klText(p, '1-й бросок', 440, R1 + 11, .3, { size: 30, fill: COL.dim, anchor: 'end' });
+    klText(p, '2-й бросок', 440, R2 + 11, .3, { size: 30, fill: COL.dim, anchor: 'end' });
+    // First toss: О or Р. For each, the second toss: О or Р, so every first coin is copied once.
+    const a = c40Coin(p, CX[0], R1, 56, 'О', m('first'));
+    const b = c40Coin(p, CX[2], R1, 56, 'Р', m('first', .3));
+    const a2 = c40Coin(p, CX[0], R1, 56, 'О'), b2 = c40Coin(p, CX[2], R1, 56, 'Р');
+    p.insertBefore(a2, a); p.insertBefore(b2, b);
+    put(a2, { o: 0 }); put(b2, { o: 0 });
+    tw(a2, { o: 1, x: CX[1] }, m('second'), .6, io);
+    tw(b2, { o: 1, x: CX[3] }, m('second'), .6, io);
+    ['О', 'Р', 'О', 'Р'].forEach((sd, i) => c40Coin(p, CX[i], R2, 56, sd, m('second', .9 + i * .15)));
+    const frames = CX.map(x => c40Frame(p, x - 80, R1 - 80, 160, R2 - R1 + 160, DEN));
+    frames.forEach((f, i) => show(f, m('four', i * .15), .3));
+    klCount(p, CX.map(x => [x, R2 + 130]), m('four', .2), { step: .15, size: 30, fill: DEN });
+    klRow(p, [{ m: '2 · 2 = 4', fill: DEN }, '  исхода'], 860, R2 + 205, m('four', .9), { size: 30, msize: 46, anchor: 'middle' });
+    tw(frames[0], { c_stroke: NUM, c_fill: NUM, 'a_stroke-width': 6 }, m('oo'), .4);
+    frames.slice(1).forEach(f => tw(f, { o: .35 }, m('oo', 1.6), .4));
+    c40P(p, 'О и О', [{ f: [1, 4], t: m('oo', 2.8) }], 860, 760, m('oo', .3), { size: 64 });
+  }],
+
+  ['trap', 'Ошибка с двумя монетами', m => {
+    const p = panel(0);
+    klTitle(p, 'Орёл и решка: сколько исходов?');
+    const CX = [190, 330, 470, 610], R1 = 300, R2 = 420;
+    const SD = [['О', 'О'], ['О', 'Р'], ['Р', 'О'], ['Р', 'Р']];
+    const coins = CX.map((x, i) => [c40Coin(p, x, R1, 46, SD[i][0], .2 + i * .05), c40Coin(p, x, R2, 46, SD[i][1], .25 + i * .05)]);
+    [1, 2].forEach((k, i) => coins[k].forEach(c => { tw(c, { s: 1.15 }, m('mixed', 1.2 + i * .4), .2, out); tw(c, { s: 1 }, m('mixed', 1.45 + i * .4), .25); }));
+    const frames = CX.map(x => c40Frame(p, x - 64, R1 - 64, 128, R2 - R1 + 128));
+    show(put(mk('rect', { x: 126, y: 236, width: 548, height: 248, rx: 18, fill: 'none', stroke: DEN, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p), { o: 0 }), .4);
+    klText(p, 'все исходы: 4', 400, 214, .5, { size: 30, fill: DEN, weight: 600, anchor: 'middle' });
+    // The mistake: three «cases» counted as three equal outcomes.
+    klText(p, 'исходов три?', 1100, 250, m('wrong'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    [['два орла', 920, 2.1], ['две решки', 1100, 2.8], ['орёл и решка', 1290, 3.5]].forEach(([w, x, dt]) => klText(p, w, x, 310, m('wrong', dt), { size: 30, anchor: 'middle' }));
+    const W = c40P(p, 'О и Р', [{ f: [1, 3] }], 1060, 410, m('wrong', 5.6), { size: 56, fill: COL.dim });
+    klStrike(p, 870, 452, 1230, 370, m('strike'));
+    klText(p, 'ошибка!', 1290, 420, m('strike', .2), { size: 28, fill: COL.bad, weight: 700 });
+    klText(p, 'эти три случая не равновозможны', 1100, 520, m('strike', .6), { size: 28, fill: COL.bad, anchor: 'middle' });
+    show(frames[1], m('op'), .3); show(frames[2], m('po'), .3);
+    [1, 2].forEach((k, i) => klText(p, 'О и Р', CX[k], 528, m(['op', 'po'][i], .2), { size: 26, fill: NUM, weight: 600, anchor: 'middle' }));
+    c40P(p, 'О и Р', [{ f: [2, 4] }, { s: '=', t: m('right', 1.2) }, { f: [1, 2], t: m('right', 1.4) }], 1000, 720, m('right'), { size: 64 });
+    klMark(p, 1420, 720, m('right', 2), true);
+    void W;
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const CX = [560, 720, 880, 1040], R1 = 240, R2 = 380;
+    const SD = [['О', 'О'], ['О', 'Р'], ['Р', 'О'], ['Р', 'Р']];
+    klText(p, '1-й', 450, R1 + 11, .3, { size: 30, fill: COL.dim, anchor: 'end' });
+    klText(p, '2-й', 450, R2 + 11, .3, { size: 30, fill: COL.dim, anchor: 'end' });
+    CX.forEach((x, i) => { c40Coin(p, x, R1, 50, SD[i][0], .2 + i * .05); c40Coin(p, x, R2, 50, SD[i][1], .25 + i * .05); });
+    S.q3 = CX.map(x => c40Frame(p, x - 70, R1 - 70, 140, R2 - R1 + 140));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-hotya', prompt: 'Монету бросают два раза. Какова вероятность, что хотя бы один раз выпадет орёл?',
+    build: blanks([{ parts: ['P = ', { box: '3/4' }], why: 'Орёл есть в трёх исходах из четырёх: ОО, ОР, РО. Вероятность 3/4.',
+      hint: 'Посмотри на все четыре исхода: в скольких из них есть хотя бы один орёл?',
+      fx: () => [0, 1, 2].forEach(i => fx(S.q3[i], { o: 1 }, i * .15, .3)) }]),
+  }], done) }],
+
+  ['freq', 'Много бросков', m => {
+    const p = panel(0);
+    klTitle(p, 'Монета не помнит прошлых бросков');
+    // Five heads in a row, and the sixth toss is still an even chance.
+    const row = [0, 1, 2, 3, 4].map(i => c40Coin(p, 140 + i * 86, 330, 38, 'О', m('five', i * .2)));
+    void row;
+    const q = c40Coin(p, 600, 330, 52, 'Р', m('next', -.3));
+    c40Flip(q, m('next'), 1.2, 6, 90);
+    klText(p, '?', 600, 250, m('next'), { size: 40, fill: COL.dim, weight: 700, anchor: 'middle' });
+    c40P(p, 'Р', [{ f: [1, 2] }], 520, 470, m('next', 1.4), { size: 56 });
+    // Many tosses: the share of heads after n tosses, n on a scale of 1, 10, 100, 1000.
+    const X0 = 820, X1 = 1480, YB = 690, YT = 250, LX = n => X0 + (X1 - X0) * Math.log10(n) / 3, LY = v => YB - (YB - YT) * v;
+    const axes = G(p, { o: 0 });
+    path(axes, `M${X0} ${YT - 20}V${YB}H${X1 + 20}`, { stroke: COL.chalk, 'stroke-width': 3 });
+    [1, 10, 100, 1000].forEach(n => { path(axes, `M${LX(n)} ${YB}V${YB + 10}`, { stroke: COL.chalk, 'stroke-width': 3 }); T(axes, String(n), { x: LX(n), y: YB + 42, size: 24, fill: COL.dim, font: MATH, anchor: 'middle' }); });
+    T(axes, '0', { x: X0 - 16, y: YB + 8, size: 26, fill: COL.dim, font: MATH, anchor: 'end' });
+    T(axes, '1', { x: X0 - 16, y: YT + 8, size: 26, fill: COL.dim, font: MATH, anchor: 'end' });
+    path(axes, `M${X0 - 6} ${YT}H${X0 + 6}`, { stroke: COL.chalk, 'stroke-width': 3 });
+    T(axes, 'доля орлов', { x: X0 + 14, y: YT - 4, size: 26, fill: NUM, weight: 600 });
+    T(axes, 'число бросков', { x: X1 - 20, y: YB + 86, size: 26, fill: COL.dim, anchor: 'middle' });
+    show(axes, m('many'));
+    draw(path(p, `M${X0} ${LY(.5)}H${X1}`, { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '10 9' }, { d: 0 }), m('many', .4), .6);
+    klFrac(p, 1, 2, X0 - 30, LY(.5), m('many', .6), { size: 34, numFill: RULE, denFill: RULE, barFill: RULE });
+    // The share's path grows toss by toss; the counter under the coins follows it.
+    const line = path(p, 'M0 0', { stroke: NUM, 'stroke-width': 3.5, fill: 'none', 'stroke-linejoin': 'round' }, { o: 0 });
+    const head = mk('circle', { r: 8, fill: NUM }, p); put(head, { o: 0 });
+    const cnt = klText(p, '', 140, 640, m('share'), { size: 34 });
+    const T0 = m('share'), DUR = Math.max(4, m('thousand') - T0 - .4);
+    show(line, T0, .2); show(head, T0, .2);
+    prog(q => {
+      const n = Math.max(1, Math.round(Math.pow(1000, q)));
+      if (line._n === n) return;
+      line._n = n;
+      let d = '';
+      for (let i = 1; i <= n; i++) if (i <= 120 || i % 4 === 0 || i === n) d += `${i === 1 ? 'M' : 'L'}${LX(i).toFixed(1)} ${LY(C40_HEADS[i] / i).toFixed(1)}`;
+      line.setAttribute('d', d);
+      head.setAttribute('cx', LX(n).toFixed(1)); head.setAttribute('cy', LY(C40_HEADS[n] / n).toFixed(1));
+      cnt.textContent = `бросков: ${n},  орлов: ${C40_HEADS[n]}`;
+    }, T0, DUR, lin);
+    klRow(p, ['орлов ', { m: '501 ≈ 500', fill: NUM }, ',  доля ', { m: ['≈ ', F('1', '2')], fill: RULE }], 380, 760, m('thousand', 1.1), { size: 32, msize: 44 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const f = die(p, 6, 800, 260, 160, 1);
+    f._box.setAttribute('stroke', NUM);
+    klText(p, '600 бросков кубика', 800, 420, .3, { size: 36, anchor: 'middle', weight: 600 });
+    S.q4 = klRow(p, [{ m: ['600 · ', F('1', '6'), ' = 100'], fill: NUM }], 800, 520, undefined, { size: 32, msize: 52 });
+    put(S.q4, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-chastota', prompt: 'Кубик бросили 600 раз. Примерно сколько раз выпала шестёрка?',
+    build: choice(['6', '100', '300', '600'], 1,
+      ['Вероятность шестёрки ', $m(F('1', '6')), ': примерно в каждом шестом броске. 600 : 6 = 100.'],
+      ['Шесть — это граней у кубика, а бросков было 600.', null, 'Около 300 раз выпадает чётное число: у него вероятность одна вторая.', 'Так было бы, если бы шестёрка выпадала всегда.'],
+      () => fx(S.q4, { o: 1 }, 0, .4)),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Вероятность = благоприятные исходы : все исходы',
+    ['От 0 до 1:  0 — невозможное,  1 — достоверное'],
+    ['Не наступит:  ', { m: ['1 − ', F('1', '6'), ' = ', F('5', '6')] }],
+    ['Две монеты:  ', { m: '2 · 2 = 4' }, '  исхода — ОО, ОР, РО, РР'],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-kubik', prompt: 'Бросают игральный кубик. Найди вероятность события.',
+    build: blanks([
+      { parts: ['выпадет число меньше 3:   P = ', { box: '1/3' }], why: 'Подходят 1 и 2 — два исхода из шести: 2/6 = 1/3.', hint: 'Какие числа меньше трёх? Раздели их количество на 6.' },
+      { parts: ['выпадет нечётное число:   P = ', { box: '1/2' }], why: 'Подходят 1, 3 и 5 — три исхода из шести: 3/6 = 1/2.', hint: 'Нечётные числа на кубике: 1, 3, 5.' },
+    ]),
+  }, {
+    id: 'p-karandash', prompt: 'В коробке 4 красных, 5 синих и 11 зелёных карандашей. Наугад берут один. Какова вероятность, что он синий?',
+    build: blanks([{ parts: ['P = ', { box: '1/4' }], why: 'Всего 4 + 5 + 11 = 20 карандашей, синих 5: 5/20 = 1/4.', hint: 'Сначала найди, сколько всего карандашей.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-pyat', prompt: 'Из чисел от 1 до 20 наугад выбирают одно. Какова вероятность, что оно делится на 5?',
+    build: blanks([{ parts: ['P = ', { box: '1/5' }], why: 'Подходят 5, 10, 15 и 20 — четыре числа из двадцати: 4/20 = 1/5.', hint: 'Выпиши числа до 20, которые делятся на 5.' }]),
+  }, {
+    id: 'p-reshki', prompt: 'Монету бросают два раза. Какова вероятность, что оба раза выпадет решка?',
+    build: blanks([{ parts: ['P = ', { box: '1/4' }], why: 'Исходы ОО, ОР, РО, РР; подходит один — РР: 1/4.', hint: 'Выпиши все четыре исхода двух бросков.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-loto', prompt: 'Вероятность выиграть в лотерею равна 0,1. Какова вероятность не выиграть?',
+    build: blanks([{ parts: ['P = ', { box: '0.9' }], why: '1 − 0,1 = 0,9: вероятности события и противоположного ему в сумме дают 1.', hint: 'Вычти вероятность выигрыша из единицы.' }]),
+  }, {
+    id: 'p-sobytie', prompt: 'Какое это событие?',
+    build: grid([
+      { parts: ['на кубике выпало 8'], ans: ['nev'], why: 'На кубике нет восьмёрки: вероятность 0.' },
+      { parts: ['на кубике выпало число от 1 до 6'], ans: ['dos'], why: 'Так будет при любом броске: вероятность 1.' },
+      { parts: ['монета упала орлом'], ans: ['mez'], why: 'Может быть и так, и иначе: вероятность 1/2.' },
+      { parts: ['из мешка с белыми шарами достали белый'], ans: ['dos'], why: 'Других шаров там нет: вероятность 1.' },
+    ], [['nev', 'невозможное', null, '1'], ['dos', 'достоверное', null, '2'], ['mez', 'ни то, ни другое', null, '3']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

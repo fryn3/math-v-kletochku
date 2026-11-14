@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Таблицы и диаграммы · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 9.1 «Таблицы и диаграммы» (5–6 класс). Beat ids match papermorph/content/uroki/ch38/narration.ru.json.
+const CHAPTER = { number: 38, label: '9.1', title: 'Таблицы и диаграммы', minutes: 8, language: 'ru', next: '../ch39/' };
+
+const NUM = KL.NUM, DEN = KL.DEN, TWO = KL.TWO, WHOLE = KL.WHOLE, RULE = KL.RULE;
+// Three categories of one whole (a pie, a legend): walking, bus, car.
+const CAT = [NUM, TWO, WHOLE];
+
+/* ---------- the books chart (used by several beats, always in the same place) ---------- */
+const NAMES = ['Аня', 'Боря', 'Вика', 'Гоша'], BOOKS = [6, 9, 3, 4];
+const BK = { ax: 820, base: 760, u: 50, hi: 10, X: [880, 1050, 1220, 1390], w: 110, x2: 1530 };
+const bkY = v => BK.base - v * BK.u;
+
+/* ---------- a vertical scale ---------- */
+// Ticks and labels of a scale on the line x = ax: a tick every `tick`, a label every `every` (both counted from lo),
+// Y(v) the height of v. Each label is a group at (ax − 22, Y(v)), so pulse() grows it in place. Returns { g, labels }.
+function c38Ticks(p, { ax, Y, lo = 0, hi, tick = 1, every = 2, size = 30, t0 }) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), labels = {};
+  const n = Math.round((hi - lo) / tick);
+  for (let k = 0; k <= n; k++) {
+    const v = lo + k * tick, big = (k * tick) % every === 0;
+    path(g, `M${ax - (big ? 15 : 9)} ${Y(v)}H${ax}`, { stroke: COL.chalk, 'stroke-width': big ? 3 : 2.5 });
+    if (big) {
+      const lg = G(g, { x: ax - 24, y: Y(v) });
+      T(lg, String(v), { x: 0, y: size * .35, size, fill: COL.dim, font: MATH, anchor: 'end' });
+      labels[v] = lg;
+    }
+  }
+  if (t0 !== undefined) show(g, t0);
+  return { g, labels };
+}
+// A chart's frame: the scale's line with an arrow (from base up to the height of hi), the floor to x2, and the ticks.
+// Returns { g, Y, labels }.
+function c38Axis(p, { ax, base, u, lo = 0, hi, tick = 1, every = 2, x2, t0, size = 30 }) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), Y = v => base - (v - lo) * u, top = Y(hi) - 40;
+  path(g, `M${ax} ${base}V${top}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+  path(g, `M${ax - 10} ${top + 16}L${ax} ${top}L${ax + 10} ${top + 16}`, { stroke: COL.chalk, 'stroke-width': 3.5, fill: 'none', 'stroke-linejoin': 'round' });
+  path(g, `M${ax} ${base}H${x2}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+  const { labels } = c38Ticks(g, { ax, Y, lo, hi, tick, every, size });
+  if (t0 !== undefined) show(g, t0);
+  return { g, Y, labels };
+}
+
+/* ---------- columns ---------- */
+// One cell w × h of a column: a group at (x, y) with its own chalk edge (copied from ch20's c20Cell).
+function c38Cell(p, x, y, w, h, fill = NUM, o = 1) {
+  const g = G(p, { x, y, o });
+  mk('rect', { width: w, height: h, fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .55 }, g);
+  return g;
+}
+// A column of n cells on base at x, growing cell by cell from the bottom from t0 (no t0: at once). Returns the cells.
+function c38Col(p, x, base, n, cw, ch, t0, fill = NUM, step = .09) {
+  return Array.from({ length: n }, (_, k) => {
+    const c = c38Cell(p, x, base - (k + 1) * ch, cw, ch, fill, t0 === undefined ? 1 : 0);
+    if (t0 !== undefined) show(c, t0 + k * step, .25);
+    return c;
+  });
+}
+// A solid column w wide standing on base, h px tall; set(h) changes its height (the scale moves, the column follows).
+// Returns { g, frame, set }.
+function c38Bar(p, x, base, w, h, fill = NUM, o = 1) {
+  const g = G(p, { o });
+  const r = mk('rect', { x, width: w, fill, 'fill-opacity': .85 }, g);
+  const frame = mk('rect', { x, width: w, fill: 'none', stroke: COL.chalk, 'stroke-width': 2.5 }, g);
+  const set = hh => [r, frame].forEach(e => { e.setAttribute('y', base - hh); e.setAttribute('height', Math.max(0, hh)); });
+  set(h);
+  return { g, frame, set };
+}
+// The books chart: scale, floor, names under the columns and solid columns, all at once. Returns { bars, axis }.
+function c38Books(p) {
+  const axis = c38Axis(p, { ax: BK.ax, base: BK.base, u: BK.u, hi: BK.hi, x2: BK.x2 });
+  NAMES.forEach((n, i) => klText(p, n, BK.X[i] + BK.w / 2, BK.base + 44, undefined, { size: 30, fill: COL.dim, anchor: 'middle' }));
+  const bars = BOOKS.map((v, i) => c38Bar(p, BK.X[i], BK.base, BK.w, v * BK.u));
+  return { bars, axis };
+}
+// A frame flash on a column: thicker and in RULE, then back.
+function c38Flash(bar, t, hold = .9) {
+  tw(bar.frame, { 'a_stroke-width': 6, c_stroke: RULE }, t, .25);
+  tw(bar.frame, { 'a_stroke-width': 2.5, c_stroke: COL.chalk }, t + hold, .4);
+}
+// A dashed reading line from (x1, y) to (x2, y), drawn on from x1 at t0 (no t0: hidden, ready for draw or fx).
+function c38Read(p, x1, x2, y, t0, col = RULE) {
+  const e = path(p, `M${x1} ${y}H${x2}`, { stroke: col, 'stroke-width': 3.5, 'stroke-dasharray': '12 9', fill: 'none' }, { d: 0 });
+  if (t0 !== undefined) draw(e, t0, .7);
+  return e;
+}
+// Something flies along an arc from (x0, y0) to (x1, y1) (its group's x, y), lifted by `lift` in the middle.
+function c38Fly(g, [x0, y0], [x1, y1], t, dur = .8, lift = 70, fxMode = false) {
+  const pf = q => put(g, { x: x0 + (x1 - x0) * q, y: y0 + (y1 - y0) * q - Math.sin(Math.PI * q) * lift });
+  if (fxMode) fxp(pf, t, dur); else prog(pf, t, dur);
+}
+
+/* ---------- pies ---------- */
+// The point at angle a (degrees, 0 at the top, clockwise) and distance r from (cx, cy).
+const c38Pt = (cx, cy, r, a) => [cx + r * Math.sin(a * Math.PI / 180), cy - r * Math.cos(a * Math.PI / 180)];
+// A sector of a pie from a0 to a1 (degrees), a group at the centre. With t0 it sweeps open from a0 over dur
+// (on the answer clock when fxMode); without, it is drawn whole.
+function c38Sweep(p, cx, cy, r, a0, a1, fill, t0, dur = 1, fxMode = false) {
+  const g = G(p, { x: cx, y: cy });
+  const e = path(g, t0 === undefined ? klSectorD(r, a0, a1) : 'M0 0', { fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-linejoin': 'round' });
+  if (t0 !== undefined) {
+    const f = q => e.setAttribute('d', q > 0 ? klSectorD(r, a0, a0 + (a1 - a0) * q) : 'M0 0');
+    if (fxMode) fxp(f, t0, dur); else prog(f, t0, dur, io);
+  }
+  return g;
+}
+// An empty pie: a faint disc with a chalk rim (the sectors go under the rim's colour, so it is drawn first).
+function c38Disc(p, cx, cy, r, t0) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  mk('circle', { cx, cy, r, fill: COL.chalk, 'fill-opacity': .07, stroke: COL.chalk, 'stroke-width': 3.5 }, g);
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A label inside a sector: text centred at angle a, at k × r from the centre, in the board's colour (on the fill).
+function c38In(p, cx, cy, r, a, str, t0, { k = .58, size = 38, fill = COL.board } = {}) {
+  const [x, y] = c38Pt(cx, cy, r * k, a);
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  T(g, str, { x: 0, y: size * .35, size, fill, weight: 700, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A legend row: a square of the category's colour and its words.
+function c38Key(p, x, y, fill, str, t0) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x, y: y - 26, width: 30, height: 30, rx: 4, fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2 }, g);
+  T(g, str, { x: x + 48, y, size: 32, fill: COL.chalk });
+  show(g, t0);
+  return g;
+}
+// The school pie of three beats: walking 50 %, bus 30 %, car 20 % (degrees 0–180, 180–288, 288–360).
+const PIE = { cx: 470, cy: 500, r: 270, A: [[0, 180], [180, 288], [288, 360]], pct: [50, 30, 20] };
+const pieMid = i => (PIE.A[i][0] + PIE.A[i][1]) / 2;
+
+/* ---------- a table inside a question card ---------- */
+// rows[0] is the header. Inline styles: the engine's cards have no table style of their own.
+function c38Table(rows) {
+  const t = h('table');
+  t.style.cssText = 'border-collapse:collapse;margin:14px 0 6px;font-size:26px';
+  rows.forEach((r, i) => {
+    const tr = h('tr');
+    r.forEach(c => {
+      const td = h(i ? 'td' : 'th', '', [c]);
+      td.style.cssText = 'border:2px solid rgba(236,232,220,.35);padding:6px 24px;text-align:left;font-weight:' + (i ? 500 : 600) + (i ? '' : ';color:var(--dim)');
+      tr.append(td);
+    });
+    t.append(tr);
+  });
+  return t;
+}
+const PRICES = () => c38Table([['билет', 'цена'], ['взрослый', '250 ₽'], ['школьный', '100 ₽'], ['до 7 лет', 'бесплатно']]);
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Таблицы и диаграммы', (m, D) => klIntro(m, D, {
+    unit: 'Глава 9 · Диаграммы, перебор, вероятность · Тема 9.1',
+    title: 'Таблицы и диаграммы',
+    sub: 'Как читать числа по столбцам и по кругу',
+    art: (g, t0) => {
+      path(g, 'M610 650H790', { stroke: COL.chalk, 'stroke-width': 3 });
+      [3, 5, 2].forEach((n, i) => c38Col(g, 625 + i * 55, 650, n, 40, 24, t0 + i * .35));
+      c38Disc(g, 920, 590, 60);
+      [[0, 180], [180, 288], [288, 360]].forEach(([a0, a1], i) => c38Sweep(g, 920, 590, 60, a0, a1, CAT[i], t0 + 1.2 + i * .5, .5));
+    },
+  })],
+
+  ['table', 'Таблица → диаграмма', m => {
+    const p = panel(0);
+    klTitle(p, 'Сколько книг прочитали за месяц');
+    // The table: a header and four rows.
+    const TX = 120, TW = 440, TY = 250, RH = 84, DIV = TX + 250;
+    const tg = G(p, { o: 0 });
+    mk('rect', { x: TX, y: TY, width: TW, height: RH * 5, fill: COL.chalk, 'fill-opacity': .04, stroke: COL.chalk, 'stroke-width': 3, rx: 4 }, tg);
+    let d = `M${DIV} ${TY}V${TY + RH * 5}`;
+    for (let i = 1; i < 5; i++) d += `M${TX} ${TY + i * RH}H${TX + TW}`;
+    path(tg, d, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .5 });
+    T(tg, 'имя', { x: TX + 30, y: TY + 54, size: 30, fill: COL.dim, weight: 600 });
+    T(tg, 'книги', { x: DIV + 95, y: TY + 54, size: 30, fill: COL.dim, weight: 600, anchor: 'middle' });
+    NAMES.forEach((n, i) => T(tg, n, { x: TX + 30, y: TY + (i + 1) * RH + 54, size: 34 }));
+    show(tg, .2);
+    const nums = BOOKS.map((v, i) => {
+      const g = G(p, { x: DIV + 95, y: TY + (i + 1.5) * RH, o: 0 });
+      T(g, String(v), { x: 0, y: 14, size: 40, fill: NUM, font: MATH, anchor: 'middle', weight: 600 });
+      show(g, .3);
+      return g;
+    });
+    // The chart comes in on «нарисовать»; each number grows into a column, cell by cell.
+    c38Axis(p, { ax: BK.ax, base: BK.base, u: BK.u, hi: BK.hi, x2: BK.x2, t0: m('chart') });
+    NAMES.forEach((n, i) => klText(p, n, BK.X[i] + BK.w / 2, BK.base + 44, m('chart', .3), { size: 30, fill: COL.dim, anchor: 'middle' }));
+    const cols = ['a', 'b', 'v', 'g'].map((mk_, i) => {
+      const t = m(mk_);
+      const row = put(mk('rect', { x: TX + 3, y: TY + (i + 1) * RH + 3, width: TW - 6, height: RH - 6, fill: RULE, 'fill-opacity': .14 }, null), { o: 0 });
+      p.insertBefore(row, tg);
+      show(row, t, .25); hide(row, t + 1.6, .4);
+      pulse(nums[i], t, 1.35);
+      return c38Col(p, BK.X[i], BK.base, BOOKS[i], BK.w, BK.u, t + .15);
+    });
+    // Most and fewest: the tallest and the shortest columns.
+    const ring = (i, t) => {
+      const n = BOOKS[i], e = mk('rect', { x: BK.X[i] - 4, y: bkY(n) - 4, width: BK.w + 8, height: n * BK.u + 8, fill: 'none', stroke: RULE, 'stroke-width': 5, rx: 4 }, p);
+      put(e, { o: 0 }); show(e, t, .3);
+      cols[i].forEach((c, k) => { tw(c, { y: bkY(k + 1) - 6 }, t + k * .03, .18, out); tw(c, { y: bkY(k + 1) }, t + .18 + k * .03, .3); });
+    };
+    ring(1, m('most', .2));
+    klText(p, 'больше всех', BK.X[1] + BK.w / 2, bkY(9) - 22, m('most', .4), { size: 26, fill: RULE, weight: 600, anchor: 'middle' });
+    ring(2, m('least', .2));
+    klText(p, 'меньше всех', BK.X[2] + BK.w / 2, bkY(3) - 22, m('least', .4), { size: 26, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['scale', 'Цена деления', m => {
+    const p = panel(0);
+    klTitle(p, 'Шкала и цена деления');
+    const axis = c38Axis(p, { ax: BK.ax, base: BK.base, u: BK.u, hi: BK.hi, x2: BK.x2 });
+    NAMES.forEach((n, i) => klText(p, n, BK.X[i] + BK.w / 2, BK.base + 44, undefined, { size: 30, fill: COL.dim, anchor: 'middle' }));
+    // The cell columns of the last beat become solid columns: the cells' edges fade, the heights stay.
+    const cells = BOOKS.map((v, i) => c38Col(p, BK.X[i], BK.base, v, BK.w, BK.u));
+    const bars = BOOKS.map((v, i) => c38Bar(p, BK.X[i], BK.base, BK.w, v * BK.u, NUM, 0));
+    bars.forEach(b => show(b.g, m('solid'), .7));
+    cells.flat().forEach(c => hide(c, m('solid', .7), .2));
+    // «по шкале»: a glow runs up the scale line.
+    const glow = path(p, `M${BK.ax} ${BK.base}V${bkY(BK.hi) - 30}`, { stroke: RULE, 'stroke-width': 10, 'stroke-linecap': 'round' }, { d: 0, o: .55 });
+    draw(glow, m('sc'), .8); hide(glow, m('sc', 1.4), .5);
+    // The labels go up in twos.
+    ['l0', 'l2', 'l4', 'l6'].forEach((mk_, i) => pulse(axis.labels[2 * i], m(mk_), 1.45));
+    klRow(p, ['подписи идут через ', { m: '2', fill: RULE }], 110, 300, m('step'), { size: 32, msize: 44, anchor: 'start' });
+    // Two divisions from one label to the next: thick segments on the scale, numbered.
+    [0, 1].forEach(k => {
+      draw(path(p, `M${BK.ax} ${bkY(k) - 3}V${bkY(k + 1) + 3}`, { stroke: DEN, 'stroke-width': 9, 'stroke-linecap': 'round' }, { d: 0 }), m('two', -.6 + k * .5), .4);
+      klText(p, String(k + 1), BK.ax + 28, bkY(k + .5) + 9, m('two', -.5 + k * .5), { size: 26, fill: DEN, weight: 700, anchor: 'middle' });
+    });
+    klRow(p, ['от подписи до подписи — ', { m: '2', fill: DEN }, ' деления'], 110, 380, m('two', .4), { size: 32, msize: 44, anchor: 'start' });
+    // One division flashes; «2 : 2», «= 1» and the name come on their words.
+    const one = path(p, `M${BK.ax} ${bkY(0) - 3}V${bkY(1) + 3}`, { stroke: RULE, 'stroke-width': 11, 'stroke-linecap': 'round' }, { d: 0 });
+    draw(one, m('one'), .35); hide(one, m('one', 1.6), .4);
+    const lw = klW('цена деления:  ', 34, 600), w22 = mathW(['2 : 2'], 48);
+    klText(p, 'цена деления:', 110, 470, m('name'), { size: 34, fill: RULE, weight: 600 });
+    klMath(p, ['2 : 2'], 110 + lw, 470, m('div', .3), { size: 48, fill: RULE, anchor: 'start' });
+    klMath(p, [' = 1'], 110 + lw + w22, 470, m('res'), { size: 48, fill: RULE, anchor: 'start' });
+    // Another scale: labels every 20, four divisions between them.
+    const RX = 120, RW = 440, RY = 650, step = RW / 8, rg = G(p, { o: 0 });
+    path(rg, `M${RX - 10} ${RY}H${RX + RW + 10}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+    for (let k = 0; k <= 8; k++) {
+      const big = k % 4 === 0, x = RX + k * step;
+      path(rg, `M${x} ${RY}V${RY + (big ? 16 : 9)}`, { stroke: COL.chalk, 'stroke-width': big ? 3 : 2.5 });
+      if (big) T(rg, String(k * 5), { x, y: RY + 50, size: 30, fill: COL.dim, font: MATH, anchor: 'middle' });
+    }
+    show(rg, m('other'));
+    for (let k = 0; k < 4; k++) {
+      draw(path(p, `M${RX + k * step + 4} ${RY - 8}Q${RX + (k + .5) * step} ${RY - 34} ${RX + (k + 1) * step - 4} ${RY - 8}`, { stroke: DEN, 'stroke-width': 3, fill: 'none' }, { d: 0 }), m('four', k * .25), .3);
+      klText(p, String(k + 1), RX + (k + .5) * step, RY - 44, m('four', .1 + k * .25), { size: 24, fill: DEN, weight: 700, anchor: 'middle' });
+    }
+    klRow(p, ['цена деления:  ', { m: '20 : 4 = 5', fill: RULE }], 110, 790, m('other2'), { size: 34, msize: 48, anchor: 'start', fill: RULE, weight: 600 });
+  }],
+
+  ['read', 'Читаем столбец', m => {
+    const p = panel(0);
+    klTitle(p, 'Читаем высоту столбца', 'от верха столбца — линия к шкале');
+    const { bars, axis } = c38Books(p);
+    // Boris: the line from the top of his column to the scale, the division above 8, the value 9.
+    c38Flash(bars[1], m('line', -.2), 1.4);
+    c38Read(p, BK.X[1], BK.ax, bkY(9), m('line', .2));
+    draw(path(p, `M${BK.ax} ${bkY(8) - 3}V${bkY(9) + 3}`, { stroke: RULE, 'stroke-width': 9, 'stroke-linecap': 'round' }, { d: 0 }), m('one'), .4);
+    pulse(axis.labels[8], m('eight'), 1.7);
+    // «Она прошла…»: a dot runs along the line from the column to the scale.
+    const dot = G(p, { x: BK.X[1], y: bkY(9), o: 0 });
+    mk('circle', { r: 11, fill: RULE, stroke: COL.board, 'stroke-width': 3 }, dot);
+    show(dot, m('count'), .2);
+    tw(dot, { x: BK.ax }, m('count', .1), 1.1, io);
+    hide(dot, m('nine'), .3);
+    const nine = G(p, { x: BK.ax - 24, y: bkY(9), o: 0 });
+    T(nine, '9', { x: 0, y: 11, size: 32, fill: RULE, font: MATH, anchor: 'end', weight: 700 });
+    show(nine, m('nine'), .3); pulse(nine, m('nine', .1), 1.5);
+    klRow(p, ['Боря:  ', { m: '9', fill: RULE }, ' книг'], 110, 330, m('nine', .4), { size: 36, msize: 50, anchor: 'start' });
+    // Vika: halfway between 2 and 4.
+    c38Flash(bars[2], m('vika', -.2), 1.4);
+    // Vika's line runs behind Anya's and Boris's columns, so it never crosses them.
+    p.insertBefore(c38Read(p, BK.X[2], BK.ax, bkY(3), m('vika', .2)), bars[0].g);
+    const three = G(p, { x: BK.ax - 24, y: bkY(3), o: 0 });
+    T(three, '3', { x: 0, y: 11, size: 32, fill: RULE, font: MATH, anchor: 'end', weight: 700 });
+    show(three, m('three', .2), .3); pulse(three, m('three', .3), 1.5);
+    klRow(p, ['Вика:  ', { m: '3', fill: RULE }, ' книги'], 110, 430, m('three', .5), { size: 36, msize: 50, anchor: 'start' });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Солнечные дни');
+    const V = [10, 25, 15, 20], MON = ['март', 'апрель', 'май', 'июнь'], AX = 520, B = 560, U = 12, X = [600, 760, 920, 1080], W = 110;
+    const axis = c38Axis(p, { ax: AX, base: B, u: U, hi: 30, tick: 5, every: 10, x2: 1230, t0: .1 });
+    MON.forEach((n, i) => klText(p, n, X[i] + W / 2, B + 42, .2, { size: 28, fill: COL.dim, anchor: 'middle' }));
+    const bars = V.map((v, i) => { const b = c38Bar(p, X[i], B, W, v * U, NUM, 0); show(b.g, .2 + i * .1); return b; });
+    const line = c38Read(p, X[2], AX, axis.Y(15));
+    const lab = G(p, { x: AX - 24, y: axis.Y(15), o: 0 });
+    T(lab, '15', { x: 0, y: 10, size: 28, fill: RULE, font: MATH, anchor: 'end', weight: 700 });
+    S.q1 = { bars, line, lab, box: V.map((v, i) => [X[i] - 12, B - v * U - 12, W + 24, v * U + 24]), MON };
+  }, { ask: done => {
+    const Q = S.q1;
+    quiz(BAND, [{
+      id: 'c-stolbec', prompt: 'В каком месяце было 15 солнечных дней? Нажми на столбец.',
+      build: pickEls(Q.bars.map((b, i) => ({ el: b.g, box: Q.box[i], label: Q.MON[i] })), 2,
+        'Подписи идут через 10, между ними два деления: цена деления 5. Столбец мая доходит до середины между 10 и 20 — это 15.',
+        i => i === 0 ? 'Этот столбец доходит до подписи 10.' : i === 1 ? 'Этот столбец выше 20: цена деления 5, значит, это 25.' : 'Этот столбец доходит до подписи 20.',
+        () => { fx(Q.line, { d: 1 }, 0, .6); fx(Q.lab, { o: 1 }, .5, .3); pulseFx(Q.lab); }),
+    }], done);
+  } }],
+
+  ['compare', 'На сколько и во сколько раз', m => {
+    const p = panel(0);
+    klTitle(p, 'Сравниваем столбцы');
+    const { bars } = c38Books(p);
+    // How many more: a level at Gosha's height; above it Boris has five more divisions.
+    klText(p, 'на сколько больше?', 110, 300, m('diff'), { size: 32, fill: COL.dim });
+    c38Flash(bars[1], m('diff', .3), 1.2); c38Flash(bars[3], m('diff', .3), 1.2);
+    const lev = c38Read(p, BK.X[3] + BK.w, BK.X[1], bkY(4), m('level', .3));
+    const over = G(p, { o: 0 });
+    mk('rect', { x: BK.X[1], y: bkY(9), width: BK.w, height: 5 * BK.u, fill: RULE, 'fill-opacity': .55, stroke: RULE, 'stroke-width': 4 }, over);
+    let d = '';
+    for (let k = 5; k < 9; k++) d += `M${BK.X[1]} ${bkY(k)}H${BK.X[1] + BK.w}`;
+    path(over, d, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .6 });
+    show(over, m('cells'), .4);
+    const cnt = klCount(p, [4, 5, 6, 7, 8].map(k => [BK.X[1] + BK.w / 2, bkY(k + .5) + 11]), m('cells', .4), { step: .22, size: 30, fill: COL.board });
+    klRow(p, [{ m: '9 − 4 = 5', fill: RULE }], 110, 380, m('minus'), { msize: 52, anchor: 'start' });
+    klText(p, '«на сколько» — вычитание', 110, 440, m('sub'), { size: 30, fill: RULE, weight: 600 });
+    [over, lev, ...cnt].forEach(e => hide(e, m('times', -.2), .4));
+    // How many times: copies of Vika's column stack up inside Boris's.
+    klText(p, 'во сколько раз больше?', 110, 560, m('times'), { size: 32, fill: COL.dim });
+    c38Flash(bars[2], m('times', .3), 1.2);
+    for (let k = 0; k < 3; k++) {
+      const g = G(p, { x: BK.X[2], y: BK.base, o: 0 });
+      mk('rect', { x: 0, y: -3 * BK.u, width: BK.w, height: 3 * BK.u, fill: TWO, 'fill-opacity': .8, stroke: COL.chalk, 'stroke-width': 3 }, g);
+      T(g, String(k + 1), { x: BK.w / 2, y: -1.5 * BK.u + 12, size: 34, fill: COL.board, font: MATH, anchor: 'middle', weight: 700 });
+      const t = m('stack', k * .9);
+      show(g, t, .2);
+      c38Fly(g, [BK.X[2], BK.base], [BK.X[1], BK.base - k * 3 * BK.u], t + .1, .8, 90);
+    }
+    klRow(p, [{ m: '9 : 3 = 3', fill: RULE }], 110, 640, m('div'), { msize: 52, anchor: 'start' });
+    klText(p, '«во сколько раз» — деление', 110, 700, m('dv'), { size: 30, fill: RULE, weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Кто в какой кружок записался');
+    const V = [10, 6, 8, 14], NM = ['хор', 'шахматы', 'танцы', 'футбол'], AX = 520, B = 560, U = 22, X = [600, 760, 920, 1080], W = 110;
+    const axis = c38Axis(p, { ax: AX, base: B, u: U, hi: 16, tick: 2, every: 4, x2: 1230, t0: .1 });
+    NM.forEach((n, i) => klText(p, n, X[i] + W / 2, B + 42, .2, { size: 28, fill: COL.dim, anchor: 'middle' }));
+    V.forEach((v, i) => show(c38Bar(p, X[i], B, W, v * U, NUM, 0).g, .2 + i * .1));
+    const line = c38Read(p, X[1] + W, X[3], axis.Y(6));
+    const over = G(p, { o: 0 });
+    mk('rect', { x: X[3], y: axis.Y(14), width: W, height: 8 * U, fill: RULE, 'fill-opacity': .55, stroke: RULE, 'stroke-width': 4 }, over);
+    T(over, '8', { x: X[3] + W / 2, y: axis.Y(10) + 13, size: 38, fill: COL.board, font: MATH, anchor: 'middle', weight: 700 });
+    S.q2 = { line, over };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-krugki', prompt: 'На сколько больше человек выбрали футбол, чем шахматы?',
+    build: blanks([{ parts: ['на ', { box: '8' }, ' человек'], why: 'Цена деления 2. Футбол — 14, шахматы — 6: 14 − 6 = 8.',
+      hint: 'Подписи идут через 4, между ними два деления: цена деления 2. Найди высоту обоих столбцов и вычти.',
+      fx: () => { fx(S.q2.line, { d: 1 }, 0, .6); fx(S.q2.over, { o: 1 }, .5, .4); } }]),
+  }], done) }],
+
+  ['pie', 'Круговая диаграмма', m => {
+    const p = panel(0);
+    klTitle(p, 'Круговая диаграмма', 'как ученики добираются до школы');
+    const { cx, cy, r, A, pct } = PIE;
+    c38Disc(p, cx, cy, r, .2);
+    const rim = mk('circle', { cx, cy, r, fill: 'none', stroke: RULE, 'stroke-width': 8 }, p);
+    put(rim, { o: 0 }); show(rim, m('whole'), .4); hide(rim, m('whole', 1.6), .5);
+    klRow(p, ['весь круг — ', { m: '100 %', fill: RULE }], 880, 290, m('whole', .3), { size: 34, msize: 46, anchor: 'start' });
+    const words = ['пешком', 'на автобусе', 'на машине'];
+    ['walk', 'bus', 'car'].forEach((mk_, i) => {
+      const t = m(mk_);
+      c38Sweep(p, cx, cy, r, A[i][0], A[i][1], CAT[i], t, i ? .8 : 1.1);
+      c38In(p, cx, cy, r, pieMid(i), pct[i] + ' %', t + (i ? .7 : 1), { k: i ? .62 : .5 });
+      c38Key(p, 880, 390 + i * 80, CAT[i], `${words[i]} — ${pct[i]} %`, t + .3);
+    });
+    klRow(p, [{ m: '50 % + 30 % + 20 % = 100 %', fill: RULE }], 880, 650, m('sum'), { msize: 44, anchor: 'start' });
+    // Half and quarter: two small pies.
+    [[1040, 180, '½ круга = 50 %'], [1340, 90, '¼ круга = 25 %']].forEach(([x, a, str], i) => {
+      const t = i ? m('q4') : m('quarter', .4);
+      c38Disc(p, x, 745, 52, t);
+      c38Sweep(p, x, 745, 52, 0, a, RULE, t + .2, .6);
+      klText(p, str, x, 840, t + .4, { size: 28, fill: COL.chalk, anchor: 'middle' });
+    });
+  }],
+
+  ['degrees', 'Проценты в градусы', m => {
+    const p = panel(0);
+    klTitle(p, 'Проценты → градусы');
+    const { cx, cy, r, A } = PIE;
+    c38Disc(p, cx, cy, r, .2);
+    // The whole turn: a radius goes once round the circle.
+    const hand = G(p, { x: cx, y: cy, o: 0 });
+    path(hand, `M0 0V${-r}`, { stroke: RULE, 'stroke-width': 5, 'stroke-linecap': 'round' });
+    show(hand, m('full', -.2), .2);
+    prog(q => put(hand, { r: 360 * q }), m('full'), 1.6, io);
+    hide(hand, m('full', 1.7), .3);
+    const X0 = 860;
+    klRow(p, ['весь круг:  ', { m: '360° = 100 %' }], X0, 290, m('full', .3), { size: 34, msize: 46, anchor: 'start' });
+    const P1 = ['1 %   →   '], P2 = ['360° : 100'], P3 = [' = 3,6°'], w1 = mathW(P1, 46), w2 = mathW(P2, 46);
+    klMath(p, P1, X0, 380, m('one', .3), { size: 46, fill: RULE, anchor: 'start' });
+    klMath(p, P2, X0 + w1, 380, m('n360'), { size: 46, fill: RULE, anchor: 'start' });
+    klMath(p, P3, X0 + w1 + w2, 380, m('res'), { size: 46, fill: RULE, anchor: 'start' });
+    // «разделить на сто»: a hundred slices go round the rim; one of them is 3,6°.
+    const hundred = G(p, { o: 0 });
+    for (let k = 0; k < 100; k++) {
+      const [x1, y1] = c38Pt(cx, cy, r - 18, k * 3.6), [x2, y2] = c38Pt(cx, cy, r, k * 3.6);
+      const e = path(hundred, `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`, { stroke: DEN, 'stroke-width': 2 }, { o: 0 });
+      show(e, m('hund', k * .012), .1);
+    }
+    put(hundred, { o: 1 });
+    const slice = c38Sweep(p, cx, cy, r, 0, 3.6, RULE, m('res'), .3);
+    const sl = klText(p, '3,6°', c38Pt(cx, cy, r + 40, 2)[0] + 6, c38Pt(cx, cy, r + 40, 2)[1] + 10, m('res', .3), { size: 30, fill: RULE, weight: 700 });
+    [hundred, slice, sl].forEach(e => hide(e, m('bus', -.2), .4));
+    const rows = [['bus', 1, '30 %   →   30 · 3,6° = 108°', 470], ['car', 2, '20 %   →   20 · 3,6° = 72°', 560], ['walk', 0, '50 %   →   180°', 650]];
+    rows.forEach(([mk_, i, str, y]) => {
+      const t = m(mk_);
+      klRow(p, [{ m: str }], X0, y, t, { msize: 46, anchor: 'start' });
+      c38Sweep(p, cx, cy, r, A[i][0], A[i][1], CAT[i], t + .3, .9);
+      c38In(p, cx, cy, r, pieMid(i), (A[i][1] - A[i][0]) + '°', t + 1, { k: i ? .62 : .5 });
+    });
+    klRow(p, [{ m: '180° + 108° + 72° = 360°', fill: RULE }], X0, 760, m('check'), { msize: 46, anchor: 'start' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const cx = 800, cy = 330, r = 210;
+    c38Disc(p, cx, cy, r, .1);
+    S.q3 = c38Sweep(p, cx, cy, r, 0, 54, NUM);
+    put(S.q3, { o: 0 }); show(S.q3, .3);
+    c38In(p, cx, cy, r, 27, '15 %', .4, { k: .5, size: 30 });
+    S.q3deg = c38In(p, cx, cy, r, 27, '54°', undefined, { k: .8, size: 30 });
+    put(S.q3deg, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-gradusy', prompt: 'Сектор занимает 15 % круга. Сколько в нём градусов?',
+    build: blanks([{ parts: ['15 % = ', { box: '54' }, '°'], why: '1 % круга — это 3,6°, а 15 · 3,6° = 54°.',
+      hint: '1 % круга — это 360° : 100 = 3,6°. Умножь на 15.',
+      fx: () => { pulseFx(S.q3); fx(S.q3deg, { o: 1 }, .3, .4); } }]),
+  }], done) }],
+
+  ['people', 'Проценты в людей', m => {
+    const p = panel(0);
+    klTitle(p, 'Проценты → люди');
+    const { cx, cy, r, A, pct } = PIE;
+    c38Disc(p, cx, cy, r);
+    A.forEach(([a0, a1], i) => c38Sweep(p, cx, cy, r, a0, a1, CAT[i]));
+    const rim = mk('circle', { cx, cy, r, fill: 'none', stroke: RULE, 'stroke-width': 8 }, p);
+    put(rim, { o: 0 }); show(rim, m('all'), .4); hide(rim, m('all', 1.6), .5);
+    const X0 = 860, people = [150, 90, 60];
+    klRow(p, ['всего:  ', { m: '300' }, ' учеников'], X0, 290, m('all', .2), { size: 34, msize: 46, anchor: 'start' });
+    klRow(p, [{ m: '1 %   →   300 : 100 = 3', fill: RULE }, ' человека'], X0, 380, m('one', .5), { size: 32, msize: 46, anchor: 'start', fill: RULE });
+    ['walk', 'bus', 'car'].forEach((mk_, i) => {
+      const t = m(mk_), k = i ? .62 : .5;
+      const old = c38In(p, cx, cy, r, pieMid(i), pct[i] + ' %', undefined, { k });
+      pulse(old, m('pct', .2 + i * .3), 1.3);
+      hide(old, t + .3, .3);
+      c38In(p, cx, cy, r, pieMid(i), people[i] + ' чел.', t + .6, { k, size: 34 });
+      klRow(p, [{ m: `${pct[i]} %   →   ${pct[i]} · 3 = ${people[i]}` }, ' чел.'], X0, 470 + i * 90, t, { size: 32, msize: 46, anchor: 'start' });
+    });
+    klRow(p, [{ m: '150 + 90 + 60 = 300', fill: RULE }], X0, 760, m('sum'), { msize: 46, anchor: 'start' });
+  }],
+
+  ['trap', 'Шкала не с нуля', m => {
+    const p = panel(0);
+    klTitle(p, 'Осторожно: шкала');
+    const AX = 260, B = 720, H = 440, XA = 380, XB = 620, W = 150;
+    path(p, `M${AX} ${B}V${B - H - 40}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+    path(p, `M${AX - 10} ${B - H - 24}L${AX} ${B - H - 40}L${AX + 10} ${B - H - 24}`, { stroke: COL.chalk, 'stroke-width': 3.5, fill: 'none', 'stroke-linejoin': 'round' });
+    path(p, `M${AX} ${B}H${XB + W + 70}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+    // Two scales on one line: from 96 (each unit 110 px) and from 0 (labels every 20).
+    const oldT = c38Ticks(p, { ax: AX, Y: v => B - (v - 96) * 110, lo: 96, hi: 100, tick: 1, every: 1 });
+    const newT = c38Ticks(p, { ax: AX, Y: v => B - v * 4.4, lo: 0, hi: 100, tick: 10, every: 20 });
+    put(newT.g, { o: 0 });
+    klText(p, 'А', XA + W / 2, B + 46, undefined, { size: 34, fill: COL.dim, anchor: 'middle', weight: 600 });
+    klText(p, 'Б', XB + W / 2, B + 46, undefined, { size: 34, fill: COL.dim, anchor: 'middle', weight: 600 });
+    const hOf = (v, lo) => (v - lo) / (100 - lo) * H;
+    const bA = c38Bar(p, XA, B, W, hOf(98, 96)), bB = c38Bar(p, XB, B, W, hOf(100, 96));
+    // Twice as tall: A's column fits into B's twice.
+    const copies = [0, 1].map(k => {
+      const g = G(p, { x: XA, y: B, o: 0 });
+      mk('rect', { x: 0, y: -H / 2, width: W, height: H / 2, fill: TWO, 'fill-opacity': .75, stroke: COL.chalk, 'stroke-width': 3 }, g);
+      T(g, String(k + 1), { x: W / 2, y: -H / 4 + 13, size: 38, fill: COL.board, font: MATH, anchor: 'middle', weight: 700 });
+      const t = m('look', .4 + k * .9);
+      show(g, t, .2);
+      c38Fly(g, [XA, B], [XB, B - k * H / 2], t + .1, .8, 80);
+      return g;
+    });
+    const claim = klText(p, 'Б вдвое больше А?', 1150, 340, m('wrong'), { size: 40, weight: 600, anchor: 'middle' });
+    // The scale starts at 96: ring it, strike the claim.
+    const ring = mk('circle', { cx: AX - 46, cy: B, r: 36, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p);
+    put(ring, { o: 0 }); show(ring, m('n96'), .3); hide(ring, m('zero', -.2), .3);
+    klStrike(p, 960, 352, 1340, 316, m('n96', .8));
+    klText(p, 'ошибка!', 1150, 410, m('n96', 1), { size: 30, fill: COL.bad, weight: 700, anchor: 'middle' });
+    copies.forEach(g => hide(g, m('from'), .4));
+    // From 0: the old labels go, the columns stretch down to the new floor of the scale, the new labels come.
+    hide(oldT.g, m('zero'), .3);
+    prog(q => { const lo = 96 * (1 - q); bA.set(hOf(98, lo)); bB.set(hOf(100, lo)); }, m('zero', .2), 1.6, io);
+    show(newT.g, m('zero', 1.6), .5);
+    klText(p, '98', XA + W / 2, B - hOf(98, 0) - 18, m('vals', .5), { size: 34, fill: RULE, weight: 700, anchor: 'middle' });
+    klText(p, '100', XB + W / 2, B - H - 18, m('vals'), { size: 34, fill: RULE, weight: 700, anchor: 'middle' });
+    klRow(p, ['разница всего ', { m: '100 − 98 = 2', fill: RULE }], 1150, 540, m('gap'), { size: 34, msize: 46 });
+    const ring0 = mk('circle', { cx: AX - 40, cy: B, r: 30, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p);
+    put(ring0, { o: 0 }); show(ring0, m('start'), .3);
+    klText(p, 'смотри, с какого числа начинается шкала', 1150, 660, m('rule'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const cx = 800, cy = 330, r = 210, A = [[0, 180], [180, 270], [270, 360]], NM = ['пешком', 'автобус', 'машина'], PC = ['50 %', '25 %', '25 %'];
+    c38Disc(p, cx, cy, r, .1);
+    S.q4 = A.map(([a0, a1], i) => { const g = c38Sweep(p, cx, cy, r, a0, a1, CAT[i]); put(g, { o: 0 }); show(g, .2 + i * .1); return g; });
+    A.forEach(([a0, a1], i) => {
+      const k = i ? .6 : .5, mid = (a0 + a1) / 2;
+      const [x, y] = c38Pt(cx, cy, r * k, mid);
+      klText(p, NM[i], x, y - 6, .4, { size: 26, fill: COL.board, weight: 600, anchor: 'middle' });
+      klText(p, PC[i], x, y + 30, .4, { size: 32, fill: COL.board, weight: 700, anchor: 'middle' });
+    });
+    klRow(p, ['в классе ', { m: '28' }, ' учеников'], 110, 330, .5, { size: 34, msize: 46, anchor: 'start' });
+    S.q4ans = klRow(p, ['автобус:  ', { m: '28 : 4 = 7', fill: RULE }], 1080, 420, undefined, { size: 34, msize: 46, anchor: 'start' });
+    put(S.q4ans, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-avtobus', prompt: 'В классе 28 учеников. Сколько из них ездят в школу на автобусе?',
+    build: blanks([{ parts: [{ box: '7' }, ' учеников'], why: '25 % — это четверть круга, четверть от 28 — это 28 : 4 = 7.',
+      hint: 'Сектор «автобус» — 25 %, то есть четверть круга. Найди четверть от 28.',
+      fx: () => { pulseFx(S.q4[1]); fx(S.q4ans, { o: 1 }, .3, .4); } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Цена деления: разность соседних подписей : число делений',
+    '«На сколько» — вычитание, «во сколько раз» — деление',
+    ['Весь круг — 100 % и 360°:  ', { m: '1 % = 3,6°' }],
+    'Смотри, с какого числа начинается шкала',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-gradusy', prompt: 'Переведи проценты в градусы и градусы в проценты.',
+    build: blanks([
+      { parts: ['40 % круга = ', { box: '144' }, '°'], why: '40 · 3,6° = 144°.', hint: '1 % круга — это 3,6°.' },
+      { parts: ['90° = ', { box: '25' }, ' % круга'], why: '90° — четверть от 360°, а четверть круга — это 25 %.', hint: '360° — это 100 %. Какую часть от 360° составляет 90°?' },
+    ]),
+  }, {
+    id: 'p-cena', prompt: 'На шкале подписи 0, 50, 100, а от одной подписи до другой — пять делений. Какова цена деления?',
+    build: choice(['5', '10', '50'], 1, '50 : 5 = 10.',
+      ['5 — это число делений, а не цена одного деления.', null, '50 — это расстояние между подписями, а в нём пять делений.']),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-muzej', prompt: ['Цены билетов в музей:', PRICES(), 'Сколько рублей заплатит семья из двух взрослых и трёх школьников?'],
+    build: blanks([{ parts: [{ box: '800' }, ' рублей'], why: '2 · 250 + 3 · 100 = 500 + 300 = 800 рублей.', hint: 'Два взрослых билета по 250 и три школьных по 100.' }]),
+  }, {
+    id: 'p-dorozhe', prompt: ['Цены билетов в музей:', PRICES(), 'На сколько рублей взрослый билет дороже школьного?'],
+    build: blanks([{ parts: ['на ', { box: '150' }, ' рублей'], why: '250 − 100 = 150 рублей.', hint: '«На сколько дороже» — это вычитание.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-klass', prompt: 'В классе 30 учеников. На круговой диаграмме кружок рисования занимает 20 % круга. Сколько учеников ходят в этот кружок?',
+    build: blanks([{ parts: [{ box: '6' }, ' учеников'], why: '1 % от 30 — это 30 : 100, а 20 % — в двадцать раз больше: 30 : 100 · 20 = 6.', hint: 'Найди 20 % от 30: раздели на 100 и умножь на 20.' }]),
+  }, {
+    id: 'p-chast', prompt: 'Сектор занимает 75 % круга. Какая это часть круга?',
+    build: choice(['половина', 'три четверти', 'четверть'], 1, '75 % = 25 % + 25 % + 25 %: три четверти круга, это 270°.',
+      ['Половина — это 50 %.', null, 'Четверть — это 25 %.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

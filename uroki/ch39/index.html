@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Перебор вариантов · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 9.2 «Перебор вариантов» (5 класс). Beat ids match papermorph/content/uroki/ch39/narration.ru.json.
+const CHAPTER = { number: 39, label: '9.2', title: 'Перебор вариантов', minutes: 7, language: 'ru', next: '../ch40/' };
+
+// Colours in this topic: the first choice (a shirt, the first digit) KL.NUM, the second choice (shorts, the second
+// digit) KL.TWO, the third choice (a drink) KL.DEN, a count of variants and the rule KL.RULE.
+const NUM = KL.NUM, TWO = KL.TWO, DEN = KL.DEN, RULE = KL.RULE;
+
+/* ---------- small pictures ---------- */
+const C39_SHIRT = 'M-20 -30L-42 -21L-54 -2L-39 7L-30 -4V32H30V-4L39 7L54 -2L42 -21L20 -30Q0 -16 -20 -30Z';
+const C39_SHORTS = 'M-30 -22H30L35 22H7L0 0L-7 22H-35Z';
+const C39_PIE = 'M-46 14Q-46 -30 0 -30Q46 -30 46 14Z';
+const C39_GLASS = 'M-24 -36L-18 36H18L24 -36Z';
+// An icon (a path d drawn around 0,0) at (x, y), scale s, filled col at opacity op; fades in at t0 (none: at once).
+function c39Icon(p, d, x, y, t0, { col = NUM, s = 1, op = .85 } = {}) {
+  const g = G(p, { x, y, s, o: t0 === undefined ? 1 : 0 });
+  path(g, d, { fill: col, 'fill-opacity': op, stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-linejoin': 'round' });
+  if (t0 !== undefined) show(g, t0, .4);
+  return g;
+}
+// A juice glass: an outline with the juice (col) in its lower part.
+function c39Glass(p, x, y, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  path(g, 'M-21 -8L-18 36H18L21 -8Z', { fill: TWO, 'fill-opacity': .85 });
+  path(g, C39_GLASS, { fill: 'none', stroke: COL.chalk, 'stroke-width': 3, 'stroke-linejoin': 'round' });
+  path(g, 'M6 -8L16 -54', { stroke: COL.chalk, 'stroke-width': 3, 'stroke-linecap': 'round' });
+  if (t0 !== undefined) show(g, t0, .4);
+  return g;
+}
+// A branch of a tree from (x1, y1) to (x2, y2), drawn on at t (none: drawn at once).
+function c39Line(p, x1, y1, x2, y2, t, { col = COL.dim, w = 3, dur = .4 } = {}) {
+  const e = path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: col, 'stroke-width': w, 'stroke-linecap': 'round' }, t === undefined ? {} : { d: 0 });
+  if (t !== undefined) draw(e, t, dur);
+  return e;
+}
+// A dot of a tree (a node) of radius r in col at (x, y), popping in at t.
+function c39Dot(p, x, y, r, col, t) {
+  const g = G(p, { x, y, s: t === undefined ? 1 : .2, o: t === undefined ? 1 : 0 });
+  mk('circle', { r, fill: col, stroke: COL.board, 'stroke-width': 2 }, g);
+  if (t !== undefined) pop(g, t);
+  return g;
+}
+// A person or a team: a disc filled col with a dark letter or number on it; a group centred on (x, y).
+function c39Chip(p, x, y, label, t0, { col = NUM, r = 42, size = 40 } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('circle', { r, fill: col, 'fill-opacity': .9, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  T(g, String(label), { x: 0, y: size * .36, size, fill: COL.board, weight: 700, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+// A digit card w × h centred on (x, y).
+function c39Card(p, x, y, digit, t0, { w = 92, h = 112, size = 70 } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 12, fill: COL.chalk, 'fill-opacity': .08, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  T(g, String(digit), { x: 0, y: size * .35, size, fill: COL.chalk, font: MATH, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+// One digit as a movable group centred on (x, y).
+function c39Digit(p, digit, x, y, col, { size = 80, o = 1 } = {}) {
+  const g = G(p, { x, y, o });
+  T(g, String(digit), { x: 0, y: size * .35, size, fill: col, font: MATH, anchor: 'middle' });
+  return g;
+}
+// A two-digit number centred on (x, y): the first digit in NUM, the second in TWO. Returns { g, a, b }.
+function c39Two(p, ab, x, y, t0, { size = 80 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 }), dx = size * .29;
+  const a = c39Digit(g, ab[0], x - dx, y, NUM, { size }), b = c39Digit(g, ab[1], x + dx, y, TWO, { size });
+  if (t0 !== undefined) show(g, t0, .35);
+  return { g, a, b };
+}
+// Copies of two cards' digits fly into a two-digit number at (x, y) from t: the first digit (NUM) from card ca, the
+// second (TWO) from card cb, `lag` apart. Returns the two copies.
+function c39Fly(p, ca, cb, x, y, t, { size = 80, lag = .12, dur = .6 } = {}) {
+  const dx = size * .29;
+  return [[ca, -dx, NUM], [cb, dx, TWO]].map(([c, off, col], k) => {
+    const { x: cx, y: cy } = st(c);
+    const d = c39Digit(p, c._d, cx, cy, col, { size: 70, o: 0 });
+    put(d, { s: 1 });
+    show(d, t + k * lag, .1);
+    tw(d, { x: x + off, y, s: size / 70 }, t + k * lag, dur, io);
+    return d;
+  });
+}
+// A book standing on a shelf: a group with its origin at the middle of the book's foot, the title up the spine.
+function c39Book(p, x, y, w, h, title, fill, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x: -w / 2, y: -h, width: w, height: h, rx: 6, fill, 'fill-opacity': .9, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  path(g, `M${-w / 2 + 10} ${-h + 18}H${w / 2 - 10}M${-w / 2 + 10} -18H${w / 2 - 10}`, { stroke: COL.board, 'stroke-width': 3, 'stroke-opacity': .5 });
+  const sp = G(g, { x: 0, y: -h / 2, r: -90 });
+  T(sp, title, { x: 0, y: 9, size: 25, fill: COL.board, weight: 700, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+// A small picture of one order of the three books: three spines with their first letters, centred on (x, y).
+const C39_BOOKS = [['АТЛАС', 'А', COL.rat, 250], ['ЗАДАЧНИК', 'З', COL.real, 210], ['СЛОВАРЬ', 'С', '#c9b28a', 230]];
+function c39Order(p, order, x, y, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  order.forEach((b, k) => {
+    const bx = (k - 1) * 50;
+    mk('rect', { x: bx - 21, y: -34, width: 42, height: 68, rx: 5, fill: C39_BOOKS[b][2], 'fill-opacity': .9, stroke: COL.chalk, 'stroke-width': 2 }, g);
+    T(g, C39_BOOKS[b][1], { x: bx, y: 10, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+  });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+// pulse() for a group drawn at scale base: grows to base · k and settles back to base (pulse() settles to 1).
+function c39Pulse(e, t, k = 1.25, base = 1) { tw(e, { s: base * k }, t, .22, out); tw(e, { s: base }, t + .22, .4); }
+// Points of a regular n-gon of radius R around (cx, cy), the first at the top.
+const c39Ring = (n, cx, cy, R) => Array.from({ length: n }, (_, k) => [cx + R * Math.sin(2 * Math.PI * k / n), cy - R * Math.cos(2 * Math.PI * k / n)]);
+// The segment between two chips of radius r (centres a, b), shortened so it starts and ends at their rims.
+function c39Link(p, a, b, r, attrs, state) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], k = (r + 4) / Math.hypot(dx, dy);
+  return path(p, `M${(a[0] + dx * k).toFixed(1)} ${(a[1] + dy * k).toFixed(1)}L${(b[0] - dx * k).toFixed(1)} ${(b[1] - dy * k).toFixed(1)}`, attrs, state);
+}
+// All pairs i < j of n things, in order.
+const c39Pairs = n => { const out = []; for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) out.push([i, j]); return out; };
+
+const SHIRTS = ['белая', 'синяя', 'жёлтая'], SHORTS = ['чёрные', 'серые'], SHORT_OP = [.85, .3];
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Перебор вариантов', (m, D) => klIntro(m, D, {
+    unit: 'Глава 9 · Диаграммы, перебор, вероятность · Тема 9.2',
+    title: 'Перебор вариантов',
+    sub: 'Считаем варианты: ни одного не пропустить, ни одного не повторить',
+    art: (g, t0) => {
+      const RX = 610, RY = 640, AX = 700, BX = 790, ay = [580, 640, 700];
+      c39Dot(g, RX, RY, 7, COL.chalk, t0);
+      ay.forEach((y, i) => {
+        c39Line(g, RX, RY, AX, y, t0 + .3 + i * .15, { w: 2.5 });
+        c39Dot(g, AX, y, 9, NUM, t0 + .5 + i * .15);
+        [-20, 20].forEach((dy, j) => {
+          c39Line(g, AX, y, BX, y + dy, t0 + 1 + i * .3 + j * .1, { w: 2.5 });
+          const leaf = c39Dot(g, BX, y + dy, 7, TWO, t0 + 1.2 + i * .3 + j * .1);
+          pulse(leaf, t0 + 6.6 + (i * 2 + j) * .3, 1.8);
+        });
+      });
+      const f = G(g, { x: 860, y: 656 });
+      klRow(f, [{ m: '3', fill: NUM }, { m: ' · ' }, { m: '2', fill: TWO }, { m: ' = ' }, { m: '6', fill: RULE }], 0, 0, t0 + 2.4, { anchor: 'start', msize: 50 });
+      pulse(f, t0 + 8.8, 1.15);
+    },
+  })],
+
+  ['tree', 'Дерево вариантов', m => {
+    const p = panel(0);
+    klTitle(p, 'Сколько разных нарядов?', 'три футболки и двое шорт');
+    const RX = 170, RY = 520, SX = 470, SY = [320, 520, 720], PX = 790, marks = ['w', 'b', 'y'];
+    // The shirts appear on their names, already where the tree will reach them.
+    const shirts = SY.map((y, i) => {
+      const s = c39Icon(p, C39_SHIRT, SX, y, m(marks[i]), { col: NUM });
+      klText(p, SHIRTS[i], SX, y + 68, m(marks[i]), { size: 26, fill: COL.dim, anchor: 'middle' });
+      return s;
+    });
+    // The two shorts wait at the top right; copies fly from there to every shirt.
+    const LEG = [[1190, 168], [1390, 168]];
+    LEG.forEach(([x, y], j) => {
+      const t = j ? m('grey') : m('pants', .2);
+      c39Icon(p, C39_SHORTS, x, y, t, { col: TWO, s: .8, op: SHORT_OP[j] });
+      klText(p, SHORTS[j], x + 40, y + 10, t, { size: 26, fill: COL.dim });
+    });
+    const ask = klText(p, '?', RX, RY + 22, m('ask'), { size: 72, fill: RULE, weight: 700, anchor: 'middle' });
+    hide(ask, m('shirts'), .3);
+    const root = c39Dot(p, RX, RY, 11, COL.chalk, m('shirts', .2));
+    shirts.forEach((s, i) => pulse(s, m('shirts', 2.4 + i * .35), 1.15));
+    SY.forEach((y, i) => c39Line(p, RX + 12, RY, SX - 58, y, m('br', i * .2)));
+    pulse(root, m('br'), 1.4);
+    // Each shirt gets the same two branches: black shorts above, grey below.
+    const leaves = [];
+    const grow = (i, t0, t1) => [t0, t1].forEach((t, j) => {
+      const y = SY[i] + (j ? 50 : -50);
+      c39Line(p, SX + 58, SY[i], PX - 40, y, t);
+      const c = c39Icon(p, C39_SHORTS, LEG[j][0], LEG[j][1], undefined, { col: TWO, s: .8, op: SHORT_OP[j] });
+      put(c, { o: 0 }); show(c, t, .1);
+      tw(c, { x: PX, y, s: 1 }, t, .7, io);
+      leaves[i * 2 + j] = c;
+    });
+    pulse(shirts[0], m('first'), 1.15);
+    grow(0, m('sh1'), m('sh2'));
+    pulse(shirts[1], m('same'), 1.15);
+    grow(1, m('same', .3), m('same', .55));
+    pulse(shirts[2], m('same2'), 1.15);
+    grow(2, m('same2', .3), m('same2', .55));
+    // Count the ends of the branches, then name the outfit at each end.
+    leaves.forEach((c, k) => {
+      const y = SY[k >> 1] + (k & 1 ? 50 : -50);
+      klText(p, String(k + 1), 858, y + 13, m('c' + (k + 1)), { size: 38, fill: RULE, weight: 700, anchor: 'middle' });
+      pulse(c, m('c' + (k + 1)), 1.2);
+      klText(p, `${SHIRTS[k >> 1]} + ${SHORTS[k & 1]}`, 900, y + 10, m('list', .3 + k * .3), { size: 28 });
+    });
+  }],
+
+  ['rule', 'Правило умножения', m => {
+    const p = panel(0);
+    klTitle(p, 'Почему шесть?');
+    // The tree from the last beat, smaller, on the left.
+    const RX = 120, RY = 470, SX = 320, SY = [290, 470, 650], PX = 530;
+    c39Dot(p, RX, RY, 9, COL.chalk);
+    const shirts = SY.map(y => { c39Line(p, RX + 10, RY, SX - 44, y); return c39Icon(p, C39_SHIRT, SX, y, undefined, { s: .75 }); });
+    const nums = [];
+    SY.forEach((y, i) => [-48, 48].forEach((dy, j) => {
+      c39Line(p, SX + 44, y, PX - 26, y + dy);
+      c39Icon(p, C39_SHORTS, PX, y + dy, undefined, { col: TWO, s: .65, op: SHORT_OP[j] });
+      nums.push(G(p, { x: 592, y: y + dy }));
+      T(nums[nums.length - 1], String(i * 2 + j + 1), { x: 0, y: 11, size: 32, fill: RULE, weight: 700, anchor: 'middle' });
+    }));
+    // Three groups of two branches.
+    shirts.forEach((s, i) => { c39Pulse(s, m('groups', i * .45), 1.25, .75); [0, 1].forEach(j => pulse(nums[i * 2 + j], m('groups', .1 + i * .45), 1.3)); });
+    // The table: a row for each shirt, a column for each shorts.
+    const TX = 820, TY = 225, HW = 120, CW = 240, RH = 110, CX = [TX + HW + CW / 2, TX + HW + CW * 1.5], CY = [0, 1, 2].map(i => TY + 90 + RH * (i + .5));
+    const tab = G(p, { o: 0 });
+    let d = `M${TX} ${TY + 90}H${TX + HW + 2 * CW}`;
+    for (let i = 1; i <= 3; i++) d += `M${TX} ${TY + 90 + i * RH}H${TX + HW + 2 * CW}`;
+    for (let k = 0; k <= 2; k++) d += `M${TX + HW + k * CW} ${TY}V${TY + 90 + 3 * RH}`;
+    path(tab, d, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .45 });
+    const rowIcons = CY.map((y, i) => { const s = c39Icon(tab, C39_SHIRT, TX + HW / 2, y - 16, undefined, { s: .6 }); T(tab, SHIRTS[i], { x: TX + HW / 2, y: y + 36, size: 21, fill: COL.dim, anchor: 'middle' }); return s; });
+    const colIcons = CX.map((x, j) => { const s = c39Icon(tab, C39_SHORTS, x - 58, TY + 45, undefined, { col: TWO, s: .7, op: SHORT_OP[j] }); T(tab, SHORTS[j], { x: x - 14, y: TY + 54, size: 26, fill: COL.dim }); return s; });
+    show(tab, m('table'), .5);
+    // Every end of the tree moves into its cell: shirt i, shorts j.
+    nums.forEach((n, k) => tw(n, { x: CX[k & 1], y: CY[k >> 1], s: 1.4 }, m('table', .6 + k * .15), .8, io));
+    // Three rows, two in each.
+    const vb = path(p, `M806 ${TY + 96}H794V${TY + 84 + 3 * RH}H806`, { stroke: NUM, 'stroke-width': 3, fill: 'none' }, { d: 0 });
+    draw(vb, m('rows'), .5);
+    const three = G(p, { x: 768, y: CY[1] + 18 });
+    klMath(three, ['3'], 0, 0, m('rows', .2), { size: 60, fill: NUM });
+    rowIcons.forEach((s, i) => c39Pulse(s, m('rows', i * .2), 1.25, .6));
+    const two = klBrace(p, TX + HW + 6, TX + HW + 2 * CW - 6, TY - 22, '2', m('cols'), { fill: TWO, size: 50 });
+    colIcons.forEach((s, j) => c39Pulse(s, m('cols', .2 + j * .2), 1.25, .7));
+    const res = G(p, { x: 1120, y: 740 });
+    klRow(res, [{ m: '3', fill: NUM }, { m: ' · ' }, { m: '2', fill: TWO }, { m: ' = ' }, { m: '6', fill: RULE }], 0, 0, m('mult'), { msize: 80 });
+    // The rule in words, its m and n tied to the picture.
+    klRow(p, ['Правило умножения: если первое выбирают ', { m: 'm', fill: NUM }, ' способами, а второе — ', { m: 'n', fill: TWO }, ' способами,'], 800, 818, m('rule'), { size: 30, fill: RULE, weight: 600 });
+    pulse(three, m('m'), 1.4);
+    pulse(two, m('n'), 1.4);
+    klRow(p, ['то пару можно выбрать ', { m: 'm · n', fill: RULE }, ' способами'], 800, 866, m('pair'), { size: 30, fill: RULE, weight: 600 });
+    pulse(res, m('pair', .6), 1.15);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const PX = [560, 800, 1040], JX = [440, 680, 920, 1160];
+    S.q1lines = [];
+    PX.forEach(px => JX.forEach(jx => S.q1lines.push(path(p, `M${px} 240L${jx} 418`, { stroke: RULE, 'stroke-width': 3, 'stroke-linecap': 'round' }, { d: 0 }))));
+    PX.forEach((x, i) => c39Icon(p, C39_PIE, x, 200, .2 + i * .1, { col: NUM }));
+    JX.forEach((x, i) => c39Glass(p, x, 470, .4 + i * .1));
+    klText(p, 'пирожки', 330, 212, .2, { size: 30, fill: NUM, weight: 600, anchor: 'end' });
+    klText(p, 'соки', 330, 482, .4, { size: 30, fill: TWO, weight: 600, anchor: 'end' });
+    S.q1res = klRow(p, [{ m: '3', fill: NUM }, { m: ' · ' }, { m: '4', fill: TWO }, { m: ' = ' }, { m: '12', fill: RULE }], 1420, 350, undefined, { msize: 60 });
+    put(S.q1res, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-pirozhok', prompt: 'В кафе 3 вида пирожков и 4 вида сока. Сколькими способами можно выбрать пирожок и сок?',
+    build: blanks([{ parts: [{ box: '12' }, ' способами'], why: 'К каждому из трёх пирожков подходит любой из четырёх соков: 3 · 4 = 12.',
+      hint: 'К каждому пирожку можно взять любой из соков. Перемножь.',
+      fx: () => { S.q1lines.forEach((e, i) => fx(e, { d: 1 }, i * .08, .3)); fx(S.q1res, { o: 1 }, 1.1, .4); } }]),
+  }], done) }],
+
+  ['three', 'Три выбора', m => {
+    const p = panel(0);
+    klTitle(p, 'Обед из трёх блюд');
+    const LX = [150, 420, 720, 1010];
+    const ly = i => 240 + i * 24 + Math.floor(i / 4) * 8 + Math.floor(i / 12) * 16;
+    const l2 = k => (ly(4 * k) + ly(4 * k + 3)) / 2, l1 = k => (l2(3 * k) + l2(3 * k + 2)) / 2, ry = (l1(0) + l1(1)) / 2;
+    c39Dot(p, LX[0], ry, 10, COL.chalk);
+    [['суп', NUM, 'h1'], ['второе', TWO, 'h2'], ['напиток', DEN, 'h3']].forEach(([s, col, mk3], k) => klText(p, s, LX[k + 1], 178, m(mk3), { size: 32, fill: col, weight: 700, anchor: 'middle' }));
+    // Each level splits every branch of the one before in the same way.
+    [0, 1].forEach(k => { c39Line(p, LX[0] + 10, ry, LX[1] - 13, l1(k), m('soup', k * .15)); c39Dot(p, LX[1], l1(k), 13, NUM, m('soup', .3 + k * .15)); });
+    klMath(p, ['2'], LX[1], 220, m('soup', .5), { size: 34, fill: NUM });
+    for (let k = 0; k < 6; k++) { c39Line(p, LX[1] + 13, l1(k / 3 | 0), LX[2] - 10, l2(k), m('main', .2 + k * .1)); c39Dot(p, LX[2], l2(k), 10, TWO, m('main', .4 + k * .1)); }
+    klRow(p, [{ m: '2 · 3 = ' }, { m: '6', fill: RULE }], LX[2], 220, m('main', 1.2), { msize: 34 });
+    for (let i = 0; i < 24; i++) { c39Line(p, LX[2] + 10, l2(i >> 2), LX[3] - 6, ly(i), m('drink', .2 + i * .05), { w: 2 }); c39Dot(p, LX[3], ly(i), 6, DEN, m('drink', .35 + i * .05)); }
+    klRow(p, [{ m: '6 · 4 = ' }, { m: '24', fill: RULE }], LX[3], 220, m('drink', 1.6), { msize: 34 });
+    klRow(p, [{ m: '2', fill: NUM }, { m: ' · ' }, { m: '3', fill: TWO }, { m: ' · ' }, { m: '4', fill: DEN }, { m: ' = ' }, { m: '24', fill: RULE }], 1310, 560, m('all'), { msize: 64 });
+    klText(p, 'сколько выборов —', 1310, 650, m('rule'), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'столько множителей', 1310, 692, m('rule', .4), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['digits', 'Цифры с повтором и без', m => {
+    const p = panel(0);
+    klTitle(p, 'Двузначные числа из цифр 1, 2, 3');
+    const KX = [190, 310, 430], KY = 320, GX = [820, 1050, 1280], GY = [300, 420, 540];
+    const cards = KX.map((x, i) => { const c = c39Card(p, x, KY, i + 1, .3 + i * .1); c._d = i + 1; pulse(c, m('cards', i * .45), 1.15); return c; });
+    const rep = klText(p, 'цифры могут повторяться', 310, 430, m('rep'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    hide(rep, m('norep'), .3);
+    klText(p, 'цифры не повторяются', 310, 430, m('norep', .3), { size: 28, fill: RULE, weight: 600, anchor: 'middle' });
+    // Empty places for the nine numbers, in order: a row for each first digit.
+    GY.forEach((y, r) => GX.forEach((x, c) => show(put(mk('rect', { x: x - 80, y: y - 52, width: 160, height: 104, rx: 12, fill: 'none', stroke: COL.chalk, 'stroke-width': 2, 'stroke-dasharray': '8 8', 'stroke-opacity': .35 }, p), { o: 0 }), m('ord', (r * 3 + c) * .06), .3)));
+    // Each number is built from the cards: the first digit from card r, the second from card c.
+    const nums = [];
+    const row = (r, ts) => { pulse(cards[r], ts[0] - .4, 1.15); ts.forEach((t, c) => { nums[r * 3 + c] = c39Fly(p, cards[r], cards[c], GX[c], GY[r], t); }); };
+    row(0, [m('n11'), m('n12'), m('n13')]);
+    row(1, [m('n21'), m('n22'), m('n23')]);
+    row(2, [m('r3', .3), m('r3', .7), m('r3', 1.1)]);
+    klRow(p, ['на первое место — ', { m: '3', fill: NUM }, ' варианта'], 110, 560, m('mult'), { size: 30, anchor: 'start' });
+    const second = klRow(p, ['на второе место — ', { m: '3', fill: TWO }, ' варианта'], 110, 620, m('m2'), { size: 30, anchor: 'start' });
+    klText(p, 'с повторами', 880, 712, m('m3'), { size: 28, fill: COL.dim, anchor: 'end' });
+    klRow(p, [{ m: '3', fill: NUM }, { m: ' · ' }, { m: '3', fill: TWO }, { m: ' = ' }, { m: '9', fill: RULE }], 1050, 712, m('m3'), { msize: 64 });
+    // Without repeats 11, 22 and 33 drop out: one variant fewer for the second place in every row.
+    [0, 1, 2].forEach(r => nums[r * 4].forEach(e => c39Pulse(e, m('norep', 1 + r * .4), 1.2, 80 / 70)));
+    ['g1', 'g2', 'g3'].forEach((g, r) => nums[r * 4].forEach(e => tw(e, { o: .18 }, m(g), .5)));
+    hide(second, m('less'), .4);
+    klRow(p, ['на второе место — ', { m: '2', fill: TWO }, ' варианта'], 110, 620, m('less', .3), { size: 30, anchor: 'start' });
+    klText(p, 'без повторов', 880, 812, m('less', 1.5), { size: 28, fill: COL.dim, anchor: 'end' });
+    klRow(p, [{ m: '3', fill: NUM }, { m: ' · ' }, { m: '2', fill: TWO }, { m: ' = ' }, { m: '6', fill: RULE }], 1050, 812, m('less', 1.5), { msize: 64 });
+  }],
+
+  ['zero', 'Ноль не бывает первым', m => {
+    const p = panel(0);
+    klTitle(p, 'Двузначные числа из цифр 0, 1, 2');
+    const SL = [[250, 290], [430, 290]], KX = [210, 330, 450], KY = 640;
+    SL.forEach(([x, y], k) => {
+      mk('rect', { x: x - 70, y: y - 80, width: 140, height: 160, rx: 14, fill: 'none', stroke: k ? TWO : NUM, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p);
+      klText(p, k ? '2-я цифра' : '1-я цифра', x, y + 112, undefined, { size: 24, fill: COL.dim, anchor: 'middle' });
+    });
+    const cards = KX.map((x, i) => { const c = c39Card(p, x, KY, i, .3 + i * .1); pulse(c, m('cards', i * .4), 1.15); return c; });
+    // Zero on the first place: «01» is just 1. The zero is pushed back out.
+    const z = c39Digit(p, 0, KX[0], KY, NUM, { size: 70, o: 0 });
+    show(z, m('first'), .1);
+    tw(z, { x: SL[0][0], y: SL[0][1], s: 1.3 }, m('first'), .7, io);
+    const one = c39Digit(p, 1, KX[1], KY, TWO, { size: 70, o: 0 });
+    show(one, m('bad'), .1);
+    tw(one, { x: SL[1][0], y: SL[1][1], s: 1.3 }, m('bad'), .7, io);
+    const note = klRow(p, [{ m: '01' }, ' — это просто ', { m: '1' }], 340, 510, m('bad', .8), { size: 30, msize: 40, fill: COL.dim });
+    prog(q => put(z, { x: SL[0][0] + Math.sin(q * Math.PI * 6) * (1 - q) * 14 }), m('bad', 1.8), .6, lin);
+    tw(z, { x: KX[0], y: KY, s: 1, o: 0 }, m('bad', 2.6), .7, io);
+    hide(one, m('bad', 2.8), .5);
+    hide(note, m('two', -.3), .4);
+    // Two variants for the first place, all three for the second.
+    tw(cards[0], { o: .3 }, m('two'), .4);
+    [1, 2].forEach(i => pulse(cards[i], m('two', .4 + i * .3), 1.15));
+    klRow(p, [{ m: '2', fill: NUM }, ' варианта'], SL[0][0], 450, m('two', .6), { size: 28, msize: 38 });
+    tw(cards[0], { o: 1 }, m('three'), .4);
+    cards.forEach((c, i) => pulse(c, m('three', .3 + i * .25), 1.15));
+    klRow(p, [{ m: '3', fill: TWO }, ' варианта'], SL[1][0], 450, m('three', .3), { size: 28, msize: 38 });
+    klRow(p, [{ m: '2', fill: NUM }, { m: ' · ' }, { m: '3', fill: TWO }, { m: ' = ' }, { m: '6', fill: RULE }], 1050, 650, m('mult'), { msize: 64 });
+    ['10', '11', '12', '20', '21', '22'].forEach((s, k) => c39Two(p, s, 850 + (k % 3) * 200, k < 3 ? 300 : 440, m('l' + (k + 1))));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    [0, 5, 7].forEach((d, i) => c39Card(p, 640 + i * 160, 250, d, .2 + i * .1));
+    S.q2nums = ['50', '55', '57', '70', '75', '77'].map((s, k) => { const n = c39Two(p, s, 400 + k * 160, 470, undefined, { size: 64 }); put(n.g, { o: 0 }); return n.g; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-nol', prompt: 'Сколько двузначных чисел можно составить из цифр 0, 5 и 7, если цифры могут повторяться?',
+    build: blanks([{ parts: [{ box: '6' }, ' чисел'], why: 'На первое место — только 5 или 7 (2 варианта), на второе — любая из трёх цифр: 2 · 3 = 6.',
+      hint: 'На первое место ноль не ставят: там всего два варианта.',
+      fx: () => S.q2nums.forEach((g, i) => fx(g, { o: 1 }, i * .15, .3)) }]),
+  }], done) }],
+
+  ['order', 'Перестановки', m => {
+    const p = panel(0);
+    klTitle(p, 'Три книги на полке');
+    const SLOT = [230, 370, 510], SY = 520, W = 110;
+    path(p, `M120 ${SY + 2}H620`, { stroke: COL.chalk, 'stroke-width': 6, 'stroke-linecap': 'round' });
+    const books = C39_BOOKS.map(([title, , fill, h], i) => c39Book(p, SLOT[i], SY, W, h, title, fill, m('k' + (i + 1))));
+    // The six orders in turn, listed in order: first the atlas, then the problem book, then the dictionary.
+    const ORDERS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    const times = [m('a'), m('a2'), m('b'), m('b2'), m('c'), m('c2')];
+    let cur = ORDERS[0];
+    ORDERS.forEach((ord, k) => {
+      const t = times[k];
+      ord.forEach((b, pos) => {
+        if (cur.indexOf(b) === pos) return;
+        tw(books[b], { x: SLOT[pos] }, t, .7, io);
+        tw(books[b], { y: SY - 50 }, t, .3, out);
+        tw(books[b], { y: SY }, t + .4, .3, io);
+      });
+      if (k % 2 === 0) pulse(books[ord[0]], t + .1, 1.08);
+      cur = ord;
+      c39Order(p, ord, 930 + (k % 2) * 280, 300 + (k >> 1) * 140, t + .7);
+    });
+    // One fewer for each next place.
+    [['3', 'mult'], ['2', 'm2'], ['1', 'm3']].forEach(([s, mk3], k) => {
+      klMath(p, [s], SLOT[k], 610, m(mk3), { size: 56, fill: RULE });
+      klText(p, `${k + 1}-е место`, SLOT[k], 652, m(mk3), { size: 22, fill: COL.dim, anchor: 'middle' });
+    });
+    klRow(p, [{ m: '3 · 2 · 1 = ' }, { m: '6', fill: RULE }], 370, 770, m('res'), { msize: 64 });
+    klBrace(p, 850, 1430, 740, '6 способов', m('res', .6), { up: false, fill: RULE, size: 34 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3 = ['А', 'Б', 'В', 'Г'].map((s, i) => c39Chip(p, 600 + i * 160, 300, s, .2 + i * .1, { col: COL.real, r: 52, size: 44 }));
+    klArrow(p, 520, 300, 420, 300, 300, COL.dim, .6, .4);
+    klText(p, 'касса', 400, 312, .6, { size: 30, fill: COL.dim, anchor: 'end' });
+    S.q3res = klRow(p, [{ m: '4 · 3 · 2 · 1 = ' }, { m: '24', fill: RULE }], 840, 480, undefined, { msize: 60 });
+    put(S.q3res, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-ochered', prompt: 'Сколькими способами 4 ученика могут встать в очередь?',
+    build: blanks([{ parts: [{ box: '24' }, ' способами'], why: 'Первым может встать любой из четырёх, вторым — любой из трёх оставшихся, и так далее: 4 · 3 · 2 · 1 = 24.',
+      hint: 'На первое место — 4 варианта, на второе — 3, на третье — 2, на четвёртое — 1.',
+      fx: () => { S.q3.forEach((c, i) => { fx(c, { y: 260 }, i * .12, .2, out); fx(c, { y: 300 }, .2 + i * .12, .3); }); fx(S.q3res, { o: 1 }, .5, .4); } }]),
+  }], done) }],
+
+  ['hands', 'Каждый с каждым', m => {
+    const p = panel(0);
+    klTitle(p, 'Каждый с каждым');
+    const PTS = c39Ring(5, 430, 500, 230), R = 42, PAIRS = c39Pairs(5);
+    const lines = PAIRS.map(([i, j]) => c39Link(p, PTS[i], PTS[j], R, { stroke: COL.dim, 'stroke-width': 3, 'stroke-linecap': 'round' }, { d: 0 }));
+    const chips = PTS.map(([x, y], i) => c39Chip(p, x, y, 'АБВГД'[i], .2 + i * .15, { col: COL.real }));
+    chips.forEach((c, i) => pulse(c, m('ask', i * .2), 1.15));
+    // Anya shakes four hands: everyone does.
+    [0, 1, 2, 3].forEach(k => draw(lines[k], m('each', k * .3), .4));
+    pulse(chips[0], m('each'), 1.2);
+    klRow(p, ['каждый пожал руки четверым: ', { m: '4' }], 830, 250, m('each', .6), { size: 30, fill: COL.dim, anchor: 'start' });
+    klMath(p, ['5 · 4 = 20'], 830, 345, m('five'), { size: 64, anchor: 'start' });
+    // Anya with Borya is Borya with Anya: one line, counted from both ends.
+    tw(lines[0], { c_stroke: RULE, 'a_stroke-width': 8 }, m('twice'), .4);
+    [0, 1].forEach(i => pulse(chips[i], m('twice', .3 + i * .4), 1.25));
+    klRow(p, [{ m: 'А–Б' }, '  и  ', { m: 'Б–А' }, ' — одно рукопожатие'], 830, 440, m('twice', .8), { size: 30, msize: 36, anchor: 'start' });
+    klStrike(p, 815, 352, 1125, 300, m('strike'));
+    klText(p, 'ошибка!', 1160, 338, m('strike', .3), { size: 30, fill: COL.bad, weight: 700 });
+    klText(p, 'каждое посчитано дважды', 1160, 380, m('strike', 2), { size: 26, fill: COL.dim });
+    klRow(p, [{ m: '5 · 4 : 2 = ' }, { m: '10', fill: RULE }], 830, 560, m('half'), { msize: 64, anchor: 'start' });
+    // All ten lines, one after another, with a running count.
+    tw(lines[0], { 'a_stroke-width': 3 }, m('count', -.4), .3);
+    klText(p, 'рукопожатий:', 830, 650, m('count'), { size: 30, fill: COL.dim });
+    lines.forEach((e, k) => {
+      const t = m('count', k * .22);
+      if (k > 3) draw(e, t, .25);
+      tw(e, { c_stroke: RULE }, t, .2);
+      const n = put(klText(p, String(k + 1), 1068, 652, undefined, { size: 40, fill: RULE, weight: 700, anchor: 'middle' }), { o: 0 });
+      show(n, t, .1);
+      if (k < 9) hide(n, t + .2, .02);
+    });
+    klText(p, 'капитан и заместитель — порядок важен:', 830, 760, m('order'), { size: 30, fill: COL.chalk });
+    klRow(p, [{ m: '5 · 4 = 20' }, ' способов, делить не нужно'], 830, 830, m('nodiv'), { size: 30, msize: 48, anchor: 'start' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const PTS = c39Ring(6, 800, 300, 185), R = 38;
+    S.q4lines = c39Pairs(6).map(([i, j]) => c39Link(p, PTS[i], PTS[j], R, { stroke: RULE, 'stroke-width': 3, 'stroke-linecap': 'round' }, { d: 0 }));
+    PTS.forEach(([x, y], i) => c39Chip(p, x, y, i + 1, .2 + i * .08, { col: NUM, r: R, size: 36 }));
+    S.q4res = klRow(p, [{ m: '6 · 5 : 2 = ' }, { m: '15', fill: RULE }], 1300, 320, undefined, { msize: 52 });
+    put(S.q4res, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-turnir', prompt: 'В турнире 6 команд, каждая сыграла с каждой по одному разу. Сколько всего было матчей?',
+    build: blanks([{ parts: [{ box: '15' }, ' матчей'], why: 'Каждая команда сыграла 5 матчей: 6 · 5 = 30, но так каждый матч посчитан дважды. 30 : 2 = 15.',
+      hint: 'Каждая команда сыграла с пятью другими. Не забудь: матч команд 1 и 2 — это тот же матч, что 2 и 1.',
+      fx: () => { S.q4lines.forEach((e, i) => fx(e, { d: 1 }, i * .08, .25)); fx(S.q4res, { o: 1 }, 1.3, .4); } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Дерево вариантов: от каждой ветки — все следующие выборы',
+    ['Правило умножения:  ', { m: '3 · 2 = 6' }, '  нарядов'],
+    ['Без повторов — на каждое место на один меньше:  ', { m: '3 · 2 · 1' }],
+    ['Каждый с каждым:  ', { m: '5 · 4 : 2 = 10' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-delit', prompt: 'Отметь, где произведение нужно делить на 2, а где нет.',
+    build: grid([
+      { parts: ['6 команд сыграли каждая с каждой по одному матчу'], ans: ['da'], why: 'Матч команд 1 и 2 — тот же, что 2 и 1: каждый посчитан дважды.' },
+      { parts: ['Из 6 учеников выбирают старосту и его заместителя'], ans: ['net'], why: 'Порядок важен: Аня — староста, а Боря — заместитель, это не то же, что наоборот.' },
+      { parts: ['8 друзей обменялись рукопожатиями'], ans: ['da'], why: 'Рукопожатие Ани с Борей — то же, что Бори с Аней.' },
+      { parts: ['Из цифр 1, 2, 3 составляют двузначные числа без повторов'], ans: ['net'], why: '12 и 21 — разные числа, порядок цифр важен.' },
+    ], [['da', 'делить на 2', null, '1'], ['net', 'не делить', null, '2']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-trehznachnye', prompt: 'Сколько трёхзначных чисел можно составить из цифр 1, 2 и 3, если цифры не повторяются?',
+    build: blanks([{ parts: [{ box: '6' }, ' чисел'], why: 'На первое место — 3 варианта, на второе — 2, на третье — 1: 3 · 2 · 1 = 6.', hint: 'Каждое следующее место — на один вариант меньше.' }]),
+  }, {
+    id: 'p-starosta', prompt: 'В классе 20 учеников. Сколькими способами можно выбрать старосту и его заместителя?',
+    build: blanks([{ parts: [{ box: '380' }, ' способами'], why: 'Старостой — любой из 20, заместителем — любой из 19 оставшихся: 20 · 19 = 380. Порядок важен, делить на 2 не нужно.', hint: 'Заместителем может стать любой, кроме старосты. Здесь порядок важен.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-naryad', prompt: 'У Кати 4 юбки и 5 кофт. Сколько разных нарядов из юбки и кофты она может составить?',
+    build: choice(['9', '20', '25'], 1, 'К каждой из 4 юбок подходит любая из 5 кофт: 4 · 5 = 20.',
+      ['4 + 5 — это число вещей, а не нарядов. Варианты перемножают.', null, 'Юбок 4, а не 5: 4 · 5 = 20.']),
+  }, {
+    id: 'p-matchi', prompt: 'В турнире 4 команды, каждая сыграла с каждой по одному разу. Сколько было матчей?',
+    build: choice(['6', '12', '8'], 0, '4 · 3 = 12, но каждый матч посчитан дважды: 12 : 2 = 6.',
+      [null, 'Матч команд 1 и 2 — это тот же матч, что 2 и 1: раздели на 2.', 'Каждая команда сыграла с тремя другими: 4 · 3 : 2 = 6.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
