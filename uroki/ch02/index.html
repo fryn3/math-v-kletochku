@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Законы арифметики · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.2 «Законы арифметики» (5 класс). Beat ids match papermorph/content/uroki/ch02/narration.ru.json.
+const CHAPTER = { number: 2, label: '1.2', title: 'Законы арифметики', minutes: 8, language: 'ru', next: '../ch03/' };
+
+// Colours in this lesson: the first addend / factor part KL.NUM, the second KL.TWO, cuts KL.DEN, laws KL.RULE.
+const NUM = KL.NUM, TWO = KL.TWO, DEN = KL.DEN, RULE = KL.RULE;
+const THOUSAND = '1 000';
+
+/* ---------- maths on a line ---------- */
+// One line of mathematics in colours: pieces are strings or { m, fill }, baseline at y.
+function c02R(p, pieces, x, y, t0, { size = 60, anchor = 'middle', fill = COL.chalk } = {}) {
+  return klRow(p, pieces.map(s => typeof s === 'string' ? { m: s } : s), x, y, t0, { msize: size, anchor, fill });
+}
+// Segments of one line that appear one after another: [[pieces, t], …] laid out from x. Returns { gs, x1 }.
+function c02Seq(p, segs, x, y, { size = 60, fill } = {}) {
+  let cx = x;
+  const gs = segs.map(([pc, t]) => { const g = c02R(p, [].concat(pc), cx, y, t, { size, anchor: 'start', fill }); cx += g._w; return g; });
+  return { gs, x0: x, x1: cx };
+}
+// A worked line aligned on its first «=» at xEq: L ends left of it (or null), segs start with the «=» itself.
+function c02Eq(p, L, tL, segs, y, xEq, { size = 60, fill } = {}) {
+  const l = L ? c02R(p, L, xEq - size * .5, y, tL, { size, anchor: 'end', fill }) : null;
+  const s = c02Seq(p, segs, xEq - mathW(['='], size) / 2, y, { size, fill });
+  return { l, lx0: xEq - size * .5 - (l ? l._w : 0), ...s };
+}
+
+/* ---------- pictures of products ---------- */
+// A counter (a disc) as a group at (x, y), so it can be moved with tw/prog.
+function c02Disc(p, x, y, r, fill, t0, op = .9) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('circle', { r, fill, 'fill-opacity': op, stroke: COL.board, 'stroke-width': 2 }, g);
+  if (t0 !== undefined) show(g, t0, .3);
+  return g;
+}
+// A rectangle of rows × cols cells (cw × rh each) as a group at (x, y): faint cell lines, a tint in fill (shown unless
+// tint: false) and a chalk frame (shown unless frame: false). Returns { g, tint, frame, w, h, x, y, cw, rh, cc(i, j) }.
+function c02Cells(p, { x, y, rows, cols, cw, rh, fill, t0, tint = true, frame = true, op = .6 }) {
+  rh = rh ?? cw;
+  const w = cols * cw, h = rows * rh;
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('rect', { width: w, height: h, fill: COL.chalk, 'fill-opacity': .07 }, g);
+  const tintEl = put(mk('rect', { width: w, height: h, fill, 'fill-opacity': op }, g), { o: tint ? 1 : 0 });
+  let d = '';
+  for (let i = 1; i < cols; i++) d += `M${i * cw} 0V${h}`;
+  for (let j = 1; j < rows; j++) d += `M0 ${j * rh}H${w}`;
+  if (d) path(g, d, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .4 });
+  const fr = put(mk('rect', { width: w, height: h, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5, rx: 2 }, g), { o: frame ? 1 : 0 });
+  if (t0 !== undefined) show(g, t0);
+  return { g, tint: tintEl, frame: fr, w, h, x, y, cw, rh, cc: (i, j) => [x + (j + .5) * cw, y + (i + .5) * rh] };
+}
+// A plain frame w × h at (x, y), hidden unless o is given.
+function c02Frame(p, x, y, w, h, { o = 0, stroke = COL.chalk, width = 3.5, dash } = {}) {
+  const a = { x, y, width: w, height: h, fill: 'none', stroke, 'stroke-width': width, rx: 2 };
+  if (dash) a['stroke-dasharray'] = dash;
+  return put(mk('rect', a, p), { o });
+}
+// A bracket over (up) or under x1 … x2 at height y with its label, as one group that can fade or move (state x).
+function c02Brace(p, x1, x2, y, label, t0, { up = true, fill = COL.chalk, size = 40 } = {}) {
+  const g = G(p, { o: 0 }), k = up ? 12 : -12;
+  path(g, `M${x1} ${y + k}V${y}H${x2}V${y + k}`, { stroke: fill, 'stroke-width': 3 });
+  T(g, label, { x: (x1 + x2) / 2, y: up ? y - 14 : y + size * .95, size, fill, weight: 600, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// An oval drawn on round a number: rx × ry about (cx, cy).
+function c02Ring(p, cx, cy, rx, ry, col, t0, dur = .45) {
+  const e = path(p, `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`, { stroke: col, 'stroke-width': 4 }, { d: 0 });
+  if (t0 !== undefined) draw(e, t0, dur);
+  return e;
+}
+// A block of dots, rows × cols, spacing s, top-left dot at (x, y): one group per row (rows[i]), all in one group.
+function c02Dots(p, x, y, rows, cols, { s = 30, r = 10, fill = NUM, op = .9, t0 } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  const rs = Array.from({ length: rows }, (_, i) => {
+    const rg = G(g, { x: 0, y: 0 });
+    for (let j = 0; j < cols; j++) mk('circle', { cx: x + j * s, cy: y + i * s, r, fill, 'fill-opacity': op }, rg);
+    return rg;
+  });
+  if (t0 !== undefined) show(g, t0, .4);
+  return { g, rows: rs };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Законы арифметики', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.2',
+    title: 'Законы арифметики',
+    sub: 'Три закона, с которыми считать проще и быстрее',
+    art: (g, t0) => {
+      c02Cells(g, { x: 410, y: 540, rows: 3, cols: 4, cw: 34, fill: NUM, t0 });
+      c02Cells(g, { x: 410 + 4 * 34 + 10, y: 540, rows: 3, cols: 2, cw: 34, fill: TWO, t0: t0 + .15 });
+      c02R(g, ['a · (', { m: 'b', fill: NUM }, ' + ', { m: 'c', fill: TWO }, ') = a · ', { m: 'b', fill: NUM }, ' + a · ', { m: 'c', fill: TWO }], 670, 606, t0 + .3, { size: 46, anchor: 'start' });
+    },
+  })],
+
+  ['swap', 'Переместительный закон', m => {
+    const p = panel(0);
+    klTitle(p, 'Переместительный закон');
+    // Sum: three counters and five counters trade places; the count stays eight.
+    const Y = 400, R = 26, SP = 64, AX = 162, BX = 404;
+    const A = [0, 1, 2].map(i => c02Disc(p, AX + i * SP, Y, R, NUM, .2 + i * .06));
+    const B = [0, 1, 2, 3, 4].map(i => c02Disc(p, BX + i * SP, Y, R, TWO, .35 + i * .06));
+    const lab = (s, x, t, fill) => klText(p, s, x, Y + 110, t, { size: 44, fill, weight: 700, anchor: 'middle' });
+    const la = lab('3', AX + SP, m('add', .3), NUM), lb = lab('5', BX + 2 * SP, m('add', .6), TWO);
+    c02R(p, [{ m: '3', fill: NUM }, ' + ', { m: '5', fill: TWO }, ' = 8'], 410, 660, m('add', 1.4));
+    const t = m('swapadd');
+    hide(la, t, .25); hide(lb, t, .25);
+    B.forEach((d, i) => { const x0 = BX + i * SP, x1 = AX + i * SP; prog(q => put(d, { x: x0 + (x1 - x0) * q, y: Y + Math.sin(Math.PI * q) * 38 }), t + .1 + i * .05, 1, io); });
+    A.forEach((d, i) => { const x0 = AX + i * SP, x1 = AX + 5 * SP + 50 + i * SP; prog(q => put(d, { x: x0 + (x1 - x0) * q, y: Y - Math.sin(Math.PI * q) * 120 }), t + .1 + i * .05, 1, io); });
+    lab('5', AX + 2 * SP, t + 1.3, TWO); lab('3', AX + 6 * SP + 50, t + 1.3, NUM);
+    c02R(p, [{ m: '5', fill: TWO }, ' + ', { m: '3', fill: NUM }, ' = 8'], 410, 740, t + 1.6);
+    c02R(p, ['a + b = b + a'], 410, 840, m('lawadd', .3), { fill: RULE });
+    // Product: three rows of five dots turned a quarter turn become five rows of three.
+    const CX = 1150, CY = 430, DS = 70;
+    const arr = G(p, { x: CX, y: CY, o: 0 });
+    const rowsA = [0, 1, 2].map(i => put(mk('rect', { x: -2.5 * DS + 4, y: (i - 1) * DS - 31, width: 5 * DS - 8, height: 62, rx: 31, fill: 'none', stroke: RULE, 'stroke-width': 3 }, arr), { o: 0 }));
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 5; j++) mk('circle', { cx: (j - 2) * DS, cy: (i - 1) * DS, r: 22, fill: COL.chalk, 'fill-opacity': .85 }, arr);
+    show(arr, m('arr'), .5);
+    rowsA.forEach((e, i) => show(e, m('arr', 1.4 + i * .25), .3));
+    const said1 = klText(p, '3 ряда по 5', CX, 236, m('arr', 1.4), { size: 32, fill: COL.dim, anchor: 'middle' });
+    c02R(p, ['3 · 5 = 15'], CX, 660, m('arr', 2.6));
+    rowsA.forEach(e => hide(e, m('turn', -.3), .3));
+    hide(said1, m('turn', -.3), .3);
+    tw(arr, { r: 90 }, m('turn'), 1.4);
+    const rowsB = G(p, { x: CX, y: CY });
+    [0, 1, 2, 3, 4].forEach(i => { const e = put(mk('rect', { x: -1.5 * DS + 4, y: (i - 2) * DS - 31, width: 3 * DS - 8, height: 62, rx: 31, fill: 'none', stroke: RULE, 'stroke-width': 3 }, rowsB), { o: 0 }); show(e, m('after', .2 + i * .2), .3); });
+    klText(p, '5 рядов по 3', CX, 236, m('after', .4), { size: 32, fill: COL.dim, anchor: 'middle' });
+    c02R(p, ['5 · 3 = 15'], CX, 740, m('after', 2.6));
+    c02R(p, ['a · b = b · a'], CX, 840, m('lawmul', .3), { fill: RULE });
+  }],
+
+  ['group', 'Сочетательный закон', m => {
+    const p = panel(0);
+    klTitle(p, 'Сочетательный закон');
+    // Three heaps of dots: 7, 8 and 2. Only the frame (the brackets) moves; the dots stay, so the total stays.
+    const heap = (n, x0, t) => {
+      const g = G(p, { o: 0 }), top = Math.ceil(n / 2);
+      for (let i = 0; i < n; i++) mk('circle', { cx: x0 + (i < top ? i : i - top) * 40, cy: i < top ? 255 : 300, r: 15, fill: COL.chalk, 'fill-opacity': .85 }, g);
+      show(g, t, .4);
+      return g;
+    };
+    heap(7, 220, .2); heap(8, 480, .3); heap(2, 760, .4);
+    klMath(p, ['+'], 410, 293, .3, { size: 56 }); klMath(p, ['+'], 690, 293, .4, { size: 56 });
+    [['7', 280], ['8', 540], ['2', 760]].forEach(([s, x], i) => klText(p, s, x, 380, m('dots', i * .4), { size: 44, weight: 700, anchor: 'middle' }));
+    const fr = put(mk('rect', { x: 186, y: 222, width: 448, height: 112, rx: 28, fill: 'none', stroke: RULE, 'stroke-width': 4 }, p), { o: 0 });
+    show(fr, m('left'), .4);
+    const s15 = klText(p, '15', 410, 206, m('l15'), { size: 38, fill: RULE, weight: 700, anchor: 'middle' });
+    hide(s15, m('right', -.2), .3);
+    tw(fr, { a_x: 446, a_width: 348 }, m('right'), .9);
+    klText(p, '10', 620, 206, m('r10'), { size: 38, fill: RULE, weight: 700, anchor: 'middle' });
+    const XE = 520;
+    c02Eq(p, ['(7 + 8) + 2'], m('left', .3), [['= 15 + 2', m('l15', .3)], [' = 17', m('l17')]], 490, XE, { size: 54 });
+    c02Eq(p, ['7 + (8 + 2)'], m('right', .3), [['= 7 + 10', m('r10', .3)], [' = 17', m('r17')]], 580, XE, { size: 54 });
+    c02R(p, ['(a + b) + c = a + (b + c)'], 1190, 545, m('law', .3), { size: 52, fill: RULE });
+    c02Eq(p, ['(2 · 5) · 7'], m('m1'), [['= 10 · 7', m('m10')], [' = 70', m('m70')]], 710, XE, { size: 54 });
+    c02Eq(p, ['2 · (5 · 7)'], m('m2'), [['= 2 · 35', m('m35')], [' = 70', m('m70b')]], 800, XE, { size: 54 });
+    c02R(p, ['(a · b) · c = a · (b · c)'], 1190, 765, m('mul', .3), { size: 52, fill: RULE });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const row = tokens(p, ['37', ' + ', '25', ' + ', '75'], { x: 700, y: 330, size: 110, anchor: 'middle', o: 0 });
+    row.forEach((e, i) => show(e, .2 + i * .08));
+    const x0 = row[0]._px, x2 = row[2]._px, x4 = row[4]._px;
+    const br = d => { const e = path(p, d, { stroke: COL.chalk, 'stroke-width': 4, 'stroke-opacity': .75 }, { o: 0 }); show(e, .7); return e; };
+    S.q1 = {
+      b: [br(`M${x0} 372V398H${x2 - 12}V372`), br(`M${x2 + 12} 372V452H${x4}V372`), br(`M${x0} 240V200H${x4}V240`)],
+      boxes: [[x0 - 34, 360, x2 - 12 - x0 + 68, 50], [x2 + 12 - 34, 414, x4 - x2 - 12 + 68, 56], [x0 - 34, 180, x4 - x0 + 68, 70]],
+      sum: klText(p, '100', (x2 + x4) / 2 + 6, 510, undefined, { size: 44, fill: RULE, weight: 700, anchor: 'middle' }),
+      ans: c02R(p, [' = 37 + 100 = 137'], row.x + row.w / 2 + 10, 330, undefined, { size: 64, anchor: 'start' }),
+    };
+    put(S.q1.sum, { o: 0 }); put(S.q1.ans, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-gruppa', prompt: 'Какие два числа удобно сложить первыми? Нажми на их скобку.',
+    build: pickEls(S.q1.b.map((e, i) => ({ el: e, box: S.q1.boxes[i], label: ['37 и 25', '25 и 75', '37 и 75'][i] })), 1,
+      '25 + 75 = 100, а 37 + 100 = 137. Сочетательный закон разрешает сложить их первыми.',
+      i => i === 0 ? '37 + 25 = 62 — не круглое число. Поищи пару, которая даёт ровно сто.' : '37 + 75 = 112 — считать дальше неудобно. Какие два числа дают ровно сто?',
+      () => { fx(S.q1.b[1], { c_stroke: RULE, 'a_stroke-width': 6 }, 0, .3); fx(S.q1.sum, { o: 1 }, .2, .4); fx(S.q1.ans, { o: 1 }, .6, .5); }),
+  }], done) }],
+
+  ['convenient', 'Удобный способ', m => {
+    const p = panel(0);
+    klTitle(p, 'Удобный способ счёта');
+    const Y = 330;
+    const row = tokens(p, [{ t: '25', fill: NUM }, ' · ', '7', ' · ', { t: '4', fill: NUM }], { x: 420, y: Y, size: 96, anchor: 'middle', o: 0 });
+    row.forEach((e, i) => show(e, .2 + i * .1));
+    // 7 and 4 trade places: 7 over the top, 4 underneath.
+    const x7 = row[2]._px, x4 = row[4]._px, t = m('swap', 1.2);
+    prog(q => put(row[2], { x: x7 + (x4 - x7) * q, y: Y - Math.sin(Math.PI * q) * 110 }), t, 1.1, io);
+    prog(q => put(row[4], { x: x4 + (x7 - x4) * q, y: Y + Math.sin(Math.PI * q) * 80 }), t, 1.1, io);
+    const arcs = [path(p, `M${x7} ${Y - 90}Q${(x7 + x4) / 2} ${Y - 220} ${x4} ${Y - 90}`, { stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '7 7' }, { o: 0 }),
+      path(p, `M${x4} ${Y + 30}Q${(x7 + x4) / 2} ${Y + 150} ${x7} ${Y + 30}`, { stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '7 7' }, { o: 0 })];
+    arcs.forEach(e => { show(e, t - .3, .3); hide(e, t + 1.3, .4); });
+    row[2]._px = x4; row[4]._px = x7;
+    const row2 = Object.assign([row[0], row[1], row[4], row[3], row[2]], { w: row.w, x: row.x, y: row.y, size: row.size, anchor: row.anchor });
+    // 25 and 4 side by side: a frame round them, then they collapse into 100.
+    const L = row2[0]._px - row2[0]._w / 2 - 12, Rr = row2[2]._px + row2[2]._w / 2 + 12;
+    const box = put(mk('rect', { x: L, y: Y - 92, width: Rr - L, height: 124, rx: 14, fill: 'none', stroke: NUM, 'stroke-width': 4 }, p), { o: 0 });
+    show(box, m('pair'), .4); hide(box, m('sto', -.1), .2);
+    const row3 = collapse(row2, 0, 2, ['100'], m('sto', -.1), { color: RULE, fill: NUM });
+    const last = row3[row3.length - 1];
+    c02R(p, [' = 700'], last._px + last._w / 2 + 8, Y, m('res', .9), { size: 96, anchor: 'start' });
+    c02R(p, ['25 · 7 · 4 = (25 · 4) · 7 = 100 · 7 = 700'], 470, 500, m('res', 2), { size: 42, fill: COL.dim });
+    // The hundred square: four blocks of 25 cells.
+    const H = klHundred(p, { x: 1040, y: 190, c: 40, t0: m('hund', -.4) });
+    path(H.top, `M1240 190V590M1040 390H1440`, { stroke: COL.chalk, 'stroke-width': 4 });
+    [[0, 0], [0, 5], [5, 0], [5, 5]].forEach(([i, j], k) => {
+      show(H.cell(i, j, 5, 5, NUM), m('hund', .2 + k * .3), .3);
+      klText(p, '25', 1040 + j * 40 + 100, 190 + i * 40 + 114, m('hund', .3 + k * .3), { size: 44, fill: COL.board, weight: 700, anchor: 'middle' });
+    });
+    const sqFrame = c02Frame(p, 1040, 190, 400, 400, { stroke: RULE, width: 7 });
+    show(sqFrame, m('sq'), .3);
+    c02R(p, ['4 · 25 = 100'], 1240, 668, m('sq', .3), { size: 52 });
+    [['2 · 5 = 10', 300, 'p1'], ['4 · 25 = 100', 800, 'p2'], ['8 · 125 = ' + THOUSAND, 1300, 'p3']].forEach(([s, x, k]) => c02R(p, [s], x, 810, m(k), { size: 52, fill: RULE }));
+  }],
+
+  ['distrib', 'Распределительный закон', m => {
+    const p = panel(0);
+    klTitle(p, 'Распределительный закон');
+    const X = 150, Y = 300, C = 80, GAP = 70;
+    const L = c02Cells(p, { x: X, y: Y, rows: 3, cols: 4, cw: C, fill: NUM, tint: false, frame: false, t0: .2, op: .75 });
+    const Rr = c02Cells(p, { x: X + 4 * C, y: Y, rows: 3, cols: 2, cw: C, fill: TWO, tint: false, frame: false, t0: .2, op: .75 });
+    // While whole, the seam is an ordinary cell line and one frame goes round all of it.
+    const seam = path(p, `M${X + 4 * C} ${Y}V${Y + 3 * C}`, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .4 }, { o: 0 });
+    show(seam, .2);
+    const whole = c02Frame(p, X, Y, 6 * C, 3 * C, { o: 0 });
+    show(whole, .2);
+    klText(p, '3', X - 40, Y + 1.5 * C + 16, m('rect', .5), { size: 44, weight: 700, anchor: 'middle' });
+    const b6 = c02Brace(p, X, X + 6 * C, Y - 24, '6', m('rect', 1.2));
+    c02Eq(p, ['3 · 6'], m('whole'), [['= 18', m('w18')]], 380, 1100, { size: 56 });
+    // Six is four and two: the parts take their colours, a cut runs along the seam and the right part slides away.
+    hide(b6, m('split'), .3);
+    show(L.tint, m('split', .3), .4); show(Rr.tint, m('split', .9), .4);
+    c02Brace(p, X, X + 4 * C, Y - 24, '4', m('split', .3), { fill: NUM });
+    const b2 = c02Brace(p, X + 4 * C, X + 6 * C, Y - 24, '2', m('split', .9), { fill: TWO });
+    c02Eq(p, ['3 · (', { m: '4', fill: NUM }, ' + ', { m: '2', fill: TWO }, ')'], m('split', 1.2), [], 490, 1100, { size: 56 });
+    const cut = path(p, `M${X + 4 * C} ${Y - 14}V${Y + 3 * C + 14}`, { stroke: DEN, 'stroke-width': 5 }, { d: 0 });
+    draw(cut, m('apart'), .5);
+    hide(cut, m('apart', 1), .3); hide(whole, m('apart', .6), .3); hide(seam, m('apart', .6), .3);
+    show(L.frame, m('apart', .6), .3); show(Rr.frame, m('apart', .6), .3);
+    tw(Rr.g, { x: X + 4 * C + GAP }, m('apart', .7), .8);
+    tw(b2, { x: GAP }, m('apart', .7), .8);
+    const cells = (A, rows, cols, dx) => Array.from({ length: rows * cols }, (_, k) => { const [cx, cy] = A.cc(Math.floor(k / cols), k % cols); return [cx + dx, cy + 13]; });
+    klCount(p, cells(L, 3, 4, 0), m('left', .3), { step: .08, size: 34, fill: COL.board });
+    c02R(p, ['3 · ', { m: '4', fill: NUM }, ' = 12'], X + 2 * C, Y + 3 * C + 90, m('left', .9), { size: 52 });
+    klCount(p, cells(Rr, 3, 2, GAP), m('right', .3), { step: .1, size: 34, fill: COL.board });
+    c02R(p, ['3 · ', { m: '2', fill: TWO }, ' = 6'], X + 5 * C + GAP, Y + 3 * C + 90, m('right', .9), { size: 52 });
+    c02Seq(p, [[['= 3 · ', { m: '4', fill: NUM }], m('left', .9)], [[' + 3 · ', { m: '2', fill: TWO }], m('right', .9)]], 1100 - mathW(['='], 56) / 2, 490, { size: 56 });
+    c02Eq(p, null, 0, [['= 12 + 6', m('sum')], [' = 18', m('sum', 1)]], 600, 1100, { size: 56 });
+    c02R(p, ['a · (', { m: 'b', fill: NUM }, ' + ', { m: 'c', fill: TWO }, ') = a · ', { m: 'b', fill: NUM }, ' + a · ', { m: 'c', fill: TWO }], 1110, 760, m('law'), { size: 58, fill: RULE });
+    klText(p, 'множитель — на каждое слагаемое', 1110, 830, m('law', 1.5), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = 56, X = 576, Y = 180;
+    S.q2L = c02Cells(p, { x: X, y: Y, rows: 4, cols: 5, cw: C, fill: NUM, t0: .2, op: .75 });
+    S.q2R = c02Cells(p, { x: X + 5 * C, y: Y, rows: 4, cols: 3, cw: C, fill: TWO, t0: .2, op: .75 });
+    klText(p, '4', X - 34, Y + 2 * C + 15, .4, { size: 42, weight: 700, anchor: 'middle' });
+    c02Brace(p, X, X + 5 * C, Y - 22, '5', .5, { fill: NUM });
+    S.q2b = c02Brace(p, X + 5 * C, X + 8 * C, Y - 22, '3', .6, { fill: TWO });
+    S.q2n = [c02R(p, ['4 · ', { m: '5', fill: NUM }, ' = 20'], X + 2.5 * C, Y + 4 * C + 80, undefined, { size: 46 }),
+      c02R(p, ['4 · ', { m: '3', fill: TWO }, ' = 12'], X + 6.5 * C + 50, Y + 4 * C + 80, undefined, { size: 46 })];
+    S.q2n.forEach(e => put(e, { o: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-chasti', prompt: 'Сколько клеток в прямоугольнике? Посчитай по частям.',
+    build: blanks([{ parts: ['4 · 5 + 4 · 3 = ', { box: '20' }, ' + ', { box: '12' }],
+      why: 'Слева 4 · 5 = 20 клеток, справа 4 · 3 = 12.',
+      hint: 'Умножь 4 на каждое слагаемое: 4 · 5 и 4 · 3.' },
+    { parts: ['4 · (5 + 3) = ', { box: '32' }],
+      why: '20 + 12 = 32. Проверка: 4 · 8 = 32.',
+      hint: 'Сложи две части: 20 + 12.',
+      fx: () => { fx(S.q2R.g, { x: 576 + 5 * 56 + 50 }, 0, .6); fx(S.q2b, { x: 50 }, 0, .6); S.q2n.forEach((e, i) => fx(e, { o: 1 }, .5 + i * .3, .4)); } }]),
+  }], done) }],
+
+  ['parts', 'Умножение по частям', m => {
+    const p = panel(0);
+    klTitle(p, 'Умножаем по частям');
+    // To scale: 9 px per unit across, the rows as bands. 8 × 102 = 8 × 100 + 8 × 2.
+    const X = 120, K = 9, RH = 18.75, Y1 = 220, Y2 = 565;
+    const big = c02Cells(p, { x: X, y: Y1, rows: 8, cols: 1, cw: 100 * K, rh: RH, fill: NUM, tint: false, frame: false, t0: .2, op: .45 });
+    const sl = c02Cells(p, { x: X + 100 * K, y: Y1, rows: 8, cols: 1, cw: 2 * K, rh: RH, fill: TWO, tint: false, frame: false, t0: .2, op: .9 });
+    const whole1 = c02Frame(p, X, Y1, 102 * K, 8 * RH, { o: 0 }); show(whole1, .2);
+    klText(p, '8', X - 34, Y1 + 4 * RH + 15, m('ex'), { size: 42, weight: 700, anchor: 'middle' });
+    const b102 = c02Brace(p, X, X + 102 * K, Y1 - 24, '102', m('ex', .3));
+    hide(b102, m('cut'), .3);
+    c02Brace(p, X, X + 100 * K, Y1 - 24, '100', m('cut', .3), { fill: NUM });
+    show(big.tint, m('cut', .3), .4); show(sl.tint, m('cut', 1), .4);
+    const cut1 = path(p, `M${X + 100 * K} ${Y1 - 12}V${Y1 + 8 * RH + 12}`, { stroke: DEN, 'stroke-width': 4 }, { d: 0 });
+    draw(cut1, m('cut', .8), .4); hide(cut1, m('cut', 1.5), .3);
+    hide(whole1, m('cut', 1.3), .3); show(big.frame, m('cut', 1.3), .3); show(sl.frame, m('cut', 1.3), .3);
+    tw(sl.g, { x: X + 100 * K + 50 }, m('cut', 1.4), .7);
+    klText(p, '2', X + 100 * K + 50 + K, Y1 - 18, m('cut', 2), { size: 40, fill: TWO, weight: 600, anchor: 'middle' });
+    c02R(p, ['8 · 100 = 800'], X + 50 * K, Y1 + 4 * RH + 18, m('two'), { size: 52 });
+    c02R(p, ['8 · ', { m: '2', fill: TWO }, ' = 16'], X + 102 * K + 90, Y1 + 4 * RH + 18, m('two2'), { size: 52, anchor: 'start' });
+    c02R(p, ['8 · 102 = ', { m: '800', fill: NUM }, ' + ', { m: '16', fill: TWO }, ' = 816'], X + 51 * K, 450, m('sum'), { size: 54 });
+    // 6 × 99: the hundredth column is the one too many, and it is taken away.
+    const b99 = c02Cells(p, { x: X, y: Y2, rows: 6, cols: 1, cw: 99 * K, rh: RH, fill: NUM, t0: m('ex2', -.3), op: .45 });
+    klText(p, '6', X - 34, Y2 + 3 * RH + 15, m('ex2'), { size: 42, weight: 700, anchor: 'middle' });
+    const br99 = c02Brace(p, X, X + 99 * K, Y2 - 24, '99', m('ex2', .3));
+    const one = G(p, { x: X + 99 * K, y: Y2, o: 0 });
+    mk('rect', { width: K, height: 6 * RH, fill: COL.bad, 'fill-opacity': .7 }, one);
+    mk('rect', { width: K, height: 6 * RH, fill: 'none', stroke: COL.bad, 'stroke-width': 2.5, 'stroke-dasharray': '6 5' }, one);
+    show(one, m('minus', .4), .4);
+    hide(br99, m('minus', .3), .3);
+    c02Brace(p, X, X + 100 * K, Y2 - 24, '100', m('minus', .5));
+    T(one, '1', { x: K / 2, y: 6 * RH + 40, size: 34, fill: COL.bad, weight: 700, anchor: 'middle' });
+    c02R(p, ['6 · 100 = 600'], X + 50 * K, Y2 + 3 * RH + 18, m('take'), { size: 52 });
+    tw(one, { x: X + 100 * K + 50 }, m('off'), .7);
+    tw(one, { o: .45 }, m('off', .8), .4);
+    c02R(p, ['− 6 · 1 = 6'], X + 100 * K + 90, Y2 + 3 * RH + 18, m('off', .5), { size: 52, anchor: 'start', fill: COL.bad });
+    c02R(p, ['6 · 99 = ', { m: '600', fill: NUM }, ' − ', { m: '6', fill: COL.bad }, ' = 594'], X + 51 * K, 800, m('res'), { size: 54 });
+    klMark(p, X + 51 * K + 330, 782, m('res', 1.2), true, .8);
+  }],
+
+  ['factor', 'Общий множитель', m => {
+    const p = panel(0);
+    klTitle(p, 'Общий множитель — за скобки');
+    const C = 22, Y = 270, AX = 230, BX = 450, H = 17 * C;
+    const A = c02Cells(p, { x: AX, y: Y, rows: 17, cols: 6, cw: C, fill: NUM, t0: .2, op: .55 });
+    const B = c02Cells(p, { x: BX, y: Y, rows: 17, cols: 4, cw: C, fill: TWO, t0: .3, op: .55 });
+    const l17a = klText(p, '17', AX - 14, Y + H / 2 + 14, .4, { size: 40, weight: 700, anchor: 'end' });
+    const l17b = klText(p, '17', BX - 12, Y + H / 2 + 14, .5, { size: 40, weight: 700, anchor: 'end' });
+    klText(p, '6', AX + 3 * C, Y - 18, .4, { size: 40, fill: NUM, weight: 700, anchor: 'middle' });
+    const l4 = klText(p, '4', BX + 2 * C, Y - 18, .5, { size: 40, fill: TWO, weight: 700, anchor: 'middle' });
+    const XE = 1060, SZ = 60;
+    const line1 = c02Eq(p, ['17 · ', { m: '6', fill: NUM }, ' + 17 · ', { m: '4', fill: TWO }], m('ex'), [], 360, XE, { size: SZ });
+    // The common factor: both 17s on the picture and in the line.
+    [l17a, l17b].forEach(e => { tw(e, { c_fill: RULE }, m('same'), .3); pulse(e, m('same', .1), 1.3); });
+    const w17 = mathW(['17'], SZ);
+    c02Ring(p, line1.lx0 + w17 / 2, 360 - SZ * .33, w17 / 2 + 14, SZ * .55, RULE, m('same', .3));
+    c02Ring(p, line1.lx0 + mathW(['17 · 6 + '], SZ) + w17 / 2, 360 - SZ * .33, w17 / 2 + 14, SZ * .55, RULE, m('same', .6));
+    // The two rectangles share their height 17: they slide together into one, 17 by 10.
+    tw(B.g, { x: AX + 6 * C }, m('join'), .9);
+    tw(l4, { x: AX + 8 * C }, m('join'), .9);
+    hide(l17b, m('join'), .3);
+    const both = c02Frame(p, AX, Y, 10 * C, H, { stroke: RULE, width: 6 });
+    show(both, m('one'), .3);
+    c02Brace(p, AX, AX + 10 * C, Y - 66, '10', m('ten'), { fill: RULE });
+    c02Eq(p, null, 0, [[['= 17 · (', { m: '6', fill: NUM }, ' + ', { m: '4', fill: TWO }, ')'], m('sum6')]], 470, XE, { size: SZ });
+    c02Eq(p, null, 0, [['= 17 · 10', m('ten')], [' = 170', m('res')]], 580, XE, { size: SZ });
+    klText(p, 'общий множитель выносят за скобки', XE, 720, m('name'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    c02R(p, ['a · ', { m: 'b', fill: NUM }, ' + a · ', { m: 'c', fill: TWO }, ' = a · (', { m: 'b', fill: NUM }, ' + ', { m: 'c', fill: TWO }, ')'], XE, 810, m('name', .8), { size: 56, fill: RULE });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = 18, Y = 180, AX = 640, BX = 850, H = 13 * C;
+    c02Cells(p, { x: AX, y: Y, rows: 13, cols: 8, cw: C, fill: NUM, t0: .2, op: .55 });
+    S.q3B = c02Cells(p, { x: BX, y: Y, rows: 13, cols: 2, cw: C, fill: TWO, t0: .3, op: .55 });
+    klText(p, '13', AX - 12, Y + H / 2 + 13, .4, { size: 36, weight: 700, anchor: 'end' });
+    S.q3l13 = klText(p, '13', BX - 10, Y + H / 2 + 13, .5, { size: 36, weight: 700, anchor: 'end' });
+    klText(p, '8', AX + 4 * C, Y - 16, .4, { size: 36, fill: NUM, weight: 700, anchor: 'middle' });
+    S.q3l2 = klText(p, '2', BX + C, Y - 16, .5, { size: 36, fill: TWO, weight: 700, anchor: 'middle' });
+    S.q3ten = c02Brace(p, AX, AX + 10 * C, Y - 60, '10', undefined, { fill: RULE, size: 36 });
+    S.q3x = [AX, C];
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-vynos', prompt: 'Вынеси общий множитель за скобки и вычисли.',
+    build: blanks([{ parts: ['13 · 8 + 13 · 2 = 13 · ', { box: '10' }, ' = ', { box: '130' }],
+      why: '13 · (8 + 2) = 13 · 10 = 130: прямоугольники одной высоты складываются в один.',
+      hint: 'Общий множитель — 13. Сложи то, на что он умножается: 8 + 2.',
+      fx: () => { const [AX, C] = S.q3x; fx(S.q3B.g, { x: AX + 8 * C }, 0, .7); fx(S.q3l2, { x: AX + 9 * C }, 0, .7); fx(S.q3l13, { o: 0 }, 0, .3); fx(S.q3ten, { o: 1 }, .7, .4); } }]),
+  }], done) }],
+
+  ['zero', 'Ноль и единица', m => {
+    const p = panel(0);
+    klTitle(p, 'Ноль и единица');
+    // 4 · 3, 4 · 2, 4 · 1, 4 · 0: rows of four dots taken away one by one.
+    const D = c02Dots(p, 200, 290, 3, 4, { s: 80, r: 24, fill: COL.chalk, op: .85, t0: .2 });
+    const labs = [['4 · 3 = 12', m('rows', .6), m('r2')], ['4 · 2 = 8', m('r2', .9), m('r1')], ['4 · 1 = 4', m('r1', .9), m('r0')], ['4 · 0 = 0', m('z0', .3)]];
+    labs.forEach(([s, a, b]) => { const e = c02R(p, [s], 320, 620, a, { size: 60 }); if (b !== undefined) hide(e, b, .3); });
+    [['r2', 2], ['r1', 1], ['r0', 0]].forEach(([k, i]) => tw(D.rows[i], { y: 50, o: 0 }, m(k, .1), .6));
+    const empty = c02Frame(p, 156, 246, 328, 248, { stroke: COL.dim, width: 2.5, dash: '10 9' });
+    show(empty, m('r0', 1), .4);
+    klText(p, 'нет рядов — нет точек', 320, 380, m('r0', 1.4), { size: 28, fill: COL.dim, anchor: 'middle' });
+    c02R(p, ['a · 1 = a'], 780, 300, m('u1'), { size: 60, anchor: 'start', fill: RULE });
+    c02R(p, ['a · 0 = 0'], 780, 390, m('z0', .3), { size: 60, anchor: 'start', fill: RULE });
+    c02R(p, ['a + 0 = a'], 780, 480, m('plus', .3), { size: 60, anchor: 'start', fill: RULE });
+    // Dividing by zero: 7 : 0 would be a number that times 0 gives 7, and there is none.
+    const q7 = c02R(p, ['7 : 0 = ?'], 780, 600, m('div'), { size: 60, anchor: 'start' });
+    c02R(p, ['? · 0 = 7'], 780, 690, m('back'), { size: 60, anchor: 'start' });
+    [['1 · 0 = 0', 780], ['5 · 0 = 0', 1010], ['100 · 0 = 0', 1240]].forEach(([s, x], i) => c02R(p, [s], x, 770, m('never', i * .45), { size: 44, anchor: 'start', fill: COL.dim }));
+    klStrike(p, 768, 612, 790 + q7._w, 556, m('never', 1.6));
+    klText(p, 'не имеет смысла', 820 + q7._w, 592, m('never', 1.8), { size: 32, fill: COL.bad, weight: 700 });
+    const z = c02R(p, ['0 : 7 = 0'], 780, 860, m('zero7', .4), { size: 56, anchor: 'start' });
+    klMark(p, 820 + z._w, 842, m('zero7', 1.4), true, .8);
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const XE = 600, SZ = 60;
+    const ok = c02Eq(p, ['2 · (3 + 5)'], m('ok'), [['= 2 · 3 + 2 · 5', m('ok', .9)]], 260, XE, { size: SZ });
+    klMark(p, ok.x1 + 50, 240, m('ok', 1.8), true, .9);
+    const bad = c02Eq(p, ['2 · (3 · 5)'], m('bad'), [['= 2 · 3 · 2 · 5', m('bad', .8)]], 390, XE, { size: SZ, fill: COL.dim });
+    klStrike(p, bad.lx0 - 14, 404, bad.x1 + 14, 350, m('strike', -.5));
+    const w2 = mathW(['2'], SZ), sx = bad.x0;
+    c02Ring(p, sx + mathW(['= '], SZ) + w2 / 2, 390 - SZ * .33, w2 / 2 + 12, SZ * .5, COL.bad, m('strike', .3));
+    c02Ring(p, sx + mathW(['= 2 · 3 · '], SZ) + w2 / 2, 390 - SZ * .33, w2 / 2 + 12, SZ * .5, COL.bad, m('strike', .6));
+    klText(p, 'ошибка!', bad.x1 + 40, 380, m('strike', .9), { size: 32, fill: COL.bad, weight: 700 });
+    const right = c02Eq(p, ['2 · (3 · 5)'], m('right'), [['= 2 · 15', m('r15')], [' = 30', m('r30')]], 520, XE, { size: SZ });
+    klMark(p, right.x1 + 50, 500, m('r30', .6), true, .9);
+    // Two groups of fifteen (right) against the four groups the wrong line would make.
+    const group = (x, t, fill, op) => c02Dots(p, x, 640, 3, 5, { s: 30, r: 10, fill, op, t0: t });
+    group(170, m('pic'), NUM, .9); group(370, m('pic', .4), NUM, .9);
+    c02R(p, ['2 · 15 = 30'], 330, 790, m('pic', .9), { size: 50 });
+    [0, 1, 2, 3].forEach(k => group(820 + k * 170, m('ghost', k * .3), COL.chalk, .35));
+    c02R(p, ['2 · 3 · 2 · 5 = 60'], 1145, 790, m('ghost', 1.2), { size: 50, fill: COL.dim });
+    klStrike(p, 800, 820, 1490, 620, m('ghost', 2.2));
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const P = [[440, 250], [1160, 250], [440, 420], [1160, 420]];
+    const eqs = ['8 · 0 = 0', '3 · (4 + 5) = 3 · 4 + 3 · 5', '2 · (4 · 5) = 2 · 4 · 2 · 5', '17 + 0 = 17'];
+    S.q4 = eqs.map((s, i) => klMath(p, [s], P[i][0], P[i][1], .2 + i * .15, { size: 54 }));
+    S.q4box = P.map(([x, y]) => [x - 340, y - 62, 680, 92]);
+    S.q4strike = path(p, `M${P[2][0] - 320} ${P[2][1] + 4}L${P[2][0] + 320} ${P[2][1] - 44}`, { stroke: COL.bad, 'stroke-width': 7 }, { d: 0 });
+    S.q4note = klText(p, '2 · 20 = 40, а не 80', P[2][0], P[2][1] + 80, undefined, { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    put(S.q4note, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-nevernoe', prompt: 'Какое равенство неверное? Нажми на него.',
+    build: pickEls(S.q4.map((e, i) => ({ el: e, box: S.q4box[i], label: ['8 · 0 = 0', '3 · (4 + 5)', '2 · (4 · 5)', '17 + 0 = 17'][i] })), 2,
+      '2 · (4 · 5) = 2 · 20 = 40, а 2 · 4 · 2 · 5 = 80. В скобках произведение: двойку нельзя умножать на каждый множитель.',
+      i => ['8 · 0 = 0 — верно: любое число, умноженное на ноль, даёт ноль.',
+        'Это распределительный закон: 3 умножаем на каждое слагаемое. Верно: 27 = 12 + 15.', null,
+        'Прибавить ноль — ничего не изменить: 17 + 0 = 17. Верно.'][i],
+      () => { fx(S.q4strike, { d: 1 }, 0, .4); fx(S.q4note, { o: 1 }, .4, .4); }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Переставлять можно:  ', { m: 'a + b = b + a,   a · b = b · a' }],
+    ['Группировать можно:  ', { m: '(a + b) + c = a + (b + c)' }],
+    ['Распределительный:  ', { m: 'a · (b + c) = a · b + a · c' }],
+    [{ m: 'a · 1 = a,   a · 0 = 0' }, ',   на ноль делить нельзя'],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-udobno', prompt: 'Вычисли удобным способом.',
+    build: blanks([
+      { parts: ['4 · 37 · 25 = ', { box: '3700' }], why: '4 · 25 = 100, а 100 · 37 = 3 700.', hint: 'Сначала перемножь 4 и 25.' },
+      { parts: ['2 · 19 · 50 = ', { box: '1900' }], why: '2 · 50 = 100, а 100 · 19 = 1 900.', hint: 'Какие два множителя дают 100?' },
+      { parts: ['46 + 17 + 54 = ', { box: '117' }], why: '46 + 54 = 100, а 100 + 17 = 117.', hint: 'Сложи сначала те числа, что дают круглое.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-chasti', prompt: 'Умножь по частям.',
+    build: blanks([
+      { parts: ['15 · 102 = ', { box: '1530' }], why: '15 · 100 + 15 · 2 = 1 500 + 30 = 1 530.', hint: '102 = 100 + 2.' },
+      { parts: ['7 · 99 = ', { box: '693' }], why: '7 · 100 − 7 · 1 = 700 − 7 = 693.', hint: '99 = 100 − 1.' },
+    ]),
+  }, {
+    id: 'p-vynos', prompt: 'Вынеси общий множитель за скобки.',
+    build: blanks([
+      { parts: ['23 · 7 + 23 · 3 = ', { box: '230' }], why: '23 · (7 + 3) = 23 · 10 = 230.', hint: 'Общий множитель — 23.' },
+      { parts: ['48 · 5 + 52 · 5 = ', { box: '500' }], why: '(48 + 52) · 5 = 100 · 5 = 500.', hint: 'Общий множитель — 5, он стоит справа.' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-zakon', prompt: 'Какой закон здесь применили?',
+    build: grid([
+      { parts: ['25 · 4 = 4 · 25'], ans: ['per'], why: 'Множители поменяли местами.' },
+      { parts: ['(17 + 9) + 1 = 17 + (9 + 1)'], ans: ['soch'], why: 'Числа те же и стоят на тех же местах, переставили только скобки.' },
+      { parts: ['6 · (10 + 3) = 6 · 10 + 6 · 3'], ans: ['rasp'], why: '6 умножили на каждое слагаемое в скобках.' },
+      { parts: ['9 + 36 = 36 + 9'], ans: ['per'], why: 'Слагаемые поменяли местами.' },
+    ], [['per', 'переместительный', null, '1'], ['soch', 'сочетательный', null, '2'], ['rasp', 'распределительный', null, '3']], { multi: false }),
+  }, {
+    id: 'p-nol', prompt: 'Чему равны 0 : 9 и 9 : 0?',
+    build: choice(['оба равны 0', '0 : 9 = 0, а 9 : 0 не имеет смысла', '0 : 9 = 9, а 9 : 0 = 0'], 1,
+      'Ноль на что угодно (кроме нуля) — ноль. А на ноль делить нельзя: никакое число, умноженное на 0, не даст 9.',
+      ['9 : 0 = 0 означало бы 0 · 0 = 9, а это неверно.', null, 'Ноль, разделённый на 9, — это ноль: 0 · 9 = 0. А на ноль делить нельзя.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

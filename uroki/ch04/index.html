@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Деление с остатком · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.4 «Деление с остатком» (5 класс). Beat ids match papermorph/content/uroki/ch04/narration.ru.json.
+const CHAPTER = { number: 4, label: '1.4', title: 'Деление с остатком', minutes: 6, language: 'ru', next: '../ch05/' };
+
+// Meanings in this lesson: the divisor and the boxes — KL.DEN; the quotient and the full rounds — KL.WHOLE;
+// the remainder — KL.NUM (as in 3.1, where the quotient becomes the whole part and the remainder the numerator).
+const NUM = KL.NUM, DEN = KL.DEN, WHOLE = KL.WHOLE, RULE = KL.RULE;
+const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const DAY_NAMES = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
+
+/* ---------- sweets and boxes ---------- */
+// A wrapped sweet centred on its own origin: a round body and two twisted ends, one path so one fill recolours it.
+const C04_SWEET = 'M-15 0A15 15 0 1 1 15 0A15 15 0 1 1 -15 0ZM-12 -5L-27 -13L-27 13L-12 5ZM12 -5L27 -13L27 13L12 5Z';
+function c04Sweet(p, x, y, s = 1, t0, fill = COL.chalk) {
+  const g = G(p, { x, y, s, o: t0 === undefined ? 1 : 0 });
+  g._b = path(g, C04_SWEET, { fill, 'fill-opacity': .92, stroke: COL.board, 'stroke-width': 2, 'stroke-linejoin': 'round' });
+  if (t0 !== undefined) show(g, t0, .3);
+  return g;
+}
+// An open box (a U in the divisor's colour) with its top-left corner at (x, y).
+function c04Box(p, x, y, w, h, t0) {
+  const e = path(p, `M${x} ${y}V${y + h}H${x + w}V${y}`, { stroke: DEN, 'stroke-width': 4, fill: DEN, 'fill-opacity': .06, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, { o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) show(e, t0);
+  return e;
+}
+// n sweets in a pile (pileAt(i) gives sweet i's place) and b boxes in a row from (bx, by), each bw × bh, gap apart.
+// Dealing goes round by round: round k puts one sweet in every box, in row k from the bottom (rows rg apart), taking the
+// sweets from the end of the pile, so what stays in the pile is sweets 0, 1, … ; pre rounds are dealt before the beat.
+// Returns { boxes, sweets, boxX(j), rowY(k), deal(k, t, { per, dur, move }) → end time, left(k) → the sweets still in
+// the pile after k rounds }. move is tw on the lesson clock, or fx for an answer effect.
+function c04Deal(p, { n, b, pileAt, bx, by, bw, bh, gap, rg, s = 1, t0, pre = 0 }) {
+  const boxX = j => bx + j * (bw + gap) + bw / 2, rowY = k => by + bh - 30 * s - k * rg;
+  const boxes = Array.from({ length: b }, (_, j) => c04Box(p, bx + j * (bw + gap), by, bw, bh, t0));
+  const order = (k, j) => n - 1 - (k * b + j);
+  const sweets = Array.from({ length: n }, (_, i) => { const [x, y] = pileAt(i); return c04Sweet(p, x, y, s, t0); });
+  for (let k = 0; k < pre; k++) for (let j = 0; j < b; j++) put(sweets[order(k, j)], { x: boxX(j), y: rowY(k) });
+  const deal = (k, t, { per = .3, dur = .55, move = tw } = {}) => {
+    for (let j = 0; j < b; j++) move(sweets[order(k, j)], { x: boxX(j), y: rowY(k) }, t + j * per, dur, io);
+    return t + (b - 1) * per + dur;
+  };
+  return { boxes, sweets, boxX, rowY, deal, left: k => sweets.slice(0, n - k * b) };
+}
+// Recolour sweets (the remainder) at t.
+const c04Tint = (list, t, fill = NUM, move = tw) => list.forEach((e, i) => move(e._b, { c_fill: fill }, t + i * .06, .4));
+
+/* ---------- a line of a division ---------- */
+// klExpr items for «a : b = q (ост. r)» in the lesson's colours; times t = [dividend and divisor, «=», q, remainder].
+function c04Div(a, b, q, r, [tA, tEq, tQ, tR]) {
+  return [{ s: a, t: tA }, { s: ':', t: tA }, { s: b, fill: DEN, t: tA }, { s: '=', t: tEq }, { s: q, fill: WHOLE, t: tQ }, { s: `(ост. ${r})`, fill: NUM, t: tR }];
+}
+
+/* ---------- small square cards with a number (possible remainders) ---------- */
+function c04Chip(p, x, y, w, label, t0, { col = NUM, size = 50 } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  g._fill = put(mk('rect', { x: -w / 2, y: -w / 2, width: w, height: w, rx: 12, fill: col, 'fill-opacity': .85 }, g), { o: 0 });
+  g._frame = mk('rect', { x: -w / 2, y: -w / 2, width: w, height: w, rx: 12, fill: 'none', stroke: col, 'stroke-width': 3.5 }, g);
+  g._t = T(g, String(label), { x: 0, y: size * .35, size, fill: COL.chalk, font: MATH, anchor: 'middle', weight: 600 });
+  if (t0 !== undefined) show(g, t0, .35);
+  return g;
+}
+
+/* ---------- the week as a ring ---------- */
+// Seven days round a circle of radius R centred on (cx, cy), Monday at the top, clockwise. Returns { nodes, marker, cx,
+// cy, R, step }: nodes[k] = { g, x, y, hi } (hi: a hidden NUM disc to bring in); marker is a ring in the rule's colour that
+// turns about the centre (its r: degrees, 0 = Monday); step = 360 / 7.
+function c04Week(p, cx, cy, R, t0, { nr = 44 } = {}) {
+  const step = 360 / 7, g = G(p, { o: 0 });
+  mk('circle', { cx, cy, r: R, fill: 'none', stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25, 'stroke-dasharray': '8 10' }, g);
+  const nodes = DAYS.map((d, k) => {
+    const a = k * step * Math.PI / 180, x = cx + R * Math.sin(a), y = cy - R * Math.cos(a);
+    const ng = G(g, { x, y });
+    mk('circle', { r: nr, fill: COL.chalk, 'fill-opacity': .06, stroke: COL.chalk, 'stroke-width': 2.5 }, ng);
+    const hi = put(mk('circle', { r: nr, fill: NUM, 'fill-opacity': .85 }, ng), { o: 0 });
+    T(ng, d, { x: 0, y: 11, size: 30, fill: COL.chalk, weight: 600, anchor: 'middle' });
+    return { g: ng, x, y, hi };
+  });
+  const marker = G(p, { x: cx, y: cy, o: 0 });
+  mk('circle', { cx: 0, cy: -R, r: nr + 11, fill: 'none', stroke: RULE, 'stroke-width': 6 }, marker);
+  show(g, t0);
+  return { nodes, marker, cx, cy, R, step };
+}
+// Day steps: from day a the marker steps `n` days on, one hop of `per` seconds each (angle eased within each hop).
+function c04Steps(wk, a, n, t0, per = .45, run = prog) {
+  run(q => { const u = q * n, k = Math.min(n - 1, Math.floor(u)), f = u - k; put(wk.marker, { r: (a + k + io(Math.min(1, f))) * wk.step }); }, t0, per * n, lin);
+}
+
+/* ---------- a bus with 40 seats ---------- */
+// A bus at (x, y): body 330 × 150, 10 × 4 seats, two wheels. Returns { g, seat(i) → [x, y] in the bus's own frame }.
+function c04Bus(p, x, y, t0) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x: 0, y: 0, width: 330, height: 150, rx: 18, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 3.5 }, g);
+  let d = '';
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 10; c++) d += `M${20 + c * 29} ${18 + r * 29}h24v24h-24Z`;
+  path(g, d, { fill: 'none', stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .3 });
+  [70, 260].forEach(cx => mk('circle', { cx, cy: 152, r: 18, fill: COL.board, stroke: COL.chalk, 'stroke-width': 3.5 }, g));
+  if (t0 !== undefined) show(g, t0);
+  return { g, x, y, seat: i => [x + 32 + (i % 10) * 29, y + 30 + Math.floor(i / 10) * 29] };
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Деление с остатком', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.4',
+    title: 'Деление с остатком',
+    sub: 'Что делать, если поровну не делится, и почему остаток меньше делителя',
+    art: (g, t0) => {
+      const A = c04Deal(g, { n: 17, b: 5, pileAt: i => [800 + i * 32, 629], bx: 440, by: 560, bw: 54, bh: 84, gap: 12, rg: 22, s: .5, t0, pre: 3 });
+      A.left(3).forEach(e => e._b.setAttribute('fill', NUM));
+      klExpr(g, c04Div('17', '5', '3', '2', [t0 + .3, t0 + .3, t0 + .3, t0 + .3]), 880, 600, { size: 48 });
+    },
+  })],
+
+  ['deal', 'Раздаём по кругу', m => {
+    const p = panel(0);
+    klTitle(p, 'Семнадцать конфет, пять коробок');
+    const A = c04Deal(p, { n: 17, b: 5, pileAt: i => [208 + i * 74, 230], bx: 345, by: 310, bw: 150, bh: 280, gap: 40, rg: 62, s: 1.3, t0: .2 });
+    // Three rounds, one sweet to every box each; each round's number appears as it ends.
+    const rounds = [];
+    ['r1', 'r2', 'r3'].forEach((mark, k) => {
+      const t = Math.max(m(mark, .3), k ? rounds[k - 1] : 0);
+      rounds.push(A.deal(k, t));
+      klText(p, String(k + 1), 300, A.rowY(k) + 12, rounds[k] - .2, { size: 38, fill: WHOLE, weight: 700, anchor: 'middle' });
+    });
+    // Two left: they try a fourth round, fill two of five places, and go aside as the remainder.
+    const two = A.left(3), tl = m('left');
+    const slots = [0, 1, 2, 3, 4].map(j => put(mk('circle', { cx: A.boxX(j), cy: A.rowY(3), r: 20, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '6 6' }, p), { o: 0 }));
+    slots.forEach((e, j) => show(e, tl + .1 + j * .06, .3));
+    two.forEach((e, j) => tw(e, { x: A.boxX(j), y: A.rowY(3) }, tl + .6 + j * .15, .6, io));
+    slots.slice(2).forEach((e, j) => { tw(e, { c_stroke: COL.bad, 'a_stroke-width': 4 }, tl + 1.5 + j * .1, .25); });
+    two.forEach((e, j) => tw(e, { x: 1320 + j * 82, y: A.rowY(0) }, tl + 3 + j * .12, .7, io));
+    c04Tint(two, tl + 3.2);
+    slots.forEach(e => hide(e, tl + 3.4, .4));
+    // The written line, said in parts.
+    const L = klExpr(p, c04Div('17', '5', '3', '2', [m('div'), m('div', .9), m('q'), m('r')]), 800, 712, { size: 76, anchor: 'middle' });
+    [0, 1, 2].forEach(k => A.sweets.filter((_, i) => i >= 17 - (k + 1) * 5 && i < 17 - k * 5).forEach(e => pulse(e, m('q', .1 + k * .1), 1.25)));
+    two.forEach(e => pulse(e, m('r', .2), 1.4));
+    S.dealLine = L;
+  }],
+
+  ['parts', 'Как называются числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Как называются числа');
+    const A = c04Deal(p, { n: 17, b: 5, pileAt: i => [712 + i * 72, 544], bx: 110, by: 280, bw: 92, bh: 300, gap: 20, rg: 68, s: 1.2, t0: .2, pre: 3 });
+    const two = A.left(3);
+    two.forEach(e => e._b.setAttribute('fill', NUM));
+    // The division and the name of each of its numbers.
+    const L = klExpr(p, c04Div('17', '5', '3', '2', [.3, .3, .3, .3]), 880, 300, { size: 68, gap: 34 });
+    const name = (i, lines, fill, t) => lines.forEach((s, k) => klText(p, s, L[i].c, 372 + k * 30, t, { size: 26, fill, weight: 600, anchor: 'middle' }));
+    name(0, ['делимое'], COL.chalk, m('dvd', .3)); pulse(L[0].g, m('dvd', .2), 1.3);
+    name(2, ['делитель'], DEN, m('dvs', .2)); pulse(L[2].g, m('dvs', .1), 1.3);
+    A.boxes.forEach((b, j) => { tw(b, { 'a_stroke-width': 8 }, m('dvs', .2 + j * .06), .2); tw(b, { 'a_stroke-width': 4 }, m('dvs', .7 + j * .06), .4); });
+    name(4, ['неполное', 'частное'], WHOLE, m('q', .2)); pulse(L[4].g, m('q', .1), 1.3);
+    [0, 1, 2].forEach(k => klText(p, String(k + 1), 80, A.rowY(k) + 12, m('q', .4 + k * .15), { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' }));
+    name(5, ['остаток'], NUM, m('r', .2)); pulse(L[5].g, m('r', .1), 1.3);
+    two.forEach(e => pulse(e, m('r', .3), 1.4));
+    // Back again: 5 boxes × 3 sweets + 2 = 17, then the same line in letters, every letter under its number.
+    const sz = 72, y2 = 540, y3 = 660;
+    const L2 = klExpr(p, [{ s: '17', t: m('two', 1) }, { s: '=', t: m('two', 1) }, { s: '5', fill: DEN, t: m('five') }, { s: '·', t: m('three') },
+      { s: '3', fill: WHOLE, t: m('three') }, { s: '+', t: m('two') }, { s: '2', fill: NUM, t: m('two') }], 880, y2, { size: sz });
+    A.boxes.forEach((b, j) => { tw(b, { 'a_stroke-width': 8 }, m('five', j * .06), .2); tw(b, { 'a_stroke-width': 4 }, m('five', .5 + j * .06), .4); });
+    klBrace(p, 110, 650, 612, '5 · 3 = 15', m('three', .4), { up: false, fill: WHOLE, size: 34 });
+    two.forEach(e => pulse(e, m('two', .1), 1.4));
+    const letters = ['a', '=', 'b', '·', 'q', '+', 'r'], fills = [COL.chalk, COL.chalk, DEN, COL.chalk, WHOLE, COL.chalk, NUM];
+    letters.forEach((s, i) => {
+      klMath(p, [s], L2[i].c, y3 + sz * .35, m('gen', i * .25), { size: sz, fill: fills[i] });   // M() sets the letters italic
+      if (i % 2 === 0) pulse(L2[i].g, m('gen', i * .25), 1.25);
+    });
+    klMark(p, L2.x1 + 70, y2 - 4, m('check'));
+    klText(p, 'так проверяют деление', 880, 790, m('check', .3), { size: 32, fill: RULE, weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Двадцать девять конфет, шесть коробок');
+    S.q1 = c04Deal(p, { n: 29, b: 6, pileAt: i => [366 + (i % 15) * 62, i < 15 ? 200 : 248], bx: 305, by: 300, bw: 140, bh: 300, gap: 30, rg: 60, t0: .2 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-29na6', prompt: 'Раздели 29 конфет на 6 коробок поровну. Сколько в каждой и сколько останется?',
+    build: blanks([{ parts: ['29 : 6 = ', { box: '4' }, ' (ост. ', { box: '5' }, ')'],
+      why: '6 · 4 + 5 = 29, и 5 < 6: четыре полных круга, пять конфет в остатке.',
+      hint: 'Сколько полных кругов по 6 конфет помещается в 29? 6 · 4 = 24.',
+      fx: () => { let t = 0; for (let k = 0; k < 4; k++) t = S.q1.deal(k, k * .55, { per: .07, dur: .4, move: fx }); c04Tint(S.q1.left(4), t + .1, NUM, fx); } }]),
+  }], done) }],
+
+  ['trap', 'Остаток меньше делителя', m => {
+    const p = panel(0);
+    klTitle(p, 'Двадцать три конфеты, четыре коробки');
+    const A = c04Deal(p, { n: 23, b: 4, pileAt: i => [150 + i * 74, 730], bx: 110, by: 250, bw: 120, bh: 390, gap: 30, rg: 64, s: 1.2, t0: .2, pre: 4 });
+    [0, 1, 2, 3].forEach(k => klText(p, String(k + 1), 76, A.rowY(k) + 12, .3, { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' }));
+    // The mistake: four rounds, seven left.
+    const W = klExpr(p, c04Div('23', '4', '4', '7', [m('wrong'), m('wrong', .3), m('wrong', .6), m('wrong', 1)]), 780, 310, { size: 64 });
+    const seven = A.left(4);
+    seven.forEach((e, i) => pulse(e, m('more', .1 + i * .08), 1.3));
+    const gt = klRow(p, [{ m: '7 > 4', fill: COL.bad }, '   конфет больше, чем коробок'], 110, 812, m('more', .3), { size: 28, msize: 44, anchor: 'start', fill: COL.bad, weight: 600 });
+    hide(gt, m('right', 2), .4);
+    // One more round fits: four of the seven go into the boxes, three stay.
+    const end = A.deal(4, m('round', .1), { per: .25 });
+    klText(p, '5', 76, A.rowY(4) + 12, end - .2, { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' });
+    c04Tint(A.left(5), end);
+    klStrike(p, W.x0 - 12, 336, W.x1 + 12, 278, m('right'));
+    klText(p, 'ошибка', W.x1 + 30, 322, m('right', .2), { size: 28, fill: COL.bad, weight: 700 });
+    const R = klExpr(p, c04Div('23', '4', '5', '3', [m('right', .4), m('right', .4), m('right', .9), m('right', 2.2)]), 780, 440, { size: 64 });
+    klMark(p, R.x1 + 50, 436, m('right', 2.8));
+    // The rule and the remainders that division by 4 can leave.
+    klRow(p, ['остаток меньше делителя:  ', { m: '3', fill: NUM }, { m: ' < ' }, { m: '4', fill: DEN }], 780, 580, m('rule', 2.5), { size: 34, msize: 54, anchor: 'start', fill: RULE, weight: 600 });
+    klText(p, 'остатки при делении на 4:', 780, 680, m('list'), { size: 30, fill: COL.dim });
+    [0, 1, 2, 3].forEach(k => c04Chip(p, 830 + k * 110, 760, 84, k, m('list', 1.2 + k * .45), { size: 46 }));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    klTitle(p, 'Делим на шесть');
+    for (let j = 0; j < 6; j++) c04Box(p, 560 + j * 85, 190, 65, 70, .2);
+    klText(p, 'шесть коробок', 1100, 238, .3, { size: 30, fill: DEN, weight: 600 });
+    klText(p, 'какой остаток может быть самым большим?', 800, 360, .4, { size: 30, fill: COL.dim, anchor: 'middle' });
+    S.q2 = Array.from({ length: 10 }, (_, k) => c04Chip(p, 242 + k * 124, 480, 104, k, .5 + k * .04, { col: COL.chalk, size: 56 }));
+    S.q2x = S.q2.map((c, k) => path(p, `M${242 + k * 124 - 40} 520L${242 + k * 124 + 40} 440`, { stroke: COL.bad, 'stroke-width': 6, 'stroke-linecap': 'round' }, { d: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-maxost', prompt: 'Делим на 6. Какой самый большой остаток может получиться? Нажми на число.',
+    build: pickEls(S.q2.map((c, k) => ({ el: c, box: [242 + k * 124 - 60, 420, 120, 120], label: String(k) })), 5,
+      'Остаток меньше делителя: при делении на 6 бывают остатки 0, 1, 2, 3, 4, 5. Самый большой — 5.',
+      k => k > 5 ? 'Если осталось 6 или больше, хватит ещё на один круг по шести коробкам. Остаток всегда меньше делителя.'
+        : 'Такой остаток бывает, но есть и больше. Ищи самый большой остаток, который меньше 6.',
+      () => S.q2.forEach((c, k) => {
+        if (k < 6) { c._fill.setAttribute('fill', NUM); fx(c._fill, { o: 1 }, k * .08, .3); fx(c._frame, { c_stroke: NUM }, k * .08, .3); fx(c._t, { c_fill: COL.board }, k * .08, .3); }
+        else { fx(c, { o: .45 }, .5, .3); fx(S.q2x[k], { d: 1 }, .5 + (k - 6) * .1, .3); }
+      })),
+  }], done) }],
+
+  ['zero', 'Остаток ноль', m => {
+    const p = panel(0);
+    klTitle(p, 'Когда остаток равен нулю');
+    // 15 sweets into 5 boxes: nothing is left.
+    const A = c04Deal(p, { n: 15, b: 5, pileAt: i => [130 + i * 44, 215], bx: 140, by: 250, bw: 100, bh: 190, gap: 24, rg: 48, s: .75, t0: .2 });
+    let t = m('deal', .1);
+    for (let k = 0; k < 3; k++) t = A.deal(k, m('deal', .1 + k * .8), { per: .1, dur: .4 });
+    const empty = path(p, 'M104 190H772V240H104Z', { fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '9 8' }, { o: 0 });
+    show(empty, m('none'), .4);
+    klText(p, 'ничего не осталось', 438, 224, m('none', .2), { size: 26, fill: COL.dim, anchor: 'middle' });
+    klExpr(p, c04Div('15', '5', '3', '0', [m('deal'), m('deal'), t, m('none', .3)]), 880, 290, { size: 60 });
+    klText(p, '15 делится на 5 нацело', 880, 390, m('name'), { size: 34, fill: RULE, weight: 600 });
+    // Dividing by 2: eight leaves nothing, nine leaves one.
+    const pair = (n, x0, bx, tShow, tDeal) => {
+      const B = c04Deal(p, { n, b: 2, pileAt: i => [x0 + i * 44, 525], bx, by: 565, bw: 100, bh: 245, gap: 24, rg: 48, s: .75, t0: tShow });
+      let e = tDeal;
+      for (let k = 0; k < 4; k++) e = B.deal(k, tDeal + k * .55, { per: .18, dur: .4 });
+      return { B, e };
+    };
+    const E = pair(8, 140, 170, m('two'), m('even', .1)), O = pair(9, 820, 850, m('two', .2), m('odd', .1));
+    c04Tint(O.B.left(4), O.e);
+    klExpr(p, c04Div('8', '2', '4', '0', [m('even', .4), m('even', .4), E.e, E.e + .3]), 440, 660, { size: 50 });
+    klText(p, 'чётное', 440, 750, m('even', 3), { size: 36, weight: 700 });
+    klExpr(p, c04Div('9', '2', '4', '1', [m('odd', .4), m('odd', .4), O.e - .3, O.e + .2]), 1100, 660, { size: 50 });
+    klText(p, 'нечётное', 1100, 750, m('odd', 2.8), { size: 36, weight: 700 });
+    klRow(p, ['при делении на 2 остаток — только  ', { m: '0', fill: NUM }, '  или  ', { m: '1', fill: NUM }], 800, 862, m('rule'), { size: 32, msize: 48, fill: RULE, weight: 600 });
+  }],
+
+  ['bus', 'Сколько нужно автобусов', m => {
+    const p = panel(0);
+    klTitle(p, 'Сколько нужно автобусов?');
+    klRow(p, [{ m: '130' }, ' учеников, в автобусе ', { m: '40', fill: DEN }, ' мест'], 100, 196, m('task'), { size: 32, msize: 44, anchor: 'start', fill: COL.dim });
+    const buses = [80, 450, 820].map((x, k) => c04Bus(p, x, 270, .2 + k * .1));
+    const bus4 = c04Bus(p, 1720, 270);
+    // The queue: 130 pupils in columns of five; they board from the front, 40 to a bus.
+    const kids = Array.from({ length: 130 }, (_, i) => {
+      const e = G(p, { x: 525 + Math.floor(i / 5) * 22, y: 492 + (i % 5) * 22, o: 0 });
+      e._b = mk('circle', { r: 7.5, fill: COL.chalk }, e);
+      show(e, m('task', .3 + Math.floor(i / 5) * .02), .3);
+      return e;
+    });
+    const tb = m('div', .5);
+    buses.forEach((b, k) => {
+      for (let i = 0; i < 40; i++) { const [x, y] = b.seat(i); tw(kids[k * 40 + i], { x, y }, tb + k * 1.3 + i * .025, .7, io); }
+      klText(p, String(k + 1), b.x + 165, 250, tb + k * 1.3 + 1.6, { size: 34, fill: WHOLE, weight: 700, anchor: 'middle' });
+    });
+    const rest = kids.slice(120);
+    rest.forEach((e, i) => { tw(e._b, { c_fill: NUM }, m('left', i * .05), .3); pulse(e, m('left', .3 + i * .05), 1.5); });
+    // The fourth bus drives in, the ten get on.
+    tw(bus4.g, { x: 1190 }, m('four', .2), 1.3, out);
+    rest.forEach((e, i) => { const [x, y] = [1190 + 32 + i * 29, 270 + 30]; tw(e, { x, y }, m('four', 1.5 + i * .05), .7, io); });
+    klText(p, '4', 1355, 250, m('four', 2.3), { size: 34, fill: RULE, weight: 700, anchor: 'middle' });
+    klExpr(p, c04Div('130', '40', '3', '10', [m('div'), m('div', .8), m('full'), m('left')]), 800, 670, { size: 60, anchor: 'middle' });
+    klRow(p, ['нужно  ', { m: '3', fill: WHOLE }, { m: ' + 1 = 4' }, '  автобуса'], 800, 775, m('four', 2.3), { size: 34, msize: 50 });
+    klText(p, 'остаток не ноль — нужна ещё одна штука', 800, 852, m('rule'), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['week', 'Дни недели', m => {
+    const p = panel(0);
+    klTitle(p, 'Какой день будет через сто дней?');
+    const wk = c04Week(p, 430, 500, 220, .2);
+    show(wk.marker, m('today'), .4);
+    klText(p, 'сегодня', 500, 290, m('today', .2), { size: 26, fill: RULE, weight: 600 });
+    c04Steps(wk, 0, 7, m('lap', .2), .42);
+    const lapNote = klText(p, 'неделя — полный круг', 430, 512, m('lap', 3.3), { size: 26, fill: COL.dim, anchor: 'middle' });
+    // Fourteen full weeks spin past (the count in the middle), then two more days.
+    const cnt = T(p, '0', { x: 430, y: 520, size: 80, fill: WHOLE, font: MATH, anchor: 'middle', weight: 600, o: 0 });
+    klText(p, 'полных недель', 430, 568, m('weeks'), { size: 26, fill: WHOLE, anchor: 'middle' });
+    hide(lapNote, m('weeks', -.3), .3);
+    show(cnt, m('weeks'), .3);
+    let shown = -1;
+    prog(q => {
+      const a = q * 14 * 360, laps = Math.min(14, Math.floor(a / 360 + 1e-9));
+      put(wk.marker, { r: a });
+      if (laps !== shown) { shown = laps; cnt.textContent = String(laps); }
+    }, m('weeks', .2), 2.8, io);
+    c04Steps(wk, 0, 2, m('two', .5), .6);
+    show(wk.nodes[2].hi, m('two', 1.7), .4);
+    pulse(wk.nodes[2].g, m('two', 1.7), 1.3);
+    klRow(p, ['через  ', { m: '100' }, '  дней — ?'], 820, 300, m('q'), { size: 34, msize: 50, anchor: 'start' });
+    klExpr(p, c04Div('100', '7', '14', '2', [m('div'), m('div', .8), m('div', 1.4), m('div', 2.2)]), 820, 420, { size: 60 });
+    klExpr(p, [{ s: '100' }, { s: '=' }, { s: '7', fill: DEN }, { s: '·' }, { s: '14', fill: WHOLE }, { s: '+' }, { s: '2', fill: NUM }], 820, 530, { size: 56, t0: m('two', 2.2) });
+    klText(p, 'полные недели не важны,', 820, 650, m('rule'), { size: 34, fill: RULE, weight: 600 });
+    klText(p, 'важен только остаток', 820, 698, m('rule', 1.2), { size: 34, fill: RULE, weight: 600 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3 = c04Week(p, 800, 340, 205, .2);
+    put(S.q3.marker, { r: 4 * S.q3.step });
+    show(S.q3.marker, .4, .4);
+    const fri = S.q3.nodes[4];
+    klText(p, 'сегодня', fri.x - 70, fri.y + 10, .5, { size: 26, fill: RULE, weight: 600, anchor: 'end' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-nedelya', prompt: 'Сегодня пятница. Какой день недели будет через 10 дней? Нажми на него.',
+    build: pickEls(S.q3.nodes.map((n, k) => ({ el: n.g, box: [n.x - 56, n.y - 56, 112, 112], label: DAY_NAMES[k] })), 0,
+      '10 : 7 = 1 (ост. 3): через неделю снова пятница, и ещё три дня — суббота, воскресенье, понедельник.',
+      () => 'Раздели 10 на 7 с остатком: полная неделя возвращает в пятницу, дальше считай только остаток.',
+      () => { c04Steps(S.q3, 4, 3, 0, .45, (f, t0, dur, e) => fxp(f, t0, dur, e)); fx(S.q3.nodes[0].hi, { o: 1 }, 1.4, .4); }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Делимое = делитель · неполное частное + остаток:  ', { m: '17 = 5 · 3 + 2' }],
+    ['Остаток всегда меньше делителя:  ', { m: '23 : 4 = 5 (ост. 3)' }],
+    ['Остаток ноль — число делится нацело:  ', { m: '15 : 5 = 3' }],
+    'Остаток не ноль, а уместить надо всех — берём ещё одну штуку',
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-razdeli', prompt: 'Раздели с остатком.',
+    build: blanks([
+      { parts: ['47 : 5 = ', { box: '9' }, ' (ост. ', { box: '2' }, ')'], why: '5 · 9 + 2 = 47, и 2 < 5.', hint: 'Сколько раз 5 помещается в 47? 5 · 9 = 45.' },
+      { parts: ['100 : 9 = ', { box: '11' }, ' (ост. ', { box: '1' }, ')'], why: '9 · 11 + 1 = 100, и 1 < 9.', hint: '9 · 11 = 99.' },
+      { parts: ['36 : 4 = ', { box: '9' }, ' (ост. ', { box: '0' }, ')'], why: '4 · 9 = 36: делится нацело, остаток 0.', hint: '4 · 9 = 36.' },
+    ]),
+  }, {
+    id: 'p-delimoe', prompt: 'Найди делимое.',
+    build: blanks([{ parts: [{ box: '38' }, ' : 7 = 5 (ост. 3)'], why: '7 · 5 + 3 = 38.', hint: 'Делимое = делитель · неполное частное + остаток.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-proverka', prompt: 'Верно ли выполнено деление?',
+    build: grid([
+      { parts: ['23 : 4 = 5 (ост. 3)'], ans: ['y'], why: 'Верно: 4 · 5 + 3 = 23, и 3 < 4.' },
+      { parts: ['30 : 7 = 3 (ост. 9)'], ans: ['n'], why: 'Неверно: остаток 9 больше делителя 7. Правильно 30 : 7 = 4 (ост. 2).' },
+      { parts: ['40 : 6 = 6 (ост. 4)'], ans: ['y'], why: 'Верно: 6 · 6 + 4 = 40, и 4 < 6.' },
+      { parts: ['50 : 8 = 6 (ост. 1)'], ans: ['n'], why: 'Неверно: 8 · 6 + 1 = 49, а не 50. Правильно 50 : 8 = 6 (ост. 2).' },
+    ], [['y', 'верно', null, '1'], ['n', 'неверно', null, '2']], { multi: false }),
+  }, {
+    id: 'p-oktyabr', prompt: '1 сентября — понедельник. Каким днём недели будет 1 октября? В сентябре 30 дней.',
+    build: choice(['вторник', 'среда', 'четверг'], 1, '30 : 7 = 4 (ост. 2): четыре полные недели и ещё два дня — среда.',
+      ['Найди остаток: 30 : 7 = 4 (ост. 2). Значит, на два дня позже понедельника.', null, 'Остаток от деления 30 на 7 равен 2, а не 3.']),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-karandashi', prompt: 'В коробку помещается 12 карандашей. Сколько коробок нужно, чтобы уложить 100 карандашей?',
+    build: blanks([{ parts: [{ box: '9' }, ' коробок'], why: '100 : 12 = 8 (ост. 4): восемь полных коробок, а для четырёх оставшихся карандашей нужна девятая.',
+      hint: 'Раздели с остатком. Если остаток не ноль, нужна ещё одна коробка.' }]),
+  }, {
+    id: 'p-podarki', prompt: 'Из 50 конфет собирают подарки по 6 конфет. Сколько полных подарков получится?',
+    build: blanks([{ parts: [{ box: '8' }, ' подарков'], why: '50 : 6 = 8 (ост. 2): восемь полных подарков, а двух конфет на девятый не хватит.',
+      hint: 'Здесь спрашивают о полных подарках: из остатка целый подарок не соберёшь.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

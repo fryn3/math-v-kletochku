@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Порядок действий · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.3 «Порядок действий» (5 класс). Beat ids match papermorph/content/uroki/ch03/narration.ru.json.
+const CHAPTER = { number: 3, label: '1.3', title: 'Порядок действий', minutes: 7, language: 'ru', next: '../ch04/' };
+
+// The three steps of the ladder, each with its colour (this chapter's meanings, see chapters/ch03.md):
+// brackets, then multiplication and division, then addition and subtraction. Step numbers and the boxes of a
+// collapsing group take the colour of the step their sign stands on.
+const BR = KL.WHOLE, MD = COL.rat, PM = KL.DEN, RULE = KL.RULE;
+const OPEN = { t: '(', fill: BR }, SHUT = { t: ')', fill: BR };
+
+// A step number over a sign of a tokens row, as in a school notebook: a small ringed digit inside the sign's own
+// group, so it moves with the sign and shrinks away when the sign is used up by collapse().
+function c03Num(e, n, col, t0, size) {
+  const g = G(e, { y: -size * 1.3, o: 0, s: .4 });
+  mk('circle', { r: size * .25, fill: COL.board, stroke: col, 'stroke-width': 3 }, g);
+  T(g, String(n), { y: size * .14, size: size * .36, fill: col, weight: 700, anchor: 'middle', font: MATH });
+  tw(g, { o: 1, s: 1 }, t0, .35, back);
+  return g;
+}
+// A straight arrow from x1 to x2 at height y with a label under it, drawn on at t0. Returns its parts.
+function c03LR(p, x1, x2, y, t0, { col = COL.dim, label = 'слева направо', size = 26 } = {}) {
+  const g = G(p);
+  draw(path(g, `M${x1} ${y}H${x2}`, { stroke: col, 'stroke-width': 3, 'stroke-linecap': 'round' }, { d: 0 }), t0, .6);
+  const head = path(g, `M${x2 - 16} ${y - 10}L${x2} ${y}L${x2 - 16} ${y + 10}`, { stroke: col, 'stroke-width': 3, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, { o: 0 });
+  show(head, t0 + .5, .2);
+  if (label) klText(g, label, (x1 + x2) / 2, y + size + 14, t0 + .3, { size, fill: col, anchor: 'middle' });
+  return g;
+}
+// A tokens row drawn without the tokens at `hid` (the brackets): the others close up around the row's anchor and the
+// hidden ones wait, enlarged and transparent, at their own places. c03Open then slides the row apart and drops them in.
+function c03Closed(row, hid) {
+  const keep = row.filter((e, i) => !hid.includes(i)), total = keep.reduce((a, e) => a + e._w, 0);
+  let cx = row.anchor === 'middle' ? row.x - total / 2 : row.anchor === 'end' ? row.x - total : row.x;
+  keep.forEach(e => { put(e, { x: cx + e._w / 2 }); cx += e._w; });
+  hid.forEach(i => put(row[i], { o: 0, s: 1.6 }));
+}
+function c03Open(row, hid, t0, run = tw) {
+  row.forEach((e, i) => { if (!hid.includes(i)) run(e, { x: e._px }, t0, .5); });
+  hid.forEach(i => run(row[i], { o: 1, s: 1 }, t0 + .25, .4));
+}
+// A tokens row in its own group, faded in at t0 (the group holds collapse()'s boxes and results too).
+function c03Row(p, items, x, y, t0, { size = 96, anchor = 'middle' } = {}) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  const row = tokens(g, items, { x, y, size, anchor });
+  if (t0 !== undefined) show(g, t0);
+  row.g = g;
+  return row;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Порядок действий', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.3',
+    title: 'Порядок действий',
+    sub: 'Почему важно, какое действие сделать первым',
+    art: (g, t0) => {
+      const r = tokens(g, ['3', ' + ', '5', ' · ', '2'], { x: 800, y: 680, size: 64, anchor: 'middle' });
+      c03Num(r[3], 1, MD, t0 + .3, 64);
+      c03Num(r[1], 2, PM, t0 + .6, 64);
+    },
+  })],
+
+  ['two', 'Один пример — два ответа', m => {
+    const p = panel(0);
+    klTitle(p, 'Один пример — два ответа');
+    const E = ['3', ' + ', '5', ' · ', '2'];
+    const top = c03Row(p, E, 800, 270, .2, { size: 84 });
+    // Two copies slide out of the example: the left one adds first, the right one multiplies first.
+    const gL = G(p, { x: 0, y: 0, o: 0 }), gR = G(p, { x: 0, y: 0, o: 0 });
+    const L = tokens(gL, E, { x: 800, y: 270, size: 84, anchor: 'middle' }), R = tokens(gR, E, { x: 800, y: 270, size: 84, anchor: 'middle' });
+    tw(gL, { o: 1, x: -400, y: 280 }, m('left', -.3), .7, io);
+    klText(p, 'сначала сложение', 400, 430, m('left', .2), { size: 30, fill: COL.dim, anchor: 'middle' });
+    const L1 = collapse(L, 0, 2, '8', m('left', .5), { color: PM });
+    const L2 = collapse(L1, 0, 2, '16', m('left2', .1), { color: MD });
+    tw(gR, { o: 1, x: 400, y: 280 }, m('right', -.3), .7, io);
+    klText(p, 'сначала умножение', 1200, 430, m('right', .2), { size: 30, fill: COL.dim, anchor: 'middle' });
+    const R1 = collapse(R, 2, 4, '10', m('right', .5), { color: MD });
+    const R2 = collapse(R1, 0, 2, '13', m('right2', .1), { color: PM });
+    // One example, two answers.
+    klMath(p, ['≠'], 800, 560, m('two'), { size: 90, fill: COL.bad });
+    pulse(L2[0], m('two', .2), 1.25);
+    pulse(R2[0], m('two', .5), 1.25);
+    const which = klText(p, 'какой ответ верный?', 800, 650, m('no'), { size: 32, fill: COL.dim, anchor: 'middle' });
+    hide(which, m('rule', -.2), .3);
+    // The agreement: the sign of multiplication gets number 1, the plus number 2.
+    c03Num(top[3], 1, MD, m('md'), 84);
+    c03Num(top[1], 2, PM, m('pm'), 84);
+    const R1s = 'умножение и деление', R2s = ' — раньше сложения и вычитания', rx = 800 - (klW(R1s, 34, 600) + klW(R2s, 34, 600)) / 2;
+    klText(p, R1s, rx, 730, m('md', .1), { size: 34, fill: MD, weight: 600 });
+    klText(p, R2s, rx + klW(R1s, 34, 600), 730, m('pm', .1), { size: 34, fill: RULE, weight: 600 });
+    klStrike(p, 340, 575, 460, 480, m('ok'));
+    klText(p, 'неверно', 400, 640, m('ok', .2), { size: 28, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klMark(p, 1320, 520, m('ok', .4), true);
+  }],
+
+  ['ladder', 'Лесенка порядка', m => {
+    const p = panel(0);
+    klTitle(p, 'Что выполнять раньше: лесенка из трёх ступеней');
+    const X0 = 170, W = 420, TOP = [330, 480, 630], BASE = 820;
+    draw(path(p, `M${X0} ${BASE}V${TOP[0]}H${X0 + W}V${TOP[1]}H${X0 + 2 * W}V${TOP[2]}H${X0 + 3 * W}V${BASE}Z`,
+      { stroke: COL.dim, 'stroke-width': 3, fill: 'none', 'stroke-linejoin': 'round' }, { d: 0 }), .2, 1.4);
+    [[BR, ['(', ' ', ')'], 'действия в скобках', 's1'], [MD, ['·', '    ', ':'], 'умножение и деление', 's2'], [PM, ['+', '    ', '−'], 'сложение и вычитание', 's3']].forEach(([col, sym, name, mark], k) => {
+      const x = X0 + k * W, top = TOP[k], t = m(mark);
+      const g = G(p, { o: 0, y: 24 });
+      mk('rect', { x, y: top, width: W, height: BASE - top, fill: col, 'fill-opacity': .13 }, g);
+      path(g, `M${x} ${top}H${x + W}`, { stroke: col, 'stroke-width': 6, 'stroke-linecap': 'round' });
+      const sy = tokens(g, sym, { x: x + W / 2 + 40, y: top - 30, size: k === 1 ? 120 : 96, fill: col, anchor: 'middle' });
+      if (k) {   // read the step like a line of text: first the left sign, then the right one
+        const ring = G(p, { x: sy[0]._px, y: top - 30 - sy.size * .3, o: 0 });
+        mk('circle', { r: 34, fill: 'none', stroke: RULE, 'stroke-width': 4 }, ring);
+        const t1 = m('read', (k - 1) * .5);
+        show(ring, t1, .2);
+        tw(ring, { x: sy[2]._px }, t1 + .45, .5, io);
+        hide(ring, t1 + 1.4, .3);
+      }
+      mk('circle', { cx: x + 50, cy: top + 46, r: 24, fill: col }, g);
+      T(g, String(k + 1), { x: x + 50, y: top + 57, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, name, { x: x + 90, y: top + 57, size: 29, fill: COL.chalk, weight: 600 });
+      tw(g, { o: 1, y: 0 }, t, .5, out);
+      if (k) c03LR(p, x + 90, x + W - 70, top + 112, m('lr', .2 + (k - 1) * .4), { col });
+    });
+    // Powers (topic 1.5) will take a step of their own right after the brackets.
+    const pw = G(p, { o: 0, y: -90 });
+    mk('rect', { x: X0 + W, y: 395, width: 112, height: 85, fill: 'none', stroke: COL.dim, 'stroke-width': 2.5, 'stroke-dasharray': '8 7' }, pw);
+    T(pw, 'степени', { x: X0 + W + 56, y: 432, size: 23, fill: COL.dim, anchor: 'middle', weight: 600 });
+    T(pw, 'тема 1.5', { x: X0 + W + 56, y: 462, size: 20, fill: COL.dim, anchor: 'middle' });
+    show(pw, m('pow', .2));
+    tw(pw, { y: 0 }, m('place'), .6, back);
+  }],
+
+  ['numbers', 'Номера над знаками', m => {
+    const p = panel(0);
+    klTitle(p, 'Номера над знаками — как в тетради');
+    klMath(p, ['30 − 12 : 3 + 2 · 5'], 900, 250, .2, { size: 56, fill: COL.dim, anchor: 'end' });
+    klMath(p, [' = 36'], 900, 250, m('ans', .4), { size: 56, fill: RULE, anchor: 'start' });
+    const SZ = 104, r = c03Row(p, ['30', ' − ', '12', ' : ', '3', ' + ', '2', ' · ', '5'], 800, 520, .3, { size: SZ });
+    c03Num(r[3], 1, MD, m('n1'), SZ);
+    c03Num(r[7], 2, MD, m('n2'), SZ);
+    pulse(r[3], m('left'), 1.3);
+    const arr = c03LR(p, r[3]._px, r[7]._px, 590, m('left', .3), { col: MD, label: '' });
+    hide(arr, m('c1', -.3), .3);
+    c03Num(r[1], 3, PM, m('n3'), SZ);
+    c03Num(r[5], 4, PM, m('n4'), SZ);
+    // The actions in their numbered order: each group is boxed and shrinks into its result.
+    const r1 = collapse(r, 2, 4, '4', m('c1', .1), { color: MD });
+    const r2 = collapse(r1, 4, 6, '10', m('c2', .1), { color: MD });
+    const r3 = collapse(r2, 0, 2, '26', m('c3', .1), { color: PM });
+    collapse(r3, 0, 2, '36', m('c4', .1), { color: PM });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q1 = c03Row(p, ['7', ' + ', '8', ' · ', '3', ' − ', '5'], 800, 380, .2, { size: 116 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-pervoe', prompt: 'Какое действие выполняют первым? Нажми на его знак.',
+    build: tapEls(S.q1, [1, 3, 5], 3, 'Верно: умножение раньше сложения и вычитания. 8 · 3 = 24, потом 7 + 24 = 31 и 31 − 5 = 26.',
+      i => i === 1 ? 'Сложение стоит первым по записи, но оно на нижней ступени: умножение выполняют раньше.'
+        : 'Вычитание — на нижней ступени, его выполняют в самом конце.',
+      () => {
+        fx(S.q, { o: 0 }, .1, .3);
+        const a = collapse(S.q1, 2, 4, '24', .3, { live: true, color: MD });
+        const b = collapse(a, 0, 2, '31', 2.1, { live: true, color: PM });
+        collapse(b, 0, 2, '26', 3.9, { live: true, color: PM });
+      }),
+  }], done) }],
+
+  ['lr', 'Слева направо', m => {
+    const p = panel(0);
+    klTitle(p, 'Умножение не главнее деления');
+    const SZ = 92, E = ['24', ' : ', '4', ' · ', '2'];
+    klMath(p, ['24 : 4 · 2'], 400, 200, .2, { size: 52, fill: COL.dim });
+    const A = c03Row(p, E, 400, 400, .3, { size: SZ });
+    c03Num(A[1], 1, MD, m('one', .2), SZ);
+    c03Num(A[3], 2, MD, m('one', .5), SZ);
+    const arr = c03LR(p, A[0]._px, A[4]._px, 465, m('nm', .6), { col: MD });
+    hide(arr, m('a', -.3), .3);
+    const A1 = collapse(A, 0, 2, '6', m('a', .1), { color: MD });
+    collapse(A1, 0, 2, '12', m('b', .1), { color: MD });
+    klMark(p, 495, 370, m('b', 1.8), true);
+    // The trap: multiplying first, as if multiplication outranked division.
+    klMath(p, ['24 : 4 · 2'], 1200, 200, m('trap', -.2), { size: 52, fill: COL.dim });
+    const B = c03Row(p, E, 1200, 400, m('trap'), { size: SZ });
+    c03Num(B[3], 1, COL.bad, m('trap', .4), SZ);
+    c03Num(B[1], 2, COL.bad, m('trap', .7), SZ);
+    klText(p, 'сначала умножение', 1200, 490, m('trap', .3), { size: 30, fill: COL.bad, anchor: 'middle' });
+    const B1 = collapse(B, 2, 4, '8', m('trap', 1.1), { color: COL.bad });
+    collapse(B1, 0, 2, '3', m('trap2', .1), { color: COL.bad, fill: COL.bad });
+    klStrike(p, 1160, 415, 1240, 330, m('strike'));
+    klText(p, 'ошибка!', 1265, 380, m('strike', .3), { size: 30, fill: COL.bad, weight: 700 });
+    // The same for addition and subtraction.
+    // The row stands right of centre so that, once it has collapsed, «20 − 5 + 3 =» can be written before its answer.
+    const C = c03Row(p, ['20', ' − ', '5', ' + ', '3'], 830, 700, m('pm'), { size: SZ, anchor: 'start' });
+    klMath(p, ['20 − 5 + 3 ='], 810, 700, m('pm2', 1.7), { size: SZ, fill: COL.dim, anchor: 'end' });
+    c03Num(C[1], 1, PM, m('pm', .5), SZ);
+    c03Num(C[3], 2, PM, m('pm', .8), SZ);
+    const arr2 = c03LR(p, C[0]._px, C[4]._px, 765, m('pm', 1.1), { col: PM });
+    hide(arr2, m('pm1', .1), .3);
+    const C1 = collapse(C, 0, 2, '15', m('pm1', .3), { color: PM });
+    collapse(C1, 0, 2, '18', m('pm2', .1), { color: PM });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q2 = c03Row(p, ['36', ' : ', '6', ' · ', '3'], 800, 380, .2, { size: 116 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sleva', prompt: 'Вычисли.',
+    build: blanks([{ parts: ['36 : 6 · 3 = ', { box: '18' }],
+      why: '36 : 6 = 6, затем 6 · 3 = 18: умножение и деление выполняют по порядку, слева направо.',
+      hint: 'Умножение не главнее деления. Иди слева направо: сначала 36 : 6.',
+      fx: () => { const a = collapse(S.q2, 0, 2, '6', .1, { live: true, color: MD }); collapse(a, 0, 2, '18', 1.9, { live: true, color: MD }); } }]),
+  }], done) }],
+
+  ['brackets', 'Скобки меняют порядок', m => {
+    const p = panel(0);
+    klTitle(p, 'Скобки меняют порядок');
+    const SZ = 92, wEq = mathW([' = 16'], SZ), w16 = mathW(['16'], SZ);
+    // The old example, numbered, with its answer.
+    const XE = 980;
+    const T1 = c03Row(p, ['3', ' + ', '5', ' · ', '2', ' = 13'], XE, 310, .3, { size: SZ, anchor: 'end' });
+    put(T1[5], { o: 0 });
+    show(T1[5], m('back', 1.2));
+    c03Num(T1[3], 1, MD, m('back', .2), SZ);
+    c03Num(T1[1], 2, PM, m('back', .5), SZ);
+    // The same numbers and signs; the sum goes into brackets and the row opens to take them.
+    const B = c03Row(p, [OPEN, '3', ' + ', '5', SHUT, ' · ', '2'], XE - wEq, 570, m('open'), { size: SZ, anchor: 'end' });
+    c03Closed(B, [0, 4]);
+    c03Open(B, [0, 4], m('open', .7));
+    c03Num(B[2], 1, BR, m('first'), SZ);
+    c03Num(B[5], 2, MD, m('first', .3), SZ);
+    const B1 = collapse(B, 0, 4, '8', m('first', 1.4), { color: BR });
+    const B2 = collapse(B1, 0, 2, '16', m('then', .1), { color: MD });
+    // The answer slides into its place in the finished line «(3 + 5) · 2 = 16».
+    tokens(p, [OPEN, '3', ' + ', '5', SHUT, ' · ', '2', ' = '], { x: XE - w16, y: 570, size: SZ, anchor: 'end', o: 0 }).forEach(e => show(e, m('same', .2)));
+    tw(B2[0], { x: XE - w16 / 2 }, m('same'), .5);
+    pulse(T1[5], m('same', .9), 1.2);
+    pulse(B2[0], m('same', 1.2), 1.2);
+    klText(p, 'те же числа и знаки — другой порядок, другой ответ', 800, 760, m('same', 1.6), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['bar', 'Дробная черта', m => {
+    const p = panel(0);
+    klTitle(p, 'Дробная черта — тоже скобки');
+    const SZ = 92, X = 640, wDiv = mathW(['=  15 : 5  '], SZ);
+    const N = c03Row(p, ['6', ' + ', '9'], X, 405, .2, { size: SZ });
+    const Dn = c03Row(p, ['3', ' + ', '2'], X, 595, .2, { size: SZ });
+    draw(path(p, `M${X - 150} 465H${X + 150}`, { stroke: COL.chalk, 'stroke-width': 6, 'stroke-linecap': 'round' }, { d: 0 }), .3, .5);
+    klText(p, 'числитель', X - 190, 390, m('num'), { size: 32, fill: KL.NUM, weight: 600, anchor: 'end' });
+    collapse(N, 0, 2, '15', m('num', .3), { color: BR });
+    klText(p, 'знаменатель', X - 190, 580, m('den'), { size: 32, fill: KL.DEN, weight: 600, anchor: 'end' });
+    collapse(Dn, 0, 2, '5', m('den', .3), { color: BR });
+    klMath(p, ['=  15 : 5'], X + 200, 497, m('div'), { size: SZ, anchor: 'start' });
+    klMath(p, ['=  3'], X + 200 + wDiv, 497, m('div', 1.6), { size: SZ, anchor: 'start', fill: RULE });
+    // The same as brackets round the top and round the bottom.
+    const Q = c03Row(p, [OPEN, '6 + 9', SHUT, '  :  ', OPEN, '3 + 2', SHUT, '  =  3'], 800, 760, m('eq'), { size: 72 });
+    [[0, 2, 'top'], [4, 6, 'bot']].forEach(([a, b, mark]) => [a, b].forEach(i => { put(Q[i], { o: 0, s: 1.6 }); tw(Q[i], { o: 1, s: 1 }, m(mark), .4, back); }));
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q3 = c03Row(p, [OPEN, '20', ' − ', '8', SHUT, ' : ', '4'], 820, 380, .2, { size: 116, anchor: 'end' });
+    c03Closed(S.q3, [0, 4]);
+    klMath(p, [' = 3'], 820, 380, .2, { size: 116, anchor: 'start', fill: RULE });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-skobki', prompt: 'Куда поставить скобки, чтобы получилось 3?',
+    build: choice([$m('(20 − 8) : 4'), $m('20 − (8 : 4)'), 'скобки не нужны'], 0,
+      'Скобки заставляют вычесть первым: (20 − 8) : 4 = 12 : 4 = 3.',
+      [null, '20 − (8 : 4) = 20 − 2 = 18: деление и без скобок выполняли бы первым.', 'Без скобок первым идёт деление: 20 − 8 : 4 = 20 − 2 = 18.'],
+      () => {
+        c03Open(S.q3, [0, 4], .1, fx);
+        const a = collapse(S.q3, 0, 4, '12', 1.0, { live: true, color: BR });
+        collapse(a, 0, 2, '3', 2.8, { live: true, color: MD });
+      }),
+  }], done) }],
+
+  ['full', 'Всё вместе', m => {
+    const p = panel(0);
+    klTitle(p, 'Всё вместе');
+    klMath(p, ['40 − 4 · (6 + 3) : 2'], 900, 230, .2, { size: 56, fill: COL.dim, anchor: 'end' });
+    klMath(p, [' = 22'], 900, 230, m('ans', .4), { size: 56, fill: RULE, anchor: 'start' });
+    const SZ = 96, r = c03Row(p, ['40', ' − ', '4', ' · ', OPEN, '6', ' + ', '3', SHUT, ' : ', '2'], 800, 450, .3, { size: SZ });
+    c03Num(r[6], 1, BR, m('n1'), SZ);
+    c03Num(r[3], 2, MD, m('n2'), SZ);
+    c03Num(r[9], 3, MD, m('n3'), SZ);
+    c03Num(r[1], 4, PM, m('n4'), SZ);
+    // Solved «по действиям»: each action is boxed, shrinks into its result, and is written down in the list below.
+    const STEPS = [['1)', BR, '6 + 3 = 9', 'c1'], ['2)', MD, '4 · 9 = 36', 's2'], ['3)', MD, '36 : 2 = 18', 's3'], ['4)', PM, '40 − 18 = 22', 's4']];
+    const r1 = collapse(r, 4, 8, '9', m('c1', .1), { color: BR });
+    const r2 = collapse(r1, 2, 4, '36', m('s2', .1), { color: MD });
+    const r3 = collapse(r2, 2, 4, '18', m('s3', .1), { color: MD });
+    collapse(r3, 0, 2, '22', m('s4', .1), { color: PM });
+    klText(p, 'по действиям:', 560, 545, m('s1'), { size: 28, fill: COL.dim });
+    pulse(r[6], m('s1', .6), 1.25);
+    STEPS.forEach(([n, col, str, mark], k) => {
+      const y = 590 + k * 68, t = m(mark, 1.3);
+      klMath(p, [n], 640, y, t, { size: 48, fill: col, anchor: 'end' });
+      klMath(p, [str], 665, y, t, { size: 48, anchor: 'start' });
+    });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q4 = c03Row(p, ['60', ' − ', '5', ' · ', OPEN, '4', ' + ', '2', SHUT], 800, 380, .2, { size: 116 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-poslednee', prompt: 'А какое действие здесь выполняют последним? Нажми на его знак.',
+    build: tapEls(S.q4, [1, 3, 6], 1, 'Верно: сначала скобки, потом умножение, вычитание — последнее. 60 − 5 · 6 = 60 − 30 = 30.',
+      i => i === 3 ? 'Умножение — не последнее: после него ещё остаётся вычитание.'
+        : 'Сложение в скобках выполняют первым, а не последним.',
+      () => {
+        fx(S.q, { o: 0 }, .1, .3);
+        const a = collapse(S.q4, 4, 8, '6', .3, { live: true, color: BR });
+        const b = collapse(a, 2, 4, '30', 2.1, { live: true, color: MD });
+        collapse(b, 0, 2, '30', 3.9, { live: true, color: PM });
+      }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Сначала — действия в скобках:  ', { m: '(3 + 5) · 2 = 16' }],
+    ['Потом умножение и деление, слева направо:  ', { m: '24 : 4 · 2 = 12' }],
+    ['Потом сложение и вычитание, слева направо:  ', { m: '20 − 5 + 3 = 18' }],
+    ['Дробная черта — как скобки:  ', { m: [F('6 + 9', '3 + 2'), ' = 3'] }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-vychisli', prompt: 'Вычисли.',
+    build: blanks([
+      { parts: ['7 + 3 · 4 = ', { box: '19' }], why: 'Сначала умножение: 3 · 4 = 12, потом 7 + 12 = 19.', hint: 'Умножение выполняют раньше сложения.' },
+      { parts: ['48 : 6 · 2 = ', { box: '16' }], why: 'Слева направо: 48 : 6 = 8, потом 8 · 2 = 16.', hint: 'Умножение не главнее деления: иди слева направо.' },
+      { parts: ['30 − 12 + 5 = ', { box: '23' }], why: 'Слева направо: 30 − 12 = 18, потом 18 + 5 = 23.', hint: 'Сложение не главнее вычитания: иди слева направо.' },
+    ]),
+  }, {
+    id: 'p-pokupka', prompt: 'Купили 3 тетради по 12 рублей и ручку за 15 рублей. Сколько заплатили?',
+    build: blanks([{ parts: ['3 · 12 + 15 = ', { box: '51' }, ' рублей'], why: 'Тетради стоят 3 · 12 = 36 рублей, и ещё 15 за ручку: 36 + 15 = 51.', hint: 'Сначала узнай, сколько стоят тетради: 3 · 12.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-oshibki', prompt: 'Верно ли посчитано?',
+    build: grid([
+      { parts: ['18 − 3 · 4 = 60'], ans: ['f'], why: 'Сначала умножение: 18 − 12 = 6.' },
+      { parts: ['40 : 4 · 2 = 20'], ans: ['t'], why: 'Слева направо: 40 : 4 = 10, 10 · 2 = 20.' },
+      { parts: ['(9 − 4) · 3 = 15'], ans: ['t'], why: 'Сначала скобки: 9 − 4 = 5, потом 5 · 3 = 15.' },
+      { parts: ['12 − 4 + 2 = 6'], ans: ['f'], why: 'Слева направо: 12 − 4 = 8, 8 + 2 = 10.' },
+    ], TF, { multi: false }),
+  }, {
+    id: 'p-skobki', prompt: 'Вычисли.',
+    build: blanks([{ parts: ['50 − 2 · (7 + 8) = ', { box: '20' }], why: '7 + 8 = 15, 2 · 15 = 30, 50 − 30 = 20.', hint: 'Скобки, потом умножение, вычитание — последним.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-pervoe', prompt: 'В каком выражении сложение выполняют первым?',
+    build: choice([$m('4 · 5 + 1'), $m('4 · (5 + 1)'), $m('4 + 5 · 1')], 1, 'Сложение в скобках — первое: 4 · (5 + 1) = 4 · 6 = 24.',
+      ['Здесь первым идёт умножение: 4 · 5 = 20, потом + 1.', null, 'Без скобок первым идёт умножение: 5 · 1 = 5, потом 4 + 5.']),
+  }, {
+    id: 'p-cherta', prompt: 'Вычисли.',
+    build: blanks([{ parts: [F('14 + 10', '9 − 3'), ' = ', { box: '4' }], why: 'Числитель 14 + 10 = 24, знаменатель 9 − 3 = 6, 24 : 6 = 4.', hint: 'Дробная черта — как скобки: сначала посчитай верх и низ.' }]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

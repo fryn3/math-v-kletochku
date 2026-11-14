@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Степень · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.5 «Степень» (5 класс). Beat ids match papermorph/content/uroki/ch05/narration.ru.json.
+const CHAPTER = { number: 5, label: '1.5', title: 'Степень', minutes: 7, language: 'ru', next: '../ch06/' };
+
+// In this lesson the number that is multiplied (the base, and the cells it counts) is KL.NUM, and «how many times»
+// (the exponent, the count of factors, the zeros of a power of ten) is KL.DEN.
+const NUM = KL.NUM, DEN = KL.DEN, RULE = KL.RULE, BASE = KL.NUM, EXP = KL.DEN;
+const NB = ' ', COS30 = Math.cos(Math.PI / 6);
+
+/* ---------- a power in two colours ---------- */
+// A power base^exp with its baseline at y: the base in bf, the exponent raised and smaller in ef (as M() sets E()).
+// b and e are groups centred on their glyphs, so pulse() grows each in place. Returns { g, b, e, w, x0, x1, bx, ex }.
+function c05Pow(p, base, exp, x, y, t0, { size = 84, bf = BASE, ef = EXP, anchor = 'start', italic = false } = {}) {
+  const es = size * .62, wb = textW(base, size, italic), we = textW(exp, es, italic), gap = size * .05;
+  const w = wb + gap + we, x0 = x - (anchor === 'middle' ? w / 2 : anchor === 'end' ? w : 0);
+  const g = G(p, { x: x0, y, o: t0 === undefined ? 1 : 0 });
+  const b = G(g, { x: wb / 2, y: -size * .34 });
+  const tb = T(b, base, { x: 0, y: size * .34, size, fill: bf, font: MATH, anchor: 'middle' });
+  const e = G(g, { x: wb + gap + we / 2, y: -size * .45 - es * .34 });
+  const te = T(e, exp, { x: 0, y: es * .34, size: es, fill: ef, font: MATH, anchor: 'middle' });
+  if (italic) [tb, te].forEach(t => t.setAttribute('font-style', 'italic'));
+  if (t0 !== undefined) show(g, t0);
+  return { g, b, e, w, x0, x1: x0 + w, bx: x0 + wb / 2, ex: x0 + wb + gap + we / 2 };
+}
+// A colour between c and the board: k = 1 is c itself (opaque faces that hide what lies behind them).
+function c05Mix(c, k) {
+  const a = parseInt(c.slice(1), 16), b = parseInt(COL.board.slice(1), 16);
+  const ch = s => Math.round(((a >> s) & 255) * k + ((b >> s) & 255) * (1 - k));
+  return '#' + [16, 8, 0].map(s => ch(s).toString(16).padStart(2, '0')).join('');
+}
+// One layer (z from k to k + 1) of an n × n × n cube of small cubes of edge s, drawn in isometric view: the top face and
+// the two front faces, with the cube lines between the small cubes. (cx, cy) is the screen point of the corner (0, 0, 0).
+// Draw the layers bottom first, so each one covers the top of the layer under it. Returns the layer's group.
+function c05Slab(p, cx, cy, n, s, k, { fill = NUM } = {}) {
+  const P = (i, j, z) => `${(cx + (i - j) * s * COS30).toFixed(1)} ${(cy + (i + j) * s * .5 - z * s).toFixed(1)}`;
+  const g = G(p), z0 = k, z1 = k + 1, edge = { stroke: COL.chalk, 'stroke-width': 2.5, 'stroke-linejoin': 'round' };
+  path(g, `M${P(0, n, z0)}L${P(n, n, z0)}L${P(n, n, z1)}L${P(0, n, z1)}Z`, { fill: c05Mix(fill, .62), ...edge });
+  path(g, `M${P(n, 0, z0)}L${P(n, n, z0)}L${P(n, n, z1)}L${P(n, 0, z1)}Z`, { fill: c05Mix(fill, .42), ...edge });
+  let d = '';
+  for (let q = 1; q < n; q++) d += `M${P(q, 0, z1)}L${P(q, n, z1)}M${P(0, q, z1)}L${P(n, q, z1)}M${P(q, n, z0)}L${P(q, n, z1)}M${P(n, q, z0)}L${P(n, q, z1)}`;
+  path(g, `M${P(0, 0, z1)}L${P(n, 0, z1)}L${P(n, n, z1)}L${P(0, n, z1)}Z`, { fill: c05Mix(fill, .9), ...edge });
+  path(g, d, { stroke: COL.board, 'stroke-width': 2.5 });
+  return g;
+}
+// A cube of n layers that drop into place one after another at the times ts (a layer per time).
+function c05Cube(p, cx, cy, n, s, ts, opts) {
+  return ts.map((t, k) => {
+    const g = c05Slab(p, cx, cy, n, s, k, opts);
+    put(g, { y: -220, o: 0 });
+    tw(g, { o: 1 }, t, .25);
+    tw(g, { y: 0 }, t, .6, out);
+    return g;
+  });
+}
+// x of each digit of 1 followed by z zeros, written from x0 with thousands set apart by a gap (10 000).
+function c05DigitX(z, x0, dw, sp) {
+  const L = z + 1;
+  let gaps = 0;
+  return Array.from({ length: L }, (_, i) => { if (i > 0 && (L - i) % 3 === 0) gaps++; return x0 + i * dw + gaps * sp + dw / 2; });
+}
+// One square cell of side c at (x, y).
+function c05Cell(g, x, y, c, fill = NUM) {
+  return mk('rect', { x, y, width: c, height: c, fill, 'fill-opacity': .85, stroke: COL.chalk, 'stroke-width': 2 }, g);
+}
+
+/* ---------- the doubling block: 2, 4, 8, 16, 32 cells ---------- */
+const DB = { C: 56, X: 150, Y: 280 };
+// Each «· 2» copies the block and slides the copy beside it: down, right, down, right.
+const DB_OFF = [[1, 0], [0, 2], [2, 0], [0, 4]];
+const DB_STAGES = DB_OFF.reduce((acc, [dr, dc]) => { const last = acc[acc.length - 1]; acc.push(last.concat(last.map(([r, c]) => [r + dr, c + dc]))); return acc; }, [[[0, 0], [0, 1]]]);
+const dbCell = (g, [r, c]) => c05Cell(g, DB.X + c * DB.C, DB.Y + r * DB.C, DB.C);
+// The product 2 · 2 · 2 · 2 · 2 = 32 as tokens: the twos in BASE.
+const PROD = [{ t: '2', fill: BASE }, ' · ', { t: '2', fill: BASE }, ' · ', { t: '2', fill: BASE }, ' · ', { t: '2', fill: BASE }, ' · ', { t: '2', fill: BASE }, ' = ', '32'];
+const PROD_AT = { x: 720, y: 420, size: 84 };
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Степень', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.5',
+    title: 'Степень',
+    sub: 'Как коротко записать умножение одинаковых чисел',
+    art: (g, t0) => {
+      const sq = G(g, { o: 0 });
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) c05Cell(sq, 560 + c * 40, 560 + r * 40, 40);
+      show(sq, m('sq'), .4);
+      c05Cube(g, 840, 590, 3, 30, [m('cube'), m('cube', .15), m('cube', .3)]);
+      klMath(g, ['3', E('2'), ' = 9'], 620, 730, m('sq', .3), { size: 44 });
+      klMath(g, ['3', E('3'), ' = 27'], 840, 730, m('cube', .5), { size: 44 });
+    },
+  })],
+
+  ['repeat', 'Умножаем на два, ещё и ещё', m => {
+    const p = panel(0);
+    klTitle(p, 'Одно и то же число множителем');
+    const first = G(p, { o: 0 });
+    DB_STAGES[0].forEach(rc => dbCell(first, rc));
+    show(first, .3);
+    const words = ['2 клетки', '4 клетки', '8 клеток', '16 клеток', '32 клетки'];
+    const labs = words.map(w => klText(p, w, DB.X + 4 * DB.C, DB.Y + 4 * DB.C + 90, undefined, { size: 36, fill: COL.dim, anchor: 'middle', weight: 600 }));
+    labs.forEach(e => put(e, { o: 0 }));
+    show(labs[0], .4);
+    const row = tokens(p, PROD, { ...PROD_AT, o: 0 });
+    show(row[0], .4);
+    DB_OFF.forEach(([dr, dc], k) => {
+      const t = m('x' + (k + 2)), g = G(p, { o: 0 });
+      DB_STAGES[k].forEach(rc => dbCell(g, rc));
+      show(g, t, .2);
+      tw(g, { x: dc * DB.C, y: dr * DB.C }, t + .25, .7, io);
+      hide(labs[k], t + .8, .25); show(labs[k + 1], t + .9, .3);
+      show(row[2 * k + 1], t, .3); show(row[2 * k + 2], t + .1, .3);
+    });
+    show(row[9], m('x5', 1), .3); show(row[10], m('x5', 1.1), .3);
+    [0, 2, 4, 6, 8].forEach((i, k) => pulse(row[i], m('long', .2 + k * .25), 1.35));
+    klBrace(p, row[0]._px - row[0]._w / 2, row[8]._px + row[8]._w / 2, PROD_AT.y + 50, '5 одинаковых множителей', m('long', 1.6), { up: false, fill: DEN, size: 32 });
+    klText(p, 'А если множителей сто? Нужна короткая запись.', 800, 740, m('slow'), { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['name', 'Основание и показатель', m => {
+    const p = panel(0);
+    klTitle(p, 'Короткая запись — степень');
+    const block = G(p);
+    DB_STAGES[4].forEach(rc => dbCell(block, rc));
+    klText(p, '32 клетки', DB.X + 4 * DB.C, DB.Y + 4 * DB.C + 90, undefined, { size: 36, fill: COL.dim, anchor: 'middle', weight: 600 });
+    const { y, size } = PROD_AT, row = tokens(p, PROD, PROD_AT);
+    const fx0 = row[0]._px - row[0]._w / 2 - 12, fx1 = row[8]._px + row[8]._w / 2 + 8;
+    const by0 = y - size * .9, by1 = y + size * .35;
+    const box = path(p, `M${fx0} ${by0}H${fx1}V${by1}H${fx0}Z`, { stroke: RULE, 'stroke-width': 3.5, fill: 'none', 'stroke-linejoin': 'round' }, { d: 0 });
+    draw(box, m('short'), 1.8);
+    const cnt = [0, 2, 4, 6, 8].map((i, k) => {
+      const g = G(p, { x: row[i]._px, y: y + 80, o: 0 });
+      T(g, String(k + 1), { size: 46, fill: EXP, font: MATH, anchor: 'middle', weight: 600 });
+      show(g, m('c' + (k + 1)), .2);
+      return g;
+    });
+    // The five factors fold into the first two; the count 5 rises to become the exponent.
+    const t = m('fold'), bx = row[0]._px, es = size * .62, we = textW('5', es);
+    const ex = bx + row[0]._w / 2 + size * .05 + we / 2, eRight = ex + we / 2 + size * .1;
+    hide(box, t, .3);
+    for (let i = 1; i <= 8; i++) tw(row[i], { x: bx, o: 0, s: .4 }, t + (i - 1) * .04, .6, io);
+    cnt.slice(0, 4).forEach(g => hide(g, t, .4));
+    tw(cnt[4], { x: ex, y: y - size * .45, s: es / 46 }, t + .3, .8, io);
+    tw(row[9], { x: eRight + row[9]._w / 2 }, t + 1, .6, io);
+    tw(row[10], { x: eRight + row[9]._w + row[10]._w / 2 }, t + 1, .6, io);
+    const right = eRight + row[9]._w + row[10]._w;
+    klText(p, '«два в пятой степени»', right + 50, y - 8, m('read'), { size: 34, fill: COL.dim });
+    // The base (what is multiplied) and the exponent (how many times).
+    pulse(row[0], m('base', .2), 1.35);
+    klArrow(p, bx + 6, y + 92, bx, y + 26, y + 60, BASE, m('base'), .4);
+    klText(p, 'основание', bx - 40, y + 130, m('base'), { size: 36, fill: BASE, weight: 700 });
+    klText(p, 'какое число умножаем', bx - 40, y + 172, m('base', .4), { size: 28, fill: COL.dim });
+    pulse(cnt[4], m('exp', .2), 1.5);
+    klArrow(p, ex + 80, y - 130, ex + 10, y - 80, y - 130, EXP, m('exp'), .4);
+    klText(p, 'показатель', ex + 92, y - 132, m('exp'), { size: 36, fill: EXP, weight: 700 });
+    klText(p, 'сколько раз берём множитель', ex + 92, y - 92, m('exp', .4), { size: 28, fill: COL.dim });
+    // «How many times»: the five twos come back for a moment, counted under the label.
+    const back = klMath(p, ['2 · 2 · 2 · 2 · 2'], right + 50, y + 70, m('times'), { size: 40, fill: BASE, anchor: 'start' });
+    pulse(cnt[4], m('times'), 1.5);
+    klText(p, '5 раз', right + 50 + back._w + 22, y + 66, m('times', .6), { size: 30, fill: EXP, weight: 700 });
+    // In general: n factors, each equal to a.
+    const GY = 760, GS = 64, A = ['a · a · … · a'], wA = mathW(A, GS), wEq = mathW([' = '], GS);
+    const wP = textW('a', GS, true) + GS * .05 + textW('n', GS * .62, true), gx = 800 - (wA + wEq + wP) / 2;
+    const ga = tokens(p, [{ t: 'a', fill: BASE }, ' · ', { t: 'a', fill: BASE }, ' · … · ', { t: 'a', fill: BASE }], { x: gx, y: GY, size: GS, o: 0 });
+    ga.forEach(e => show(e, m('gen')));
+    [0, 2, 4].forEach((i, k) => pulse(ga[i], m('each', .1 + k * .3), 1.4));
+    klMath(p, [' = '], gx + wA, GY, m('gen', 1.2), { size: GS, anchor: 'start' });
+    c05Pow(p, 'a', 'n', gx + wA + wEq, GY, m('gen', 1.2), { size: GS, italic: true });
+    klBrace(p, gx, gx + wA, GY + 26, 'n множителей', m('gen', 2), { up: false, fill: EXP, size: 30 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q1row = tokens(p, [{ t: '3', fill: BASE }, ' · ', { t: '3', fill: BASE }, ' · ', { t: '3', fill: BASE }, ' · ', { t: '3', fill: BASE }], { x: 800, y: 330, size: 120, anchor: 'middle', o: 0 });
+    S.q1row.forEach((e, i) => show(e, .2 + i * .06));
+    S.q1cnt = [0, 2, 4, 6].map((i, k) => put(T(p, String(k + 1), { x: S.q1row[i]._px, y: 450, size: 52, fill: EXP, font: MATH, anchor: 'middle', weight: 600 }), { o: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-zapis', prompt: ['Запиши степенью: ', $m('3 · 3 · 3 · 3'), '.'],
+    build: choice([$m('3', E('4')), $m('4', E('3')), $m('3 · 4')], 0,
+      'Множитель 3 повторяется четыре раза: основание 3, показатель 4.',
+      [null, ['Это 4 · 4 · 4. Основание — число, которое умножают: здесь 3.'], 'Это 3 + 3 + 3 + 3 = 12, а у нас четыре тройки перемножаются.'],
+      () => S.q1cnt.forEach((e, i) => fx(e, { o: 1 }, i * .2, .3))),
+  }], done) }],
+
+  ['square', 'Квадрат', m => {
+    const p = panel(0);
+    klTitle(p, 'Вторая степень — квадрат');
+    const C = 80, X0 = 200, Y0 = 250;
+    const frame = put(mk('rect', { x: X0, y: Y0, width: 5 * C, height: 5 * C, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '8 8' }, p), { o: 0 });
+    show(frame, .3);
+    for (let j = 0; j < 5; j++) { const c = c05Cell(p, X0 + j * C, Y0, C); put(c, { o: 0, s: 1 }); show(c, m('row', j * .12), .25); }
+    klBrace(p, X0, X0 + 5 * C, Y0 - 22, '5', m('row', .8), { size: 40 });
+    for (let r = 1; r < 5; r++) {
+      const g = G(p, { o: 0 }), t = m('rows', (r - 1) * .35);
+      for (let j = 0; j < 5; j++) c05Cell(g, X0 + j * C, Y0, C);
+      show(g, t, .15);
+      tw(g, { y: r * C }, t + .1, .55, io);
+    }
+    draw(path(p, `M${X0 - 10} ${Y0}H${X0 - 24}V${Y0 + 5 * C}H${X0 - 10}`, { stroke: COL.chalk, 'stroke-width': 3, fill: 'none' }, { d: 0 }), m('rows', 1.8), .5);
+    klText(p, '5', X0 - 52, Y0 + 2.5 * C + 14, m('rows', 2), { size: 40, weight: 600, anchor: 'middle' });
+    // Row by row: 5, 10, 15, 20, 25 cells.
+    [5, 10, 15, 20, 25].forEach((v, r) => klText(p, String(v), X0 + 5 * C + 46, Y0 + (r + .5) * C + 12, m('area', .3 + r * .3), { size: 34, fill: r === 4 ? COL.chalk : COL.dim, weight: 600, anchor: 'middle' }));
+    const ring = put(mk('rect', { x: X0 - 3, y: Y0 - 3, width: 5 * C + 6, height: 5 * C + 6, fill: 'none', stroke: RULE, 'stroke-width': 6, rx: 4 }, p), { o: 0 });
+    show(ring, m('area', 1.8), .4);
+    const pw = c05Pow(p, '5', '2', 800, 400, m('area', 2), { size: 96 });
+    klMath(p, [' = 5 · 5 = 25'], pw.x1, 400, m('area', 2.6), { size: 96, anchor: 'start' });
+    klText(p, '«пять в квадрате»', 800, 520, m('read', 1.4), { size: 42, fill: RULE, weight: 600 });
+    klText(p, 'площадь квадрата со стороной 5', 800, 580, m('ar'), { size: 32, fill: COL.dim });
+    const glow = put(mk('rect', { x: X0, y: Y0, width: 0, height: 5 * C, fill: RULE, 'fill-opacity': .35 }, p), { o: 1 });
+    tw(glow, { a_width: 5 * C }, m('ar', .3), 1.2, io);
+    tw(glow, { o: 0 }, m('ar', 1.8), .8);
+    pulse(pw.e, m('read', 1.4), 1.5);
+  }],
+
+  ['cube', 'Куб', m => {
+    const p = panel(0);
+    klTitle(p, 'Третья степень — куб');
+    const CX = 400, CY = 470, N = 3, Sz = 80;
+    // An outline of the whole cube waits for its layers.
+    const Pt = (i, j, z) => `${(CX + (i - j) * Sz * COS30).toFixed(1)} ${(CY + (i + j) * Sz * .5 - z * Sz).toFixed(1)}`;
+    const ghost = path(p, `M${Pt(0, N, 0)}L${Pt(N, N, 0)}L${Pt(N, 0, 0)}L${Pt(N, 0, N)}L${Pt(0, 0, N)}L${Pt(0, N, N)}ZM${Pt(N, N, 0)}L${Pt(N, N, N)}L${Pt(0, N, N)}M${Pt(N, N, N)}L${Pt(N, 0, N)}`,
+      { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '8 8', fill: 'none', 'stroke-linejoin': 'round' }, { o: 0 });
+    show(ghost, .3);
+    c05Cube(p, CX, CY, N, Sz, [m('layer'), m('l2'), m('l3')]);
+    const lx = CX + N * Sz * COS30 + 34, ly = k => CY + N * Sz * .5 - (k + .5) * Sz + 12;
+    klMath(p, ['3 · 3 = 9'], lx, ly(0), m('layer', 1.4), { size: 40, anchor: 'start' });
+    klMath(p, ['9'], lx, ly(1), m('l2', .6), { size: 40, anchor: 'start' });
+    klMath(p, ['9'], lx, ly(2), m('l3', .6), { size: 40, anchor: 'start' });
+    const pw = c05Pow(p, '3', '3', 900, 400, m('all'), { size: 90 });
+    klMath(p, [' = 3 · 9 = 27'], pw.x1, 400, m('all', .4), { size: 90, anchor: 'start' });
+    klText(p, '«три в кубе»', 900, 520, m('read'), { size: 42, fill: RULE, weight: 600 });
+    klText(p, 'объём куба с ребром 3', 900, 580, m('read', 1), { size: 32, fill: COL.dim });
+    pulse(pw.e, m('read'), 1.5);
+    // The three edges, each 3.
+    [[CX - 1.5 * Sz * COS30 - 26, CY + 4.5 * Sz * .5 + 44], [CX + 1.5 * Sz * COS30 + 26, CY + 4.5 * Sz * .5 + 44], [CX - N * Sz * COS30 - 36, CY + 1.5 * Sz * .5 - 1.5 * Sz + 14]]
+      .forEach(([x, yy], k) => klText(p, '3', x, yy, m('read', 1.6 + k * .2), { size: 40, weight: 600, anchor: 'middle' }));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const C = 58, X0 = 626, Y0 = 120;
+    let d = '';
+    for (let k = 1; k < 6; k++) d += `M${X0 + k * C} ${Y0}V${Y0 + 6 * C}M${X0} ${Y0 + k * C}H${X0 + 6 * C}`;
+    S.q2fill = Array.from({ length: 6 }, (_, r) => put(mk('rect', { x: X0, y: Y0 + r * C, width: 6 * C, height: C, fill: NUM, 'fill-opacity': .85 }, p), { o: 0 }));
+    const g = G(p, { o: 0 });
+    path(g, d, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .6 });
+    mk('rect', { x: X0, y: Y0, width: 6 * C, height: 6 * C, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, g);
+    show(g, .2);
+    klText(p, '6', X0 + 3 * C, Y0 - 18, .4, { size: 40, weight: 600, anchor: 'middle' });
+    klText(p, '6', X0 - 36, Y0 + 3 * C + 14, .4, { size: 40, weight: 600, anchor: 'middle' });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-kvadrat', prompt: 'Сколько клеток в квадрате со стороной 6?',
+    build: blanks([{ parts: ['6', E('2'), ' = ', { box: '36' }],
+      why: '6 · 6 = 36: шесть рядов по шесть клеток.',
+      hint: 'Квадрат со стороной 6 — это шесть рядов по шесть клеток.',
+      fx: () => S.q2fill.forEach((e, r) => fx(e, { o: 1 }, r * .15, .3)) }]),
+  }], done) }],
+
+  ['ten', 'Степени десяти', m => {
+    const p = panel(0);
+    klTitle(p, 'Степени десяти');
+    const SZ = 84, XE = 620, X0 = XE + 50, YS = [260, 375, 490, 605], dw = textW('0', SZ), sp = dw * .45;
+    const marks = ['t1', 't2', 't3', 't4'], pows = [], zeros = [], ones = [];
+    YS.forEach((y, k) => {
+      const z = k + 1, t = m(marks[k]);
+      pows.push(c05Pow(p, '10', String(z), XE - 40, y, t, { size: SZ, bf: COL.chalk, anchor: 'end' }));
+      klMath(p, ['='], XE, y, t, { size: SZ });
+      const nx = c05DigitX(z, X0, dw, sp);
+      if (k === 0) {
+        nx.forEach((x, i) => { const e = T(p, i ? '0' : '1', { x, y, size: SZ, fill: i ? EXP : COL.chalk, font: MATH, anchor: 'middle', o: 0 }); show(e, t + .3); if (i) zeros.push([k, e]); else ones.push(e); });
+        return;
+      }
+      // A copy of the line above slides down; then one more zero arrives on the right.
+      const ox = c05DigitX(z - 1, X0, dw, sp);
+      ox.forEach((x, i) => {
+        const e = T(p, i ? '0' : '1', { x, y: YS[k - 1], size: SZ, fill: i ? EXP : COL.chalk, font: MATH, anchor: 'middle', o: 0 });
+        show(e, t + .2, .15);
+        tw(e, { x: nx[i], y }, t + .3, .6, io);
+        if (i) zeros.push([k, e]); else ones.push(e);
+      });
+      const nz = T(p, '0', { x: nx[z] + 30, y: y - 40, size: SZ, fill: EXP, font: MATH, anchor: 'middle', o: 0 });
+      tw(nz, { o: 1 }, t + .9, .25);
+      tw(nz, { x: nx[z], y }, t + .9, .4, out);
+      zeros.push([k, nz]);
+    });
+    // The exponent counts the zeros.
+    pows.forEach((pw, k) => pulse(pw.e, m('zeros', k * .5), 1.5));
+    zeros.forEach(([k, e]) => pulse(e, m('zeros', k * .5 + .15), 1.3));
+    klRow(p, [{ m: ['10', E('n')] }, '  —  единица и  n  нулей'], 800, 760, m('rule'), { size: 38, msize: 60, fill: RULE, weight: 600 });
+    ones.forEach((e, k) => pulse(e, m('one', k * .1), 1.3));
+    zeros.forEach(([k, e], i) => pulse(e, m('nz', i * .05), 1.3));
+    ['разряд десятков', 'разряд сотен', 'разряд тысяч', 'разряд десятков тысяч'].forEach((s, k) =>
+      klText(p, s, 1110, YS[k] - 22, m('places', 1.2 + k * .4), { size: 30, fill: COL.dim }));
+  }],
+
+  ['units', 'Квадратный метр', m => {
+    const p = panel(0);
+    klTitle(p, 'Квадратный метр в сантиметрах');
+    const X0 = 170, Y0 = 250, W = 400, c = W / 100;
+    const shade = put(mk('rect', { x: X0, y: Y0, width: W, height: c, fill: NUM, 'fill-opacity': .85 }, p), { o: 0 });
+    let d = '';
+    for (let k = 1; k < 100; k++) d += `M${X0 + k * c} ${Y0}V${Y0 + W}M${X0} ${Y0 + k * c}H${X0 + W}`;
+    const g = G(p, { o: 0 });
+    mk('rect', { x: X0, y: Y0, width: W, height: W, fill: COL.chalk, 'fill-opacity': .05 }, g);
+    path(g, d, { stroke: COL.chalk, 'stroke-width': 1, 'stroke-opacity': .22 });
+    mk('rect', { x: X0, y: Y0, width: W, height: W, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5 }, g);
+    show(g, .3);
+    klText(p, '1 м', X0 - 22, Y0 + W / 2 + 12, .4, { size: 36, weight: 600, anchor: 'end' });
+    klText(p, '1 м', X0 + W / 2 - 8, Y0 - 52, .4, { size: 36, weight: 600, anchor: 'end' });
+    klBrace(p, X0, X0 + W, Y0 - 18, '', m('side'));
+    klText(p, '= 100 см', X0 + W / 2 + 4, Y0 - 52, m('side', .2), { size: 36, weight: 600, fill: COL.dim });
+    show(shade, m('strip'), .3);
+    klText(p, '← один ряд: 100 см²', X0 + W + 24, Y0 + 12, m('strip', .3), { size: 30, fill: NUM, weight: 600 });
+    tw(shade, { a_height: W }, m('fill'), 2.2, io);
+    const cnt = T(p, '', { x: X0 + W + 24, y: Y0 + W - 8, size: 30, fill: COL.dim, weight: 600, o: 0 });
+    show(cnt, m('fill'), .2);
+    prog(q => { const n = Math.max(1, Math.round(q * 100)), s = `рядов: ${n}`; if (cnt.textContent !== s) cnt.textContent = s; }, m('fill'), 2.2, io);
+    // Each second line starts under the «=» of the line above.
+    const XS = 960, xEq = XS + mathW(['1 м', E('2'), ' '], 64);
+    klMath(p, ['1 м', E('2'), ' = 100', E('2'), ' см', E('2')], XS, 400, m('eq'), { size: 64, anchor: 'start' });
+    klMath(p, ['= 10' + NB + '000 см', E('2')], xEq, 490, m('eq', 1.6), { size: 64, anchor: 'start' });
+    klMath(p, ['1 м', E('3'), ' = 100', E('3'), ' см', E('3')], XS, 640, m('cube'), { size: 64, anchor: 'start' });
+    klMath(p, ['= 1' + NB + '000' + NB + '000 см', E('3')], xEq, 730, m('cube', 2), { size: 64, fill: RULE, anchor: 'start' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const SZ = 110, dw = textW('0', SZ), sp = dw * .45, xs = c05DigitX(6, 0, dw, sp), w = xs[6] + dw / 2, x0 = 800 - w / 2;
+    S.q3zeros = [];
+    xs.forEach((x, i) => { const e = T(p, i ? '0' : '1', { x: x0 + x, y: 230, size: SZ, fill: i ? EXP : COL.chalk, font: MATH, anchor: 'middle', o: 0 }); show(e, .2 + i * .05); if (i) S.q3zeros.push(x0 + x); });
+    klText(p, 'миллион', 800, 300, .4, { size: 32, fill: COL.dim, anchor: 'middle' });
+    S.q3cnt = S.q3zeros.map((x, k) => put(T(p, String(k + 1), { x, y: 128, size: 34, fill: EXP, font: MATH, anchor: 'middle', weight: 600 }), { o: 0 }));
+    S.q3pw = ['5', '6', '7'].map((e, k) => {
+      const x = 520 + k * 280, g = G(p, { o: 0 });
+      mk('rect', { x: x - 100, y: 380, width: 200, height: 150, rx: 16, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.faint, 'stroke-width': 2 }, g);
+      const pw = c05Pow(g, '10', e, x, 490, undefined, { size: 90, bf: COL.chalk, anchor: 'middle' });
+      show(g, .5 + k * .1);
+      return { g, pw, box: [x - 100, 380, 200, 150] };
+    });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-million', prompt: 'Какая степень десяти равна миллиону? Нажми на неё.',
+    build: pickEls(S.q3pw.map((q, k) => ({ el: q.g, box: q.box, label: `10 в степени ${k + 5}` })), 1,
+      ['В миллионе шесть нулей, значит, 1' + NB + '000' + NB + '000 = ', $m('10', E('6')), '.'],
+      k => k === 0 ? ['В ', $m('10', E('5')), ' пять нулей: это 100' + NB + '000. Посчитай нули миллиона.'] : ['В ', $m('10', E('7')), ' семь нулей: это десять миллионов. Посчитай нули миллиона.'],
+      () => { S.q3cnt.forEach((e, i) => fx(e, { o: 1 }, i * .12, .25)); pulseFx(S.q3pw[1].pw.e, 1.6); }),
+  }], done) }],
+
+  ['order', 'Порядок действий', m => {
+    const p = panel(0);
+    klTitle(p, 'Сначала степень, потом умножение');
+    draw(path(p, 'M800 230V640', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '8 10' }, { d: 0 }), .3, .5);
+    klText(p, 'без скобок', 400, 250, .3, { size: 32, fill: COL.dim, anchor: 'middle' });
+    const Y = 420, SZ = 100;
+    let L = tokens(p, ['2', ' · ', ['3', E('2')]], { x: 400, y: Y, size: SZ, anchor: 'middle', o: 0 });
+    L.forEach(e => show(e, .4));
+    L.forEach((e, i) => pulse(e, m('ex', i * .35), 1.25));
+    pulse(L[2], m('first', -.2), 1.3);
+    L = collapse(L, 2, 2, ['9'], m('first', .6));
+    L = collapse(L, 0, 2, ['18'], m('then', .9));
+    klMath(p, ['2 · 3', E('2'), ' = 2 · 9 = 18'], 400, 590, m('then', 2.6), { size: 48, fill: COL.dim });
+    klText(p, 'со скобками', 1200, 250, m('br'), { size: 32, fill: COL.dim, anchor: 'middle' });
+    let R = tokens(p, ['(', '2', ' · ', '3', [')', E('2')]], { x: 1200, y: Y, size: SZ, anchor: 'middle', o: 0 });
+    R.forEach(e => show(e, m('br', .3)));
+    R = collapse(R, 1, 3, ['6'], m('six', -.1));
+    R = collapse(R, 0, 2, ['36'], m('sq', .9));
+    klMath(p, ['(2 · 3)', E('2'), ' = 6', E('2'), ' = 36'], 1200, 590, m('sq', 2.4), { size: 48, fill: COL.dim });
+    klText(p, 'степень — раньше умножения', 800, 760, m('before'), { size: 38, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const Y = 320, SZ = 80;
+    const pl = c05Pow(p, '2', '3', 160, Y, m('wrong'), { size: SZ });
+    klMath(p, [' = 2 · 3 = 6'], pl.x1, Y, m('wrong', 1.6), { size: SZ, anchor: 'start', fill: COL.dim });
+    const C = 70, g6 = G(p, { o: 0 });
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) c05Cell(g6, 300 + c * C, 440 + r * C, C, COL.dim);
+    show(g6, m('wrong', 3));
+    klText(p, '6 клеток', 405, 650, m('wrong', 3.2), { size: 32, fill: COL.dim, anchor: 'middle' });
+    klStrike(p, 140, Y + 14, 640, Y - 60, m('strike'));
+    klText(p, 'ошибка!', 405, 720, m('strike', .3), { size: 34, fill: COL.bad, weight: 700, anchor: 'middle' });
+    klStrike(p, 280, 600, 530, 420, m('strike', .4));
+    const pr = c05Pow(p, '2', '3', 930, Y, m('right'), { size: SZ });
+    pulse(pr.e, m('right', .8), 1.5);
+    const R = tokens(p, [' = ', { t: '2', fill: BASE }, ' · ', { t: '2', fill: BASE }, ' · ', { t: '2', fill: BASE }, ' = ', '8'], { x: pr.x1, y: Y, size: SZ, o: 0 });
+    R.forEach((e, i) => show(e, m('right', i < 6 ? 2.6 + i * .2 : 4.6)));
+    c05Cube(p, 1200, 470, 2, 70, [m('see', -.6), m('see', -.3)]);
+    klText(p, '8 кубиков', 1200, 720, m('see', .6), { size: 32, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    S.q4row = tokens(p, ['5', ' + ', '2', ' · ', ['4', E('2')]], { x: 800, y: 360, size: 130, anchor: 'middle', o: 0 });
+    S.q4row.forEach((e, i) => show(e, .2 + i * .08));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-poryadok', prompt: 'С какого действия начать? Нажми на него.',
+    build: tapEls(S.q4row, [1, 3, 4], 4,
+      ['Сначала степень: ', $m('4', E('2'), ' = 16'), ', потом 2 · 16 = 32, и в конце 5 + 32 = 37.'],
+      i => i === 1 ? 'Сложение здесь последнее: сначала степень, потом умножение.' : ['Умножение идёт после степени: сначала ', $m('4', E('2'), ' = 16'), '.'],
+      () => {
+        const r1 = collapse(S.q4row, 4, 4, ['16'], 0, { live: true });
+        const r2 = collapse(r1, 2, 4, ['32'], 1.8, { live: true });
+        collapse(r2, 0, 2, ['37'], 3.6, { live: true });
+      }),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    ['Степень — произведение равных множителей:  ', { m: ['2', E('5'), ' = 2 · 2 · 2 · 2 · 2'] }],
+    ['Вторая степень — квадрат, третья — куб:  ', { m: ['5', E('2'), ' = 25,   3', E('3'), ' = 27'] }],
+    ['Десять в степени n — единица и n нулей:  ', { m: ['10', E('4'), ' = 10' + NB + '000'] }],
+    ['Степень — раньше умножения:  ', { m: ['2 · 3', E('2'), ' = 2 · 9 = 18'] }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-vychisli', prompt: 'Вычисли степени.',
+    build: blanks([
+      { parts: ['5', E('3'), ' = ', { box: '125' }], why: '5 · 5 · 5 = 25 · 5 = 125.', hint: 'Возьми пятёрку множителем три раза.' },
+      { parts: ['10', E('4'), ' = ', { box: '10000' }], why: 'Единица и четыре нуля: 10 000.', hint: 'Показатель равен числу нулей.' },
+    ]),
+  }, {
+    id: 'p-poryadok', prompt: 'Вычисли. Следи за порядком действий.',
+    build: blanks([
+      { parts: ['2 · 3', E('2'), ' = ', { box: '18' }], why: 'Сначала степень: 3² = 9, потом 2 · 9 = 18.', hint: 'Сначала вычисли степень, потом умножай.' },
+      { parts: ['(2 · 3)', E('2'), ' = ', { box: '36' }], why: 'Сначала скобки: 2 · 3 = 6, потом 6² = 36.', hint: 'Сначала действие в скобках, потом степень.' },
+    ]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: ['2', E('3'), ' = 6'], ans: ['ne'], why: '2³ = 2 · 2 · 2 = 8, а не 2 · 3.' },
+      { parts: ['1', E('5'), ' = 1'], ans: ['da'], why: '1 · 1 · 1 · 1 · 1 = 1.' },
+      { parts: ['10', E('3'), ' = 1' + NB + '000'], ans: ['da'], why: 'Единица и три нуля.' },
+      { parts: ['1 м', E('2'), ' = 100 см', E('2')], ans: ['ne'], why: '1 м² = 100² см² = 10 000 см².' },
+    ], [['da', 'верно', null, '1'], ['ne', 'неверно', null, '2']], { multi: false }),
+  }, {
+    id: 'p-summa', prompt: 'Вычисли.',
+    build: blanks([{ parts: ['4', E('2'), ' + 2', E('3'), ' = ', { box: '24' }],
+      why: '4² = 16 и 2³ = 8: сначала обе степени, потом сложение, 16 + 8 = 24.', hint: 'Вычисли каждую степень, потом сложи.' }]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-kub', prompt: 'Ребро куба — 4 см. Чему равен его объём?',
+    build: choice([$m('12 см', E('3')), $m('16 см', E('3')), $m('64 см', E('3'))], 2,
+      ['Объём куба — третья степень ребра: ', $m('4', E('3'), ' = 4 · 4 · 4 = 64'), ' кубических сантиметра.'],
+      ['Это 4 · 3. Показатель — не множитель: 4 берут множителем три раза.', ['Это ', $m('4', E('2')), ' — площадь одной грани. Объём — куб ребра.'], null]),
+  }, {
+    id: 'p-stepen', prompt: ['Как записать степенью ', $m('7 · 7 · 7'), '?'],
+    build: choice([$m('7', E('3')), $m('3', E('7')), $m('7 · 3')], 0,
+      'Семёрка повторяется множителем три раза: основание 7, показатель 3.',
+      [null, 'Основание — число, которое умножают: здесь 7, а показатель — сколько раз: 3.', 'Это 7 + 7 + 7 = 21, а у нас три семёрки перемножаются.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

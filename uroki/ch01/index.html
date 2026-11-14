@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Позиционная запись · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.1 «Позиционная запись» (5 класс). Beat ids match papermorph/content/uroki/ch01/narration.ru.json.
+const CHAPTER = { number: 1, label: '1.1', title: 'Позиционная запись', minutes: 8, language: 'ru', next: '../ch02/' };
+
+// Colours in this lesson: the digit we follow — KL.NUM; the classes — единицы KL.DEN, тысячи KL.TWO,
+// миллионы KL.WHOLE; place values, rules and estimates — KL.RULE.
+const DIG = KL.NUM, RULE = KL.RULE, C_UN = KL.DEN, C_TH = KL.TWO, C_MI = KL.WHOLE;
+const NBSP = ' ';
+// A number written with its classes apart: 3405 → «3 405» (no-break space).
+const c01Fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+
+// Centres of the digits of a written number: `pitch` apart, plus `gap` between classes (threes from the right).
+// anchor: 'middle' centres the number on x, 'end' puts the last digit's centre on x, 'start' the first digit's.
+function c01Pos(s, x, pitch, gap = 0, anchor = 'middle') {
+  s = String(s);
+  const L = s.length, cls = i => Math.floor((L - 1 - i) / 3);
+  const off = Array.from({ length: L }, (_, i) => i * pitch + (cls(0) - cls(i)) * gap), w = off[L - 1];
+  const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+  return off.map(o => x0 + o);
+}
+// One digit as a group whose origin is the digit's visual centre (x, y): it slides, scales and pulses in place.
+// g._t is the text, for colour tweens (c_fill).
+function c01Dig(p, ch, x, y, { size = 120, fill = COL.chalk, t0 } = {}) {
+  const g = G(p, { x, y, o: t0 === undefined ? 1 : 0 });
+  g._t = T(g, String(ch), { x: 0, y: size * .35, size, fill, font: MATH, anchor: 'middle' });
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A written number as separate digit groups (c01Pos places them); fills(i, ch) may colour each digit.
+function c01Num(p, s, x, y, { size = 120, pitch = size * .6, gap = size * .25, anchor = 'middle', fill = COL.chalk, fills, t0, step = 0 } = {}) {
+  s = String(s);
+  const xs = c01Pos(s, x, pitch, gap, anchor);
+  const digs = s.split('').map((ch, i) => c01Dig(p, ch, xs[i], y, { size, fill: fills ? fills(i, ch) : fill, t0: t0 === undefined ? undefined : t0 + i * step }));
+  digs.xs = xs;
+  return digs;
+}
+// Numbers and signs in the maths face (digits, ·, +, =, ≈), fading in at t0.
+function c01M(p, str, x, y, t0, { size = 64, fill = COL.chalk, anchor = 'middle', weight = 400 } = {}) {
+  const e = T(p, str, { x, y, size, fill, font: MATH, anchor, weight, o: t0 === undefined ? 1 : 0 });
+  if (t0 !== undefined) show(e, t0);
+  return e;
+}
+// A place-value table: heads[k] names column k counted from the right (k = 0: единицы), each cw wide, the right edge
+// at xr, cells from y to y + h. Returns { g, X(k) (column centre), cy (cells' middle) }.
+function c01Table(p, { xr, y, cw = 200, h = 160, heads, t0, size = 30 }) {
+  const n = heads.length, g = G(p, { o: 0 }), X = k => xr - (k + .5) * cw;
+  mk('rect', { x: xr - n * cw, y, width: n * cw, height: h, fill: COL.chalk, 'fill-opacity': .05 }, g);
+  for (let k = 1; k < n; k++) path(g, `M${xr - k * cw} ${y}V${y + h}`, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .45 });
+  mk('rect', { x: xr - n * cw, y, width: n * cw, height: h, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5, rx: 2 }, g);
+  const hs = heads.map((s, k) => T(g, s, { x: X(k), y: y - 20, size, fill: COL.dim, anchor: 'middle', weight: 600 }));
+  show(g, t0);
+  return { g, X, cy: y + h / 2, heads: hs };
+}
+// Class boxes for writing a number by classes: sizes = slots per class from the left (e.g. [1, 3, 3]), slot w wide,
+// `sep` between boxes, centred on x; cells from y to y + h; names and colours under each box.
+// Returns { g, slots: [x centres, left to right], cy, frames }.
+function c01Classes(p, { x = 800, y, h = 120, w = 90, sep = 50, sizes, names, cols, t0 }) {
+  const total = sizes.reduce((a, b) => a + b, 0) * w + (sizes.length - 1) * sep, g = G(p, { o: 0 }), slots = [];
+  let cx = x - total / 2;
+  sizes.forEach((n, k) => {
+    mk('rect', { x: cx, y, width: n * w, height: h, fill: COL.chalk, 'fill-opacity': .05 }, g);
+    for (let i = 1; i < n; i++) path(g, `M${cx + i * w} ${y + 14}V${y + h - 14}`, { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .35, 'stroke-dasharray': '6 6' });
+    mk('rect', { x: cx, y, width: n * w, height: h, fill: 'none', stroke: cols[k], 'stroke-width': 3.5, rx: 4 }, g);
+    T(g, names[k], { x: cx + n * w / 2, y: y + h + 46, size: 30, fill: cols[k], anchor: 'middle', weight: 600 });
+    for (let i = 0; i < n; i++) slots.push(cx + (i + .5) * w);
+    cx += n * w + sep;
+  });
+  if (t0 !== undefined) show(g, t0);
+  return { g, slots, cy: y + h / 2 };
+}
+// A digit dropping into its place from above: a hidden digit at (x, y − 70) falls to (x, y) at t.
+function c01Drop(p, ch, x, y, t, { size = 80, fill = COL.chalk } = {}) {
+  const d = c01Dig(p, ch, x, y - 70, { size, fill });
+  put(d, { o: 0 });
+  tw(d, { o: 1, y }, t, .45, out);
+  return d;
+}
+// A hop of a group from x a to x b (arc of height hgt above its y).
+function c01Hop(e, a, b, y, t, dur = .7, hgt = 34) {
+  prog(q => put(e, { x: a + (b - a) * q, y: y - Math.sin(Math.PI * q) * hgt }), t, dur, io);
+}
+// A number line from value a at x0 to value b at x1 at height y: small ticks every `step`, tall ones at `big` values,
+// labels under `labels`. Returns { g, X(v), y }.
+function c01Line(p, { x0, x1, y, a, b, step, big = [], labels = [], t0, size = 32 }) {
+  const g = G(p, { o: 0 }), X = v => x0 + (v - a) * (x1 - x0) / (b - a);
+  path(g, `M${x0 - 30} ${y}H${x1 + 50}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+  path(g, `M${x1 + 36} ${y - 11}L${x1 + 52} ${y}L${x1 + 36} ${y + 11}`, { stroke: COL.chalk, 'stroke-width': 3.5, fill: 'none', 'stroke-linejoin': 'round' });
+  for (let v = a; v <= b + 1e-9; v += step) {
+    const tall = big.includes(v) || v === a || v === b;
+    path(g, `M${X(v)} ${y - (tall ? 18 : 9)}V${y + (tall ? 18 : 9)}`, { stroke: tall ? COL.chalk : KL.DEN, 'stroke-width': tall ? 3.5 : 2.5 });
+  }
+  const labs = labels.map(v => T(g, c01Fmt(v), { x: X(v), y: y + 54, size, fill: COL.chalk, font: MATH, anchor: 'middle' }));
+  if (t0 !== undefined) show(g, t0);
+  return { g, X, y, labs };
+}
+// A dot on a line at value v (hidden until t), with its label above.
+function c01Dot(p, L, v, t, { fill = DIG, label, r = 13 } = {}) {
+  const g = G(p, { x: L.X(v), y: L.y, o: 0 });
+  mk('circle', { r, fill, stroke: COL.board, 'stroke-width': 3 }, g);
+  if (label) T(g, label, { x: 0, y: -32, size: 32, fill, font: MATH, anchor: 'middle' });
+  tw(g, { o: 1 }, t, .3);
+  return g;
+}
+// A rounded ring drawn round a box (x, y, w, h).
+function c01Ring(p, x, y, w, h, t, col = RULE) {
+  const e = path(p, `M${x + 14} ${y}H${x + w - 14}Q${x + w} ${y} ${x + w} ${y + 14}V${y + h - 14}Q${x + w} ${y + h} ${x + w - 14} ${y + h}H${x + 14}Q${x} ${y + h} ${x} ${y + h - 14}V${y + 14}Q${x} ${y} ${x + 14} ${y}Z`,
+    { stroke: col, 'stroke-width': 4, fill: 'none' }, { d: 0 });
+  draw(e, t, .45);
+  return e;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Позиционная запись', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.1',
+    title: 'Позиционная запись',
+    sub: 'Почему одна и та же цифра значит то три, то три тысячи',
+    art: (g, t0) => {
+      const heads = ['тыс.', 'сот.', 'дес.', 'ед.'];
+      '3405'.split('').forEach((ch, i) => {
+        const x = 620 + i * 90, c = G(g, { o: 0 });
+        mk('rect', { x, y: 572, width: 90, height: 90, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': 2.5 }, c);
+        T(c, heads[i], { x: x + 45, y: 558, size: 20, fill: COL.dim, anchor: 'middle', weight: 600 });
+        T(c, ch, { x: x + 45, y: 639, size: 60, font: MATH, fill: ch === '0' ? COL.dim : i === 0 ? DIG : COL.chalk, anchor: 'middle' });
+        show(c, t0 + i * .12);
+      });
+    },
+  })],
+
+  ['place', 'Цифра и её место', m => {
+    const p = panel(0);
+    klTitle(p, 'Значение цифры зависит от её места');
+    const tb = c01Table(p, { xr: 1200, y: 250, cw: 200, h: 170, heads: ['единицы', 'десятки', 'сотни', 'тысячи'], t0: .2 });
+    const three = c01Dig(p, '3', tb.X(0), tb.cy, { size: 130, fill: DIG, t0: .3 });
+    // What the digit is worth now: the readout under the table changes with every move.
+    const lab = klText(p, 'цифра значит', 760, 712, m('units'), { size: 34, fill: COL.dim, anchor: 'end' });
+    const vals = ['3', '30', '300', '3' + NBSP + '000'].map(v => c01M(p, v, 800, 720, undefined, { size: 100, fill: DIG, anchor: 'start' }));
+    vals.forEach(v => put(v, { o: 0 }));
+    const at = [m('units'), m('s1', 1.6), m('s2', .6), m('s3', .7)];
+    vals.forEach((v, k) => { show(v, at[k], .3); if (k < 3) hide(v, at[k + 1] - .25, .25); });
+    tw(vals[1], { s: 1.12 }, m('s1', 3.6), .25, out); tw(vals[1], { s: 1 }, m('s1', 3.85), .35);   // «в десять раз больше»
+    tw(three, { s: 1.12 }, m('units'), .2, out); tw(three, { s: 1 }, m('units', .2), .3);
+    // Each move is one place to the left: an arrow under the table and «· 10» under it.
+    const arcs = G(p);
+    [m('s1'), m('s2'), m('s3')].forEach((t, k) => {
+      c01Hop(three, tb.X(k), tb.X(k + 1), tb.cy, t, .75, 40);
+      klArrow(arcs, tb.X(k) - 10, 450, tb.X(k + 1) + 10, 450, 505, RULE, t + .1, .6);
+      c01M(arcs, '· 10', (tb.X(k) + tb.X(k + 1)) / 2, 552, t + .5, { size: 36, fill: RULE });
+    });
+    klText(p, 'каждый разряд в 10 раз больше соседнего справа', 800, 840, m('rule'), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    // «значение цифры зависит от её места»: the place names light up from the right, then the digit.
+    tb.heads.forEach((e, k) => { tw(e, { c_fill: RULE }, m('rule', 4.6 + k * .3), .3); tw(e, { c_fill: COL.dim }, m('rule', 7.2), .5); });
+    tw(three, { s: 1.15 }, m('rule', 6.4), .25, out); tw(three, { s: 1 }, m('rule', 6.65), .35);
+    // Without the table the empty places are held by zeros, and the digits close up into «3 000».
+    [tb.g, arcs, lab, vals[3]].forEach(e => hide(e, m('zero', .2), .6));
+    const zeros = [0, 1, 2].map(k => c01Drop(p, '0', tb.X(k), tb.cy, m('zero', 1.4 + (2 - k) * .25), { size: 130 }));
+    const xs = c01Pos('3000', 800, 80, 34);
+    [three, zeros[2], zeros[1], zeros[0]].forEach((d, i) => tw(d, { x: xs[i], y: 470 }, m('zero', 3.4), .8, io));
+  }],
+
+  ['expand', 'Разложение по разрядам', m => {
+    const p = panel(0);
+    klTitle(p, 'Число — сумма разрядов');
+    const top = c01Num(p, '3405', 800, 290, { size: 150, pitch: 90, gap: 40, t0: .2 });
+    // The line below: digit · place value, terms joined by «+»; each digit flies down from the number.
+    const SZ = 64, Y = 600, terms = [['3', ' · 1000', 'тысячи'], ['4', ' · 100', 'сотни'], ['0', ' · 10', 'десятков нет'], ['5', '', 'единицы']];
+    const wP = textW('  +  ', SZ), wd = terms.map(t => textW(t[0], SZ)), wr = terms.map(t => textW(t[1], SZ));
+    let x = 800 - (wd.reduce((a, b) => a + b) + wr.reduce((a, b) => a + b) + 3 * wP) / 2;
+    ['t', 'h', 'z', 'u'].forEach((mark, k) => {
+      const t = m(mark), dim = k === 2, col = dim ? COL.dim : DIG;
+      if (k) { c01M(p, '+', x + wP / 2, Y, t, { size: SZ }); x += wP; }
+      tw(top[k]._t, { c_fill: col }, t, .3);
+      const fly = c01Dig(p, terms[k][0], top.xs[k], 290, { size: 150, fill: col });
+      put(fly, { o: 0 });
+      tw(fly, { o: 1 }, t, .15);
+      tw(fly, { x: x + wd[k] / 2, y: Y - SZ * .35, s: SZ / 150 }, t, .8, io);
+      if (k !== 2) { const tp = m('sum', [2.6, 0, 0, 5.2][k] || 3.9); tw(fly, { s: SZ / 150 * 1.35 }, tp, .22, out); tw(fly, { s: SZ / 150 }, tp + .22, .35); }
+      if (terms[k][1]) c01M(p, terms[k][1], x + wd[k], Y, t + .6, { size: SZ, fill: dim ? COL.dim : COL.chalk, anchor: 'start' });
+      klText(p, terms[k][2], x + (wd[k] + wr[k]) / 2, Y + 66, t + .6, { size: 28, fill: dim ? COL.dim : RULE, anchor: 'middle', weight: 600 });
+      x += wd[k] + wr[k];
+    });
+    c01M(p, '3' + NBSP + '405 = 3' + NBSP + '000 + 400 + 5', 800, 800, m('sum'), { size: 64 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const digs = c01Num(p, '52384', 800, 330, { size: 160, pitch: 96, gap: 44, t0: .2 });
+    const lab = G(p, { o: 0 });
+    T(lab, 'сотни', { x: digs.xs[2], y: 200, size: 32, fill: RULE, anchor: 'middle', weight: 600 });
+    T(lab, '3 сотни = 300', { x: digs.xs[2], y: 520, size: 40, fill: RULE, anchor: 'middle', weight: 600 });
+    S.q1 = { digs, lab };
+  }, { ask: done => {
+    const { digs, lab } = S.q1, names = ['десятков тысяч', 'тысяч', 'сотен', 'десятков', 'единиц'];
+    quiz(BAND, [{
+      id: 'c-sotni', prompt: 'В числе 52' + NBSP + '384 нажми на цифру, которая стоит в разряде сотен.',
+      build: pickEls(digs.map((e, i) => ({ el: e, box: [digs.xs[i] - 50, 240, 100, 180], label: '52384'[i] })), 2,
+        'Справа налево: единицы (4), десятки (8), сотни (3). Тройка здесь значит три сотни — 300.',
+        i => `Эта цифра стоит в разряде ${names[i]}. Считай разряды справа налево: единицы, десятки, сотни.`,
+        () => { fx(digs[2]._t, { c_fill: DIG }, 0, .3); fx(digs[2], { s: 1.15 }, 0, .2, out); fx(digs[2], { s: 1 }, .2, .3); fx(lab, { o: 1 }, .2, .4); }),
+    }], done);
+  } }],
+
+  ['times', 'Умножение на 10, 100, 1000', m => {
+    const p = panel(0);
+    klTitle(p, 'Умножить на 100 — сдвинуть на два разряда');
+    c01M(p, '37', 790 - textW(' · 100', 72), 250, .2, { size: 72, anchor: 'end' });
+    c01M(p, ' · 100', 790, 250, m('n', 1.3), { size: 72, anchor: 'end' });
+    const tb = c01Table(p, { xr: 1100, y: 330, cw: 150, h: 150, heads: ['ед.', 'дес.', 'сот.', 'тыс.'], t0: .2, size: 28 });
+    const d3 = c01Dig(p, '3', tb.X(1), tb.cy, { size: 110, fill: DIG, t0: .3 }), d7 = c01Dig(p, '7', tb.X(0), tb.cy, { size: 110, fill: DIG, t0: .3 });
+    // 100 = 10 · 10: two moves of one place each, on «два раза по десять».
+    const h1 = m('mul', 1.3), h2 = m('mul', 2.4);
+    [[d3, 1], [d7, 0]].forEach(([d, k]) => { c01Hop(d, tb.X(k), tb.X(k + 1), tb.cy, h1, .7, 36); c01Hop(d, tb.X(k + 1), tb.X(k + 2), tb.cy, h2, .7, 36); });
+    c01M(p, '· 10', 690, 570, h1 + .3, { size: 40, fill: RULE, anchor: 'end' });
+    c01M(p, '· 10', 710, 570, h2 + .3, { size: 40, fill: RULE, anchor: 'start' });
+    c01M(p, '= · 100', 830, 570, h2 + 1, { size: 40, fill: RULE, anchor: 'start' });
+    [0, 1].forEach(k => c01Drop(p, '0', tb.X(k), tb.cy, m('zeros', .2 + k * .3), { size: 110 }));
+    c01M(p, '= 3' + NBSP + '700', 810, 250, m('res'), { size: 72, anchor: 'start' });
+    klText(p, 'умножить на 100 — дописать справа два нуля', 800, 700, m('res', 1.6), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['classes', 'Классы', m => {
+    const p = panel(0);
+    klTitle(p, 'Длинное число читают по классам');
+    // 7305020 without spaces: three class groups (each with its digits, brace and name) that slide apart later.
+    const xs = c01Pos('7305020', 800, 78, 0), Y = 330;
+    const parts = [[0, 1, C_MI, 'миллионы', 'mil'], [1, 4, C_TH, 'тысячи', 'th'], [4, 7, C_UN, 'единицы', 'u']];
+    const groups = parts.map(([a, b, col, name, mark]) => {
+      const g = G(p, { x: 0 });
+      const digs = '7305020'.slice(a, b).split('').map((ch, i) => c01Dig(g, ch, xs[a + i], Y, { size: 120, t0: .2 }));
+      digs.forEach(d => tw(d._t, { c_fill: col }, m(mark), .4));
+      // The one-digit class of millions is narrower than its name: the name ends at the brace's right end.
+      const one = b - a === 1;
+      klBrace(g, xs[a] - 34, xs[b - 1] + 34, 420, one ? '' : name, m(mark), { up: false, fill: col, size: 34 });
+      if (one) klText(g, name, xs[a] + 34, 452, m(mark, .3), { size: 34, fill: col, weight: 600, anchor: 'end' });
+      const heads = ['сот.', 'дес.', 'ед.'].slice(3 - (b - a));
+      heads.forEach((s, i) => klText(g, s, xs[a + i], 238, m('three', .3 + i * .15), { size: 22, fill: COL.dim, anchor: 'middle', weight: 600 }));
+      return g;
+    });
+    const qm = klText(p, '?', 1110, 360, 2.4, { size: 80, fill: COL.dim, weight: 600 });
+    hide(qm, m('group'), .3);
+    [[3, 4], [0, 1]].forEach(([i, j], k) => {
+      const cut = path(p, `M${(xs[i] + xs[j]) / 2} 255V405`, { stroke: RULE, 'stroke-width': 3, 'stroke-dasharray': '8 7' }, { d: 0 });
+      draw(cut, m('group', 1.8 + k * .7), .4);
+      hide(cut, m('apart'), .3);
+    });
+    // «пробел»: the gaps once they open.
+    [(xs[0] - 60 + xs[1]) / 2, (xs[3] + xs[4] + 60) / 2].forEach(gx => klText(p, 'пробел', gx, 520, m('apart', 1.3), { size: 22, fill: RULE, weight: 600, anchor: 'middle' }));
+    tw(groups[0], { x: -60 }, m('apart'), .7, io);
+    tw(groups[2], { x: 60 }, m('apart'), .7, io);
+    // Read class by class: «7 миллионов 305 тысяч 20».
+    const rows = [[[{ m: '7', fill: C_MI }, ' миллионов'], 'r1'], [[{ m: '305', fill: C_TH }, ' тысяч'], 'r2'], [[{ m: '20', fill: C_UN }], 'r3']]
+      .map(([pc, mark]) => klRow(p, pc, 0, 640, m(mark), { size: 44, msize: 60, anchor: 'start' }));
+    const W = rows.reduce((s, r) => s + r._w, 0) + 2 * 40;
+    let rx = 800 - W / 2;
+    rows.forEach(r => { put(r, { x: rx }); rx += r._w + 40; });
+    // Next comes the class of billions, still empty.
+    const bil = G(p, { o: 0 });
+    mk('rect', { x: 110, y: 262, width: 150, height: 136, rx: 8, fill: 'none', stroke: COL.dim, 'stroke-width': 3, 'stroke-dasharray': '10 9' }, bil);
+    T(bil, 'миллиарды', { x: 185, y: 452, size: 30, fill: COL.dim, anchor: 'middle', weight: 600 });
+    show(bil, m('bil', .3));
+  }],
+
+  ['trap', 'Пустой разряд — ноль', m => {
+    const p = panel(0);
+    klTitle(p, 'Пустой разряд записывают нулём');
+    klText(p, '«два миллиона сорок»', 800, 240, .2, { size: 46, weight: 600, anchor: 'middle' });
+    // The common mistake: «2 040» is two thousand forty.
+    c01Num(p, '2040', 640, 350, { size: 80, pitch: 48, gap: 20, fill: COL.dim, t0: m('wrong', 1.6), step: .55 });
+    klStrike(p, 535, 386, 745, 334, m('why'));
+    klText(p, 'это две тысячи сорок', 790, 370, m('why', .3), { size: 32, fill: COL.bad, weight: 600 });
+    // The right way: class by class.
+    const cb = c01Classes(p, { y: 470, sizes: [1, 3, 3], names: ['миллионы', 'тысячи', 'единицы'], cols: [C_MI, C_TH, C_UN], t0: m('classes') });
+    const at = [m('mil', .3), m('zeros'), m('zeros', .25), m('zeros', .5), m('u1'), m('u2'), m('u3')];
+    const digs = '2000040'.split('').map((ch, i) => c01Drop(p, ch, cb.slots[i], cb.cy, at[i], { size: 80, fill: i === 0 ? C_MI : i < 4 ? C_TH : C_UN }));
+    const box = put(mk('rect', { x: cb.slots[1] - 45, y: 470, width: 270, height: 120, rx: 4, fill: C_TH, 'fill-opacity': .18 }, p), { o: 0 });
+    tw(box, { o: 1 }, m('th'), .3); tw(box, { o: 0 }, m('zeros', .9), .4);
+    // The boxes go and the digits close up into the written number.
+    hide(cb.g, m('res'), .5);
+    const xs = c01Pos('2000040', 800, 56, 30);
+    digs.forEach((d, i) => tw(d, { x: xs[i], y: 700 }, m('res', .2), .8, io));
+    klMark(p, xs[6] + 90, 700, m('res', 1.2));
+    digs.forEach((d, i) => { if (i && i !== 5) { tw(d._t, { c_fill: RULE }, m('res', 3.4 + i * .1), .3); } });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const cb = c01Classes(p, { y: 250, h: 130, sizes: [1, 3, 3], names: ['миллионы', 'тысячи', 'единицы'], cols: [C_MI, C_TH, C_UN], t0: .2 });
+    S.q2 = '3500007'.split('').map((ch, i) => { const d = c01Dig(p, ch, cb.slots[i], cb.cy, { size: 84, fill: i === 0 ? C_MI : i < 4 ? C_TH : C_UN }); put(d, { o: 0, s: .6 }); return d; });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-zapis', prompt: 'Запиши цифрами: «три миллиона пятьсот тысяч семь».',
+    build: blanks([{ parts: [{ box: '3500007' }], why: 'По классам: 3 | 500 | 007. В классе единиц нет сотен и десятков — там нули.',
+      hint: 'Иди по классам: миллионы, тысячи, единицы. В классах тысяч и единиц — по три цифры.',
+      fx: () => S.q2.forEach((d, i) => fx(d, { o: 1, s: 1 }, i * .1, .35, back)) }]),
+  }], done) }],
+
+  ['compare', 'Сравнение', m => {
+    const p = panel(0);
+    klTitle(p, 'Какое число больше?');
+    path(p, 'M760 220V690', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .3, 'stroke-dasharray': '8 8' });
+    // Left: more digits — the bigger number.
+    klText(p, 'цифр больше', 380, 228, .2, { size: 28, fill: COL.dim, anchor: 'middle', weight: 600 });
+    const a = c01Num(p, '10000', 520, 330, { size: 96, pitch: 60, gap: 26, anchor: 'end', t0: .2 });
+    c01Num(p, '9999', 520, 460, { size: 96, pitch: 60, gap: 26, anchor: 'end', t0: .2 });
+    c01Ring(p, a.xs[0] - 36, 262, 72, 136, m('len', .3));
+    const slot = path(p, `M${a.xs[0] - 26} 500H${a.xs[0] + 26}`, { stroke: COL.dim, 'stroke-width': 3, 'stroke-dasharray': '7 6' }, { d: 0 });
+    draw(slot, m('len', .6), .4);
+    klText(p, '5 цифр', 580, 342, m('len', 2.5), { size: 30, fill: COL.dim });
+    klText(p, '4 цифры', 580, 472, m('len', 4.5), { size: 30, fill: COL.dim });
+    c01M(p, '10' + NBSP + '000 > 9' + NBSP + '999', 380, 640, m('len', 6), { size: 56, fill: RULE });
+    // Right: as many digits — compare place by place from the left.
+    klText(p, 'цифр поровну', 1110, 228, m('same'), { size: 28, fill: COL.dim, anchor: 'middle', weight: 600 });
+    const r1 = c01Num(p, '48315', 1340, 330, { size: 96, pitch: 60, gap: 26, anchor: 'end', t0: m('same') });
+    const r2 = c01Num(p, '48351', 1340, 460, { size: 96, pitch: 60, gap: 26, anchor: 'end', t0: m('same', .6) });
+    const xs = r1.xs, scan = G(p, { x: xs[0], o: 0 });
+    mk('rect', { x: -38, y: 255, width: 76, height: 278, rx: 14, fill: RULE, 'fill-opacity': .08, stroke: RULE, 'stroke-width': 4 }, scan);
+    show(scan, m('scan', .3), .3);
+    ['c1', 'c2', 'c3'].forEach((mark, i) => {
+      if (i) tw(scan, { x: xs[i] }, m(mark, -.2), .35, io);
+      [r1[i], r2[i]].forEach(d => tw(d, { o: .4 }, m(mark, .9), .4));
+    });
+    tw(scan, { x: xs[3] }, m('diff', -.2), .35, io);
+    [r1[3], r2[3]].forEach(d => { tw(d._t, { c_fill: DIG }, m('diff', .5), .3); tw(d, { s: 1.15 }, m('diff', .5), .2, out); tw(d, { s: 1 }, m('diff', .7), .3); });
+    c01M(p, '1 < 5', xs[3], 590, m('diff', 1.8), { size: 40, fill: DIG });
+    c01M(p, '48' + NBSP + '315 < 48' + NBSP + '351', 1110, 680, m('res'), { size: 56, fill: RULE });
+    [r1[4], r2[4]].forEach(d => tw(d, { o: .2 }, m('res', 2.6), .5));   // «дальше можно не смотреть»
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const L = c01Num(p, '90909', 690, 320, { size: 110, pitch: 66, gap: 30, anchor: 'end', t0: .2 });
+    const R = c01Num(p, '99009', 910, 320, { size: 110, pitch: 66, gap: 30, anchor: 'start', t0: .2 });
+    const q = c01M(p, '?', 800, 358, .3, { size: 100, fill: COL.dim, weight: 600 });
+    const lt = c01M(p, '<', 800, 358, undefined, { size: 110, fill: RULE });
+    put(lt, { o: 0 });
+    const rings = [L, R].map(n => put(mk('rect', { x: n.xs[1] - 40, y: 238, width: 80, height: 164, rx: 14, fill: 'none', stroke: DIG, 'stroke-width': 4 }, p), { o: 0 }));
+    S.q3 = { q, lt, rings, d: [L[1], R[1]] };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-sravni', prompt: 'Сравни числа: 90' + NBSP + '909 … 99' + NBSP + '009',
+    build: choice(['<', '>', '='], 0,
+      'Цифр поровну. Первые цифры равны (9 и 9), вторые разные: 0 < 9. Значит, 90 909 < 99 009.',
+      [null, 'Сравни вторые цифры слева: 0 и 9.', 'Цифры у чисел разные — значит, и числа не равны.'],
+      () => { fx(S.q3.q, { o: 0 }, 0, .2); fx(S.q3.lt, { o: 1 }, .1, .3); S.q3.rings.forEach(r => fx(r, { o: 1 }, .3, .3)); S.q3.d.forEach(d => fx(d._t, { c_fill: DIG }, .3, .3)); }),
+  }], done) }],
+
+  ['round', 'Округление', m => {
+    const p = panel(0);
+    klTitle(p, 'Округление');
+    // To hundreds: 3 748 lies between 3 700 and 3 800, nearer to 3 700.
+    const L1 = c01Line(p, { x0: 140, x1: 940, y: 300, a: 3700, b: 3800, step: 10, big: [3750], labels: [3700, 3800], t0: .2 });
+    klText(p, 'до сотен', 1022, 228, .2, { size: 28, fill: COL.dim, weight: 600 });
+    const n1 = c01Num(p, '3748', 1040, 300, { size: 64, pitch: 38, gap: 18, anchor: 'start', t0: .2 });
+    const ghost1 = c01Dot(p, L1, 3748, m('line'), { label: '3' + NBSP + '748' });
+    const dot1 = c01Dot(p, L1, 3748, m('line'));
+    tw(ghost1, { o: .45 }, m('r1'), .3);
+    L1.labs.forEach((e, k) => { tw(e, { c_fill: RULE }, m('between', 1.4 + k * 2), .3); });
+    klBrace(p, L1.X(3700), L1.X(3748), 400, '48', m('near'), { up: false, fill: COL.good, size: 30 });
+    klBrace(p, L1.X(3748), L1.X(3800), 400, '52', m('near', .5), { up: false, fill: COL.dim, size: 30 });
+    prog(q => put(dot1, { x: L1.X(3748 - 48 * q) }), m('r1'), .8, io);
+    c01M(p, '≈ 3' + NBSP + '700', n1.xs[3] + 44, 322, m('r1', 1), { size: 64, fill: RULE, anchor: 'start' });
+    // The rule: look at the digit right of the place.
+    const under = (n, i, word, t, y) => {
+      draw(path(p, `M${n.xs[i] - 18} ${y}H${n.xs[i] + 18}`, { stroke: RULE, 'stroke-width': 5, 'stroke-linecap': 'round' }, { d: 0 }), t, .3);
+      klText(p, word, n.xs[i], y + 30, t + .2, { size: 22, fill: RULE, weight: 600, anchor: 'middle' });
+    };
+    under(n1, 1, 'сотни', m('look'), 346);
+    c01Ring(p, n1.xs[2] - 24, 258, 48, 82, m('look', 1.6), DIG);
+    klText(p, '4: от 0 до 4 — разряд не меняется,', 1022, 430, m('four', .8), { size: 26, fill: COL.chalk });
+    klText(p, 'цифры правее — нули', 1022, 466, m('four', 2.5), { size: 26, fill: COL.chalk });
+    [n1[2], n1[3]].forEach(d => tw(d, { o: .35 }, m('four', 5), .5));
+    // To thousands: 3 748 is nearer to 4 000.
+    const L2 = c01Line(p, { x0: 140, x1: 940, y: 640, a: 3000, b: 4000, step: 100, big: [3500], labels: [3000, 4000], t0: m('th') });
+    klText(p, 'до тысяч', 1022, 568, m('th'), { size: 28, fill: COL.dim, weight: 600 });
+    const n2 = c01Num(p, '3748', 1040, 640, { size: 64, pitch: 38, gap: 18, anchor: 'start', t0: m('th') });
+    const ghost2 = c01Dot(p, L2, 3748, m('th', .5), { label: '3' + NBSP + '748' });
+    const dot2 = c01Dot(p, L2, 3748, m('th', .5));
+    under(n2, 0, 'тысячи', m('th', .9), 686);
+    c01Ring(p, n2.xs[1] - 24, 598, 48, 82, m('seven', .3), DIG);
+    klText(p, '7: от 5 до 9 — к разряду + 1', 1022, 770, m('seven', 3), { size: 26, fill: COL.chalk });
+    klText(p, 'тысяч было 3, станет 4', 1022, 806, m('seven', 5.6), { size: 26, fill: COL.chalk });
+    tw(ghost2, { o: .45 }, m('r2'), .3);
+    prog(q => put(dot2, { x: L2.X(3748 + 252 * q) }), m('r2'), .8, io);
+    c01M(p, '≈ 4' + NBSP + '000', n2.xs[3] + 44, 662, m('r2', .6), { size: 64, fill: RULE, anchor: 'start' });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const n = c01Num(p, '5382', 800, 230, { size: 120, pitch: 70, gap: 30, t0: .2 });
+    draw(path(p, `M${n.xs[1] - 30} 315H${n.xs[1] + 30}`, { stroke: RULE, 'stroke-width': 5, 'stroke-linecap': 'round' }, { d: 0 }), .4, .3);
+    klText(p, 'сотни', n.xs[1], 350, .5, { size: 24, fill: RULE, weight: 600, anchor: 'middle' });
+    const L = c01Line(p, { x0: 300, x1: 1300, y: 470, a: 5300, b: 5400, step: 10, big: [5350], labels: [5300, 5400], t0: .3 });
+    const dot = G(p, { x: L.X(5382), y: L.y, o: 0 });   // shown by the right answer
+    mk('circle', { r: 13, fill: DIG, stroke: COL.board, 'stroke-width': 3 }, dot);
+    T(dot, '5' + NBSP + '382', { x: 0, y: -32, size: 32, fill: DIG, font: MATH, anchor: 'middle' });
+    const ans = c01M(p, '≈ 5' + NBSP + '400', L.X(5400), 420, undefined, { size: 44, fill: RULE });
+    put(ans, { o: 0 });
+    S.q4 = { L, dot, ans };
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-okrugl', prompt: 'Округли 5' + NBSP + '382 до сотен.',
+    build: blanks([{ parts: ['5' + NBSP + '382 ≈ ', { box: '5400' }], why: 'Справа от сотен стоит 8, а это от 5 до 9: к сотням прибавляем 1, правее — нули.',
+      hint: 'Посмотри на цифру справа от разряда сотен: от 0 до 4 — сотни не меняются, от 5 до 9 — прибавляем 1.',
+      fx: () => {
+        const { L, dot, ans } = S.q4;
+        fx(dot, { o: 1 }, 0, .3);
+        fxp(q => put(dot, { x: L.X(5382 + 18 * q) }), .6, .7);
+        fx(ans, { o: 1 }, 1.2, .4);
+      } }]),
+  }], done) }],
+
+  ['estimate', 'Прикидка', m => {
+    const p = panel(0);
+    klTitle(p, 'Прикидка: округли и посчитай в уме');
+    const row = (a, b, y, t, fill) => { c01M(p, a, 560, y, t, { size: 80, fill }); c01M(p, '·', 650, y, t, { size: 80, fill }); c01M(p, b, 740, y, t, { size: 80, fill }); };
+    row('49', '21', 250, .2);
+    const qq = c01M(p, '= ?', 810, 250, m('ex', .3), { size: 80, fill: COL.dim, anchor: 'start' });
+    tw(qq, { o: .45 }, m('ex', 2.6), .4); tw(qq, { o: 1 }, m('ex', 3), .4);
+    hide(qq, m('exact', -.3), .3);
+    row('50', '20', 430, m('round', .4), RULE);
+    klArrow(p, 560, 268, 560, 360, 314, RULE, m('round'), .4);
+    klArrow(p, 740, 268, 740, 360, 314, RULE, m('round', .3), .4);
+    c01M(p, '≈', 460, 430, m('round', .4), { size: 80, fill: RULE });
+    c01M(p, '= 1' + NBSP + '000', 810, 430, m('est', .5), { size: 80, fill: RULE, anchor: 'start' });
+    klText(p, 'прикидка', 1180, 422, m('est', 4.5), { size: 34, fill: RULE, weight: 600 });
+    c01M(p, '= 1' + NBSP + '029', 810, 250, m('exact'), { size: 80, anchor: 'start' });
+    klText(p, 'точно', 1180, 242, m('exact', .3), { size: 34, fill: COL.dim, weight: 600 });
+    // On a line from 0 to 2 000: the exact answer lands next to the estimate; 129 would be far away.
+    const L = c01Line(p, { x0: 200, x1: 1400, y: 680, a: 0, b: 2000, step: 100, big: [500, 1000, 1500], labels: [0, 1000, 2000], t0: m('est', 1) });
+    const est = G(p, { x: L.X(1000), y: L.y, o: 0 });
+    mk('rect', { x: -9, y: -30, width: 18, height: 60, rx: 4, fill: RULE }, est);
+    show(est, m('est', 1.5), .3);
+    c01Dot(p, L, 1029, m('exact', 1), { label: '1' + NBSP + '029' });
+    klMark(p, L.X(1029) + 80, 620, m('exact', 3));
+    klText(p, 'близко', L.X(1029) + 130, 632, m('exact', 4.4), { size: 28, fill: COL.good, weight: 600 });
+    c01Dot(p, L, 129, m('bad', 1.2), { fill: COL.bad, label: '129' });
+    klMark(p, L.X(129), 560, m('bad', 2.2), false, .8);
+    draw(path(p, `M${L.X(129)} 700Q${(L.X(129) + L.X(1000)) / 2} 790 ${L.X(1000)} 712`, { stroke: COL.bad, 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '8 7' }, { d: 0 }), m('bad', 1.8), .6);
+    klText(p, 'далеко от прикидки', (L.X(129) + L.X(1000)) / 2, 800, m('bad', 2.3), { size: 28, fill: COL.bad, weight: 600, anchor: 'middle' });
+  }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Каждый разряд в 10 раз больше соседнего справа',
+    ['Классы по три цифры справа налево:  ', { m: '7' + NBSP + '305' + NBSP + '020' }],
+    ['Пустой разряд записывают нулём:  ', { m: '2' + NBSP + '000' + NBSP + '040' }],
+    ['Округление:  ', { m: '3' + NBSP + '748 ≈ 3' + NBSP + '700' }, '  (до сотен)'],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-zapis', prompt: 'Запиши цифрами: «два миллиона сорок тысяч три».',
+    build: blanks([{ parts: [{ box: '2040003' }], why: 'По классам: 2 | 040 | 003 — пустые места заняты нулями.', hint: 'Иди по классам: миллионы, тысячи, единицы. В классах тысяч и единиц — по три цифры.' }]),
+  }, {
+    id: 'p-razlozh', prompt: 'Разложи число по разрядам.',
+    build: blanks([{ parts: ['6' + NBSP + '082 = ', { box: '6' }, ' · 1000 + ', { box: '0' }, ' · 100 + ', { box: '8' }, ' · 10 + ', { box: '2' }],
+      why: 'Шесть тысяч, сотен нет, восемь десятков и две единицы.', hint: 'Справа налево: единицы, десятки, сотни, тысячи. Пустой разряд — ноль.' }]),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-sravni1', prompt: 'Сравни числа: 6' + NBSP + '504 … 6' + NBSP + '540',
+    build: choice(['<', '>', '='], 0, 'Тысячи и сотни равны, а в десятках 0 < 4.',
+      [null, 'Иди слева направо до первой разной цифры: это десятки, 0 и 4.', 'Цифры стоят в разных разрядах — числа не равны.']),
+  }, {
+    id: 'p-sravni2', prompt: 'Сравни числа: 100' + NBSP + '000 … 99' + NBSP + '999',
+    build: choice(['<', '>', '='], 1, 'В первом числе шесть цифр, во втором — пять. Больше цифр — больше число.',
+      ['Посчитай цифры: в 100 000 их шесть, в 99 999 — пять.', null, 'Это разные числа: в них разное число цифр.']),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-okrugl', prompt: 'Округли: первое число — до сотен, второе — до тысяч.',
+    build: blanks([
+      { parts: ['7' + NBSP + '950 ≈ ', { box: '8000' }], why: 'Справа от сотен 5: к девяти сотням прибавляем одну — десять сотен, это ещё одна тысяча.', hint: 'Справа от сотен стоит 5. А 9 + 1 = 10 сотен — это тысяча.' },
+      { parts: ['62' + NBSP + '517 ≈ ', { box: '63000' }], why: 'Справа от тысяч 5: к двум тысячам прибавляем одну.', hint: 'Разряд тысяч — цифра 2; справа от неё стоит 5.' },
+    ]),
+  }, {
+    id: 'p-prikidka', prompt: 'Какой ответ может быть верным: 39 · 51 = ?',
+    build: choice(['199', '1' + NBSP + '989', '19' + NBSP + '890'], 1, 'Прикидка: 40 · 50 = 2 000. Близко к ней только 1 989 — и это точный ответ.',
+      ['199 в десять раз меньше прикидки 40 · 50 = 2 000.', null, '19 890 в десять раз больше прикидки 40 · 50 = 2 000.']),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Буквы и формулы · Математика в клеточку</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='40' fill='%23f0b45a'%3E%C2%BE%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/kletka.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script>
+'use strict';
+// Тема 1.6 «Буквы и формулы» (5 класс). Beat ids match papermorph/content/uroki/ch06/narration.ru.json.
+const CHAPTER = { number: 6, label: '1.6', title: 'Буквы и формулы', minutes: 7, language: 'ru', next: '../ch07/' };
+
+// Meanings in this lesson: a letter (a box for a number) in LET, a number put in its place in VAL, the cells of an
+// area in CELL, the rule in RULE.
+const LET = KL.DEN, VAL = KL.NUM, CELL = KL.TWO, RULE = KL.RULE;
+const C = 80, GX = 250, GY = 260;                 // the rectangle of the area and perimeter beats: cells, left, top
+const KM = 300 / 70, RX0 = 200, RY = 470;         // the road: pixels per kilometre, x of 0 km, height
+const c06X = km => RX0 + km * KM;
+
+// A row of tokens where some fly in from tokens already on the board and the rest fade in after them.
+// items: a string or { t, fill } (new, fades in at `at` or t0 + fade) or { from: el, t, fill, s0 } (a copy of el that
+// flies from el's place, starting at scale s0 when el is set at another size). Returns the row (tokens()).
+function c06Fly(p, items, x, y, t0, { size = 100, anchor = 'middle', fade = .7 } = {}) {
+  const row = tokens(p, items.map(it => it.from ? { t: it.t, fill: it.fill } : it), { x, y, size, anchor, o: 0 });
+  row.forEach((e, k) => {
+    const it = items[k];
+    if (it.from) {
+      const { x: sx, y: sy } = st(it.from);
+      put(e, { x: sx, y: sy, s: it.s0 ?? 1 });
+      show(e, t0, .15);
+      tw(e, { x: e._px, y, s: 1 }, t0, .9, io);
+    } else show(e, (typeof it === 'object' && it.at) || t0 + fade, .3);
+  });
+  return row;
+}
+// Faint cells of a rows × cols rectangle with cell size c at (x, y), as one path, plus its frame. Returns the group.
+function c06Grid(p, x, y, cols, rows, c, t0) {
+  const g = G(p, { o: t0 === undefined ? 1 : 0 });
+  mk('rect', { x, y, width: cols * c, height: rows * c, fill: COL.chalk, 'fill-opacity': .07 }, g);
+  let d = '';
+  for (let j = 1; j < cols; j++) d += `M${x + j * c} ${y}V${y + rows * c}`;
+  for (let i = 1; i < rows; i++) d += `M${x} ${y + i * c}H${x + cols * c}`;
+  path(g, d, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .4 });
+  mk('rect', { x, y, width: cols * c, height: rows * c, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5, rx: 2 }, g);
+  if (t0 !== undefined) show(g, t0);
+  return g;
+}
+// A chalk car whose front bumper is at (x, y), wheels on y.
+function c06Car(p, x, y, o = 1) {
+  const g = G(p, { x, y, o });
+  path(g, 'M-150 -16V-44Q-150 -50 -142 -50H-112L-88 -78H-36L-14 -50H-6Q0 -50 0 -42V-16Z', { fill: COL.chalk, 'fill-opacity': .22, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+  path(g, 'M-104 -50L-84 -72H-66V-50ZM-58 -50V-72H-40L-22 -50Z', { fill: KL.DEN, 'fill-opacity': .35 });
+  [-118, -34].forEach(cx => mk('circle', { cx, cy: -15, r: 14, fill: COL.board, stroke: COL.chalk, 'stroke-width': 4 }, g));
+  return g;
+}
+// A chalk train (locomotive and one wagon) whose front is at (x, y).
+function c06Train(p, x, y) {
+  const g = G(p, { x, y });
+  path(g, 'M-110 -14V-70H-60V-96H-30V-70H-12Q0 -70 0 -56V-14ZM-230 -14V-80H-122V-14Z', { fill: COL.chalk, 'fill-opacity': .22, stroke: COL.chalk, 'stroke-width': 3.5, 'stroke-linejoin': 'round' });
+  path(g, 'M-122 -40H-110', { stroke: COL.chalk, 'stroke-width': 4 });
+  [-210, -142, -90, -30].forEach(cx => mk('circle', { cx, cy: -13, r: 12, fill: COL.board, stroke: COL.chalk, 'stroke-width': 4 }, g));
+  return g;
+}
+// The road: a line with ticks at the given kilometres (labelled), and «км» after the last label.
+function c06Road(p, kms, t0, { end = 1440, step = 0 } = {}) {
+  const g = G(p, { o: 0 });
+  path(g, `M${RX0 - 30} ${RY}H${end}`, { stroke: COL.chalk, 'stroke-width': 4, 'stroke-linecap': 'round' });
+  const labs = kms.map((k, i) => {
+    const e = G(g, { o: step ? 0 : 1 });
+    path(e, `M${c06X(k)} ${RY - 14}V${RY + 14}`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+    const l = T(e, String(k), { x: c06X(k), y: RY + 56, size: 38, fill: COL.chalk, font: MATH, anchor: 'middle' });
+    if (step) show(e, t0 + .3 + i * step, .3);
+    return l;
+  });
+  T(g, 'км', { x: c06X(kms[kms.length - 1]) + 20 + textW(String(kms[kms.length - 1]), 38) / 2, y: RY + 56, size: 32, fill: COL.dim });
+  show(g, t0);
+  return labs;
+}
+
+/* ---------- beats: [id, title, run(m, D), { ask }?] ---------- */
+const BEATS = [
+  ['intro', 'Буквы и формулы', (m, D) => klIntro(m, D, {
+    unit: 'Глава 1 · Числа и действия · Тема 1.6',
+    title: 'Буквы и формулы',
+    sub: 'Зачем в математике буквы и как по формуле найти ответ',
+    art: (g, t0) => {
+      c06Grid(g, 600, 560, 4, 3, 34, t0);
+      klRow(g, [{ m: 'S', fill: COL.chalk }, { m: ' = ' }, { m: 'a', fill: LET }, { m: ' · ' }, { m: 'b', fill: LET }], 1000, 640, t0 + .3, { size: 44, msize: 64 });
+    },
+  })],
+
+  ['letter', 'Буква — коробочка для числа', m => {
+    const p = panel(0);
+    klTitle(p, 'Буква — коробочка для числа');
+    const Y = 450, SZ = 120, BX = 400;
+    const box = mk('rect', { x: BX - 88, y: Y - 120, width: 176, height: 166, rx: 18, fill: LET, 'fill-opacity': .08, stroke: LET, 'stroke-width': 4, 'stroke-dasharray': '14 10' }, p);
+    put(box, { o: 0 }); show(box, m('box'));
+    const a = M(p, ['a'], { x: BX, y: Y, size: SZ, fill: LET, o: 0 }); show(a, .2);
+    const plus = ['+ 3 ='], wp = mathW(plus, SZ), RXr = BX + 120 + wp + 100;
+    klMath(p, plus, BX + 120, Y, .2, { size: SZ, anchor: 'start' });
+    const q = M(p, ['?'], { x: RXr, y: Y, size: SZ, fill: COL.dim, o: 0 }); show(q, .2);
+    // the table of values on the right
+    const TA = 1200, TB = 1380, ROWS = [430, 515, 600];
+    const tab = G(p, { o: 0 });
+    path(tab, `M1110 352H1470M1290 280V630`, { stroke: COL.chalk, 'stroke-width': 3, 'stroke-opacity': .7 });
+    M(tab, ['a'], { x: TA, y: 330, size: 60, fill: LET });
+    klRow(tab, [{ m: 'a', fill: LET }, { m: ' + 3' }], TB, 330, undefined, { msize: 60 });
+    show(tab, m('two', -.3));
+    // the numbers wait above the box, drop into it one by one, and are written into the table with their result
+    const vals = [2, 7, 10], puts = ['two', 'seven', 'ten'], ress = ['r2', 'r7', 'r10'];
+    const nums = vals.map((v, i) => { const e = M(p, [String(v)], { x: BX - 150 + i * 150, y: 245, size: SZ, s: .55, fill: VAL, o: 0 }); show(e, m('box', .6 + i * .15)); return e; });
+    nums.forEach((e, i) => {
+      tw(e, { x: BX, y: Y, s: 1 }, m(puts[i]), .8, io);
+      const r = M(p, [String(vals[i] + 3)], { x: RXr, y: Y, size: SZ, o: 0 });
+      show(r, m(ress[i]), .3);
+      const tOut = i < 2 ? m(puts[i + 1]) : m('rule');
+      tw(e, { x: TA, y: ROWS[i], s: .5 }, tOut, .8, io);
+      tw(r, { x: TB, y: ROWS[i], s: .5 }, tOut, .8, io);
+    });
+    tw(a, { o: 0, s: .5 }, m('two', .3), .4);
+    hide(q, m('r2', -.1), .2);
+    tw(a, { o: 1, s: 1 }, m('rule', .7), .5, back);
+    show(q, m('rule', .9), .3);
+    klText(p, 'Подставить число вместо буквы и сосчитать — значит', 800, 760, m('rule', 2.9), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+    klText(p, 'найти значение выражения', 800, 812, m('rule', 4.6), { size: 34, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['subst', 'Подстановка', m => {
+    const p = panel(0);
+    klTitle(p, 'Подставляем число вместо буквы');
+    const SZ = 130, Y = 400, X = 640;
+    const row = tokens(p, ['5', { t: ' · ', fill: RULE }, { t: 'a', fill: LET }, ' + ', '2'], { x: X, y: Y, size: SZ, anchor: 'middle', o: 0 });
+    // «5a» is written without the sign: 5 and a stand together until the hidden «·» opens between them
+    const wd = row[1]._w / 2;
+    put(row[0], { x: row[0]._px + wd });
+    [2, 3, 4].forEach(k => put(row[k], { x: row[k]._px - wd }));
+    [0, 2, 3, 4].forEach(k => show(row[k], .2));
+    pulse(row[0], m('five'), 1.2); pulse(row[2], m('five', .3), 1.2);
+    tw(row[0], { x: row[0]._px }, m('dot'), .5);
+    [2, 3, 4].forEach(k => tw(row[k], { x: row[k]._px }, m('dot'), .5));
+    show(row[1], m('dot', .35));
+    pulse(row[1], m('dot', .9), 1.6);
+    [0, 1, 2].forEach(k => pulse(row[k], m('dot', 3.6 + k * .45), 1.25));
+    klText(p, 'знак умножения не пишут, но он есть', X, 500, m('dot', 1.2), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, [{ m: 'ab', fill: LET }, { m: '  =  ' }, { m: 'a', fill: LET }, { m: ' · ', fill: RULE }, { m: 'b', fill: LET }], X, 600, m('ab'), { msize: 72 });
+    // a = 4: the four flies from the label into the letter's place
+    const lab = tokens(p, [{ t: 'a', fill: LET }, ' = ', { t: '4', fill: VAL }], { x: 1260, y: 290, size: 90, anchor: 'middle', o: 0 });
+    lab.forEach(e => show(e, m('put')));
+    const four = M(p, ['4'], { x: lab[2]._px, y: 290, size: SZ, s: 90 / SZ, fill: VAL, o: 0 });
+    show(four, m('drop'), .15);
+    tw(four, { x: row[2]._px, y: Y, s: 1 }, m('drop'), .9, io);
+    tw(row[2], { o: 0, s: .4 }, m('drop', .45), .4);
+    four._px = row[2]._px;
+    const row2 = Object.assign([row[0], row[1], four, row[3], row[4]], { w: row.w, x: row.x, y: row.y, size: row.size, anchor: row.anchor });
+    const row3 = collapse(row2, 0, 2, ['20'], m('mul', .2));
+    collapse(row3, 0, 2, ['22'], m('add', .3));
+    klRow(p, ['при ', { m: 'a', fill: LET }, { m: ' = ' }, { m: '4', fill: VAL }, ':   ', { m: '5 · ' }, { m: '4', fill: VAL }, { m: ' + 2 = 20 + 2 = 22' }], X, 720, m('order'), { size: 32, msize: 60, fill: COL.dim });
+    klText(p, 'сначала умножение, потом сложение', X, 800, m('order', 1.2), { size: 32, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['trap', 'Частая ошибка', m => {
+    const p = panel(0);
+    klTitle(p, 'Частая ошибка');
+    const row = tokens(p, ['3', { t: 'a', fill: LET }], { x: 620, y: 290, size: 120, anchor: 'middle', o: 0 });
+    row.forEach(e => show(e, .2));
+    klText(p, 'при', 800, 285, m('ask'), { size: 40, fill: COL.dim, anchor: 'middle' });
+    const lab = tokens(p, [{ t: 'a', fill: LET }, ' = ', { t: '5', fill: VAL }], { x: 980, y: 290, size: 100, anchor: 'middle', o: 0 });
+    lab.forEach(e => show(e, m('ask', .5)));
+    pulse(row[0], m('ask', .1), 1.2); pulse(row[1], m('ask', .3), 1.2); pulse(lab[2], m('ask', 1.8), 1.3);
+    // the mistake: the five is put where the letter was, and «3» and «5» read as thirty-five
+    c06Fly(p, [{ from: row[0], t: '3' }, { from: lab[2], t: '5', fill: VAL, s0: 100 / 120 }], 400, 600, m('wrong', .6), { size: 120 });
+    klStrike(p, 300, 640, 500, 520, m('strike'));
+    klText(p, 'ошибка!', 400, 700, m('strike', .3), { size: 32, fill: COL.bad, weight: 700, anchor: 'middle' });
+    // the right way: the hidden sign comes back between them
+    const ok = c06Fly(p, [{ from: row[0], t: '3' }, { t: ' · ', fill: RULE }, { from: lab[2], t: '5', fill: VAL, s0: 100 / 120 }, ' = ', { t: '15', at: m('ans') }], 1100, 600, m('right'), { size: 120 });
+    klMark(p, ok[4]._px + 130, 565, m('ans', .4), true, 1.3);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const row = tokens(p, ['7', { t: 'x', fill: LET }, ' − 3'], { x: 800, y: 300, size: 130, anchor: 'middle', o: 0 });
+    row.forEach(e => show(e, .2));
+    klRow(p, [{ m: 'x', fill: LET }, { m: ' = ' }, { m: '6', fill: VAL }], 800, 450, .4, { msize: 90 });
+    S.q1line = klRow(p, [{ m: '7 · ' }, { m: '6', fill: VAL }, { m: ' − 3 = 42 − 3 = 39' }], 800, 590, undefined, { msize: 70 });
+    put(S.q1line, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-znachenie', prompt: ['Найди значение выражения ', $m('7x − 3'), ' при ', $m('x = 6'), '.'],
+    build: blanks([{ parts: ['7x − 3 = ', { box: '39' }], why: ['Подставим шесть вместо x: ', $m('7 · 6 − 3 = 42 − 3 = 39'), '.'],
+      hint: 'Между 7 и x спрятано умножение: 7x = 7 · x. Сначала умножь, потом вычти.',
+      fx: () => fx(S.q1line, { o: 1 }, 0, .5) }]),
+  }], done) }],
+
+  ['area', 'Площадь прямоугольника', m => {
+    const p = panel(0);
+    klTitle(p, 'Площадь прямоугольника');
+    const rowTop = i => GY + i * C;
+    // columns 0–3 at once, 4–6 come in as the rectangle stretches
+    const cols = Array.from({ length: 7 }, (_, j) => {
+      const g = G(p, { o: 0 });
+      mk('rect', { x: GX + j * C, y: GY, width: C, height: 3 * C, fill: COL.chalk, 'fill-opacity': .07 }, g);
+      return g;
+    });
+    cols.slice(0, 4).forEach(g => show(g, .2));
+    const shades = [0, 1, 2].map(i => put(mk('rect', { x: GX, y: rowTop(i), width: 0, height: C, fill: CELL, 'fill-opacity': .5 }, p), { a_width: 0 }));
+    const lines = Array.from({ length: 7 }, (_, j) => {
+      const g = G(p, { o: 0 });
+      let d = `M${GX + j * C} ${GY}V${GY + 3 * C}`;
+      for (let i = 1; i < 3; i++) d += `M${GX + j * C} ${rowTop(i)}H${GX + (j + 1) * C}`;
+      path(g, d, { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .45 });
+      return g;
+    });
+    lines.slice(0, 4).forEach(g => show(g, .2));
+    const frame = put(mk('rect', { x: GX, y: GY, width: 4 * C, height: 3 * C, fill: 'none', stroke: COL.chalk, 'stroke-width': 3.5, rx: 2 }, p), { o: 0, a_width: 4 * C });
+    show(frame, .2);
+    // the sides: a under the rectangle, b at its left
+    const A = tokens(p, [{ t: 'a', fill: LET }, ' = ', { t: '4', fill: VAL }], { x: GX + 2 * C, y: GY + 3 * C + 72, size: 64, anchor: 'middle', o: 0 });
+    show(A[0], m('rect', 1.3)); show(A[1], m('four')); show(A[2], m('four', .2));
+    const B = tokens(p, [{ t: 'b', fill: LET }, ' = ', { t: '3', fill: VAL }], { x: GX - 34, y: GY + 1.5 * C + 22, size: 64, anchor: 'end', o: 0 });
+    show(B[0], m('rect', 3.1)); show(B[1], m('four', 1.6)); show(B[2], m('four', 1.8));
+    // three rows of four: each row's cells fill, its count beside it
+    const counts4 = [0, 1, 2].map(i => {
+      tw(shades[i], { a_width: 4 * C }, m('rows', i * .5), .45, out);
+      return klMath(p, ['4'], GX + 4 * C + 42, rowTop(i) + C / 2 + 18, m('rows', i * .5 + .3), { size: 52, fill: CELL });
+    });
+    const F0 = 960;
+    const tot = klMath(p, ['12'], GX + 2 * C, GY + 1.5 * C + 30, m('s12', .3), { size: 90, fill: COL.chalk });
+    hide(tot, m('grow'), .3);
+    klMath(p, ['21'], GX + 3.5 * C, GY + 1.5 * C + 30, m('s21', 1.3), { size: 90, fill: COL.chalk });
+    klRow(p, [{ m: 'S' }, { m: ' = ' }, { m: 'a', fill: LET }, { m: ' · ' }, { m: 'b', fill: LET }], F0, 330, m('s12', 2), { anchor: 'start', msize: 84 });
+    const L1 = klRow(p, [{ m: '= ' }, { m: '4', fill: VAL }, { m: ' · ' }, { m: '3', fill: VAL }, { m: ' = 12' }], F0 + 40, 440, m('s12', 3), { anchor: 'start', msize: 84 });
+    // stretch: a becomes 7; the frame, the shading and the columns follow the right edge
+    counts4.forEach(e => hide(e, m('grow'), .3));
+    hide(A[2], m('grow'), .3);
+    const dx = 1.5 * C;
+    [A[0], A[1]].forEach(e => tw(e, { x: e._px + dx }, m('grow', .3), 1.4, io));
+    const seven = M(p, ['7'], { x: A[2]._px + dx, y: GY + 3 * C + 72, size: 64, fill: VAL, o: 0 });
+    show(seven, m('grow', 1.5), .3);
+    prog(q => {
+      const w = 4 * C + 3 * C * q;
+      put(frame, { a_width: w });
+      shades.forEach(s => put(s, { a_width: w }));
+      for (let j = 4; j < 7; j++) { const o = Math.max(0, Math.min(1, (w - j * C) / C)); put(cols[j], { o }); put(lines[j], { o }); }
+    }, m('grow', .3), 1.4, io);
+    [0, 1, 2].forEach(i => klMath(p, ['7'], GX + 7 * C + 42, rowTop(i) + C / 2 + 18, m('s21', i * .4), { size: 52, fill: CELL }));
+    tw(L1, { o: .35 }, m('s21'), .4);
+    klRow(p, [{ m: '= ' }, { m: '7', fill: VAL }, { m: ' · ' }, { m: '3', fill: VAL }, { m: ' = 21' }], F0 + 40, 550, m('s21', .9), { anchor: 'start', msize: 84 });
+    klRow(p, [{ m: 'S = ab', fill: RULE }, '   одна формула для любых длины и ширины'], 800, 790, m('rule', 1.5), { size: 32, msize: 76, fill: RULE, weight: 600 });
+  }],
+
+  ['perim', 'Периметр прямоугольника', m => {
+    const p = panel(0);
+    klTitle(p, 'Периметр прямоугольника');
+    c06Grid(p, GX, GY, 7, 3, C, .2);
+    const P0 = [GX, GY], P1 = [GX + 7 * C, GY], P2 = [GX + 7 * C, GY + 3 * C], P3 = [GX, GY + 3 * C], pts = [P0, P1, P2, P3, P0];
+    // the walk: a dot goes round the sides, each side drawn over as it goes
+    const T0 = [m('w1'), m('w2', -.2), m('w3'), m('w4'), m('w4', .6)];
+    const dotG = G(p, { x: GX, y: GY, o: 0 });
+    for (let k = 0; k < 4; k++) {
+      const [ax, ay] = pts[k], [bx, by] = pts[k + 1], t = T0[k], dur = T0[k + 1] - t;
+      draw(path(p, `M${ax} ${ay}L${bx} ${by}`, { stroke: RULE, 'stroke-width': 8, 'stroke-linecap': 'round' }, { d: 0 }), t, dur, lin);
+      prog(q => put(dotG, { x: ax + (bx - ax) * q, y: ay + (by - ay) * q }), t, dur, lin);
+    }
+    p.append(dotG);
+    mk('circle', { r: 15, fill: VAL, stroke: COL.board, 'stroke-width': 3 }, dotG);
+    show(dotG, m('w1', -.3), .25);
+    hide(dotG, m('w4', 1), .4);
+    // the side names, each as its side is walked; at «calc» the letters give way to their numbers
+    const side = [['a', GX + 3.5 * C, GY - 26, '7'], ['b', GX + 7 * C + 42, GY + 1.5 * C + 20, '3'], ['a', GX + 3.5 * C, GY + 3 * C + 66, '7'], ['b', GX - 42, GY + 1.5 * C + 20, '3']];
+    side.forEach(([l, x, y, v], k) => {
+      const e = klMath(p, [l], x, y, m('w' + (k + 1), .1), { size: 64, fill: LET });
+      hide(e, m('calc', k * .12), .3);
+      klMath(p, [v], x, y, m('calc', .2 + k * .12), { size: 64, fill: VAL });
+    });
+    const F0 = 960;
+    const sum = tokens(p, [{ t: 'a', fill: LET }, ' + ', { t: 'b', fill: LET }, ' + ', { t: 'a', fill: LET }, ' + ', { t: 'b', fill: LET }], { x: F0, y: 340, size: 80, anchor: 'start', o: 0 });
+    show(sum[0], m('w1', .2));
+    [[1, 2, 'w2'], [3, 4, 'w3'], [5, 6, 'w4']].forEach(([i, j, mk_]) => { show(sum[i], m(mk_, .1)); show(sum[j], m(mk_, .2)); });
+    const edge = k => [sum[k]._px - sum[k]._w / 2, sum[k]._px + sum[k]._w / 2];
+    klBrace(p, edge(0)[0], edge(2)[1], 372, '', m('sum'), { up: false, fill: RULE });
+    klBrace(p, edge(4)[0], edge(6)[1], 372, '', m('sum', .4), { up: false, fill: RULE });
+    klText(p, 'два раза', (edge(0)[0] + edge(6)[1]) / 2, 420, m('sum', .9), { size: 30, fill: RULE, weight: 600, anchor: 'middle' });
+    klRow(p, [{ m: 'P' }, { m: ' = 2 · (' }, { m: 'a', fill: LET }, { m: ' + ' }, { m: 'b', fill: LET }, { m: ')' }], F0, 520, m('formula', .6), { anchor: 'start', msize: 84 });
+    const calc = tokens(p, ['P = ', '2', ' · ', '(', { t: '7', fill: VAL }, ' + ', { t: '3', fill: VAL }, ')'], { x: F0, y: 650, size: 84, anchor: 'start', o: 0 });
+    calc.forEach(e => show(e, m('calc', .3)));
+    const c2 = collapse(calc, 3, 7, ['10'], m('calc', .6));
+    collapse(c2, 1, 3, ['20'], m('p20'));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const c = 50, top = 250;
+    S.q2 = [[6, 2, 330], [4, 3, 800], [5, 3, 1270]].map(([a, b, cx]) => {
+      const x = cx - a * c / 2, g = c06Grid(p, x, top, a, b, c, .2);
+      klMath(p, [String(a)], cx, top + b * c + 52, .3, { size: 48, fill: VAL });
+      klMath(p, [String(b)], x - 30, top + b * c / 2 + 16, .3, { size: 48, fill: VAL });
+      return { g, x, w: a * c, h: b * c };
+    });
+    const R = S.q2[1];
+    S.q2shade = put(mk('rect', { x: R.x, y: top, width: R.w, height: R.h, fill: CELL, 'fill-opacity': .5 }, p), { o: 0 });
+    S.q2lab = klRow(p, [{ m: 'S = 12,   P = 14' }], 800, 560, undefined, { msize: 48, fill: CELL });
+    put(S.q2lab, { o: 0 });
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-pryamougolnik', prompt: 'У какого прямоугольника площадь 12 клеток, а периметр 14? Выбери его на рисунке.',
+    build: pickEls(S.q2.map((r, i) => ({ el: r.g, box: [r.x - 16, 234, r.w + 32, r.h + 32], label: ['6 на 2', '4 на 3', '5 на 3'][i] })), 1,
+      [$m('S = 4 · 3 = 12'), ', ', $m('P = 2 · (4 + 3) = 14'), '.'],
+      i => i === 0 ? ['Площадь подходит: ', $m('6 · 2 = 12'), '. А периметр ', $m('2 · (6 + 2) = 16'), '.'] : ['Площадь ', $m('5 · 3 = 15'), ', а нужно 12.'],
+      () => { fx(S.q2shade, { o: 1 }, 0, .5); fx(S.q2lab, { o: 1 }, .3, .5); }),
+  }], done) }],
+
+  ['motion', 'Формула пути', m => {
+    const p = panel(0);
+    klTitle(p, 'Формула пути');
+    const labs = c06Road(p, [0, 70, 140, 210, 280], .2, { step: .45 });
+    const car = c06Car(p, c06X(0) - 260, RY - 3, 0);
+    show(car, 1.4, .4);
+    tw(car, { x: c06X(0) }, 1.4, 1.8, out);
+    klRow(p, [{ m: 'v', fill: LET }, { m: ' = ' }, { m: '70', fill: VAL }, '  км/ч'], RX0 - 40, 290, m('car', 1.6), { size: 40, msize: 76, anchor: 'start' });
+    ['h1', 'h2', 'h3'].forEach((h, k) => {
+      tw(car, { x: c06X(70 * (k + 1)) }, m(h), 1.25, io);
+      klBrace(p, c06X(70 * k) + 6, c06X(70 * (k + 1)) - 6, 600, '1 ч', m(h, .3), { up: false, size: 36 });
+      tw(labs[k + 1], { c_fill: VAL }, m(h, 1), .3);
+      pulse(labs[k + 1], m(h, 1), 1.3);
+    });
+    const F = tokens(p, [{ t: 's', fill: LET }, ' = ', { t: 'v', fill: LET }, ' · ', { t: 't', fill: LET }], { x: RX0, y: 790, size: 90, anchor: 'start', o: 0 });
+    F.forEach(e => show(e, m('formula', 1.2)));
+    klText(p, 'путь = скорость · время', RX0, 850, m('formula', 3), { size: 30, fill: COL.dim });
+    const x1 = RX0 + F.w + 24;
+    const R1 = klRow(p, [{ m: '= ' }, { m: '70', fill: VAL }, { m: ' · ' }, { m: '3', fill: VAL }], x1, 790, m('calc'), { anchor: 'start', msize: 90 });
+    klRow(p, [{ m: ' = 210' }, '  км'], x1 + R1._w, 790, m('calc', 1.6), { anchor: 'start', size: 40, msize: 90 });
+  }],
+
+  ['inverse', 'Скорость и время', m => {
+    const p = panel(0);
+    klTitle(p, 'Скорость и время находят делением');
+    c06Road(p, [0, 210], .2);
+    const car = c06Car(p, c06X(0), RY - 3, 0);
+    show(car, .2);
+    tw(car, { x: c06X(210) }, m('known', .5), 3, io);
+    hide(car, m('split', -.4), .4);
+    klBrace(p, c06X(0), c06X(210), 330, '', m('known', 2.2), { fill: COL.chalk });
+    klRow(p, [{ m: 's', fill: LET }, { m: ' = ' }, { m: '210', fill: VAL }, '  км'], c06X(105), 312, m('known', 2.2), { size: 34, msize: 60 });
+    klRow(p, [{ m: 't', fill: LET }, { m: ' = ' }, { m: '3', fill: VAL }, '  ч'], c06X(105) + 520, 312, m('known', .8), { size: 34, msize: 60 });
+    // three equal parts: one for each hour
+    [70, 140].forEach((k, i) => draw(path(p, `M${c06X(k)} ${RY - 30}V${RY + 30}`, { stroke: KL.DEN, 'stroke-width': 6, 'stroke-linecap': 'round' }, { d: 0 }), m('split', .2 + i * .2), .4));
+    [0, 1, 2].forEach(i => {
+      const x = c06X(35 + 70 * i);
+      const qm = klMath(p, ['?'], x, RY - 26, m('split', .7 + i * .15), { size: 50, fill: COL.dim });
+      hide(qm, m('v', 1.6), .3);
+      const v = klMath(p, ['70'], x, RY - 26, m('v', 1.8 + i * .15), { size: 50, fill: VAL });
+      hide(v, m('back'), .4);
+    });
+    klRow(p, [{ m: 'v', fill: LET }, { m: ' = ' }, { m: 's', fill: LET }, { m: ' : ' }, { m: 't', fill: LET }, { m: ' = 210 : 3 = 70' }, '  км/ч'], RX0, 690, m('v', .2), { size: 36, msize: 76, anchor: 'start' });
+    // how many seventies fit into 210: three hops of 70 km
+    klHops(p, { X: c06X, y: RY }, [0, 70, 140, 210], m('t', 1.6), { per: .9 });
+    [1, 2, 3].forEach(k => klMath(p, [String(k)], c06X(70 * k - 35), RY - 64, m('t', 1.8 + (k - 1) * .9), { size: 44, fill: VAL }));
+    klRow(p, [{ m: 't', fill: LET }, { m: ' = ' }, { m: 's', fill: LET }, { m: ' : ' }, { m: 'v', fill: LET }, { m: ' = 210 : 70 = 3' }, '  ч'], RX0, 800, m('t3'), { size: 36, msize: 76, anchor: 'start' });
+    klText(p, 'время = путь : скорость', 1000, 800, m('t3', 1.6), { size: 32, fill: RULE, weight: 600 });
+  }],
+
+  ['general', 'Обратные формулы', m => {
+    const p = panel(0);
+    klTitle(p, 'Из одного равенства — ещё два');
+    const L = tokens(p, [{ t: 'a', fill: LET }, ' · ', { t: 'b', fill: LET }, ' = ', { t: 'c', fill: LET }], { x: 480, y: 330, size: 100, anchor: 'middle', o: 0 });
+    L.forEach((e, k) => show(e, .2 + k * .6, .4));
+    pulse(L[4], m('eq', 1.2), 1.4);
+    const line = (src, a, b, c, y, t, fill) => c06Fly(p, [{ from: src[a], t: src._t[a], fill }, ' = ', { from: src[c], t: src._t[c], fill }, ' : ', { from: src[b], t: src._t[b], fill }], src.x, y, t, { size: 100 });
+    L._t = ['a', '', 'b', '', 'c'];
+    line(L, 0, 2, 4, 490, m('a'), LET);
+    line(L, 2, 0, 4, 640, m('b'), LET);
+    path(p, 'M820 250V700', { stroke: COL.chalk, 'stroke-width': 2, 'stroke-opacity': .25 });
+    const N = tokens(p, [{ t: '3', fill: VAL }, ' · ', { t: '4', fill: VAL }, ' = ', { t: '12', fill: VAL }], { x: 1160, y: 330, size: 100, anchor: 'middle', o: 0 });
+    N.forEach(e => show(e, m('ex')));
+    N._t = ['3', '', '4', '', '12'];
+    line(N, 0, 2, 4, 490, m('ex2', .3), VAL);
+    line(N, 2, 0, 4, 640, m('ex3', .3), VAL);
+    klText(p, 'множитель = произведение : другой множитель', 800, 800, m('b', 1.6), { size: 36, fill: RULE, weight: 600, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const X = km => RX0 + km * 5;
+    const g = G(p, { o: 0 });
+    path(g, `M${RX0 - 30} 470H1440`, { stroke: COL.chalk, 'stroke-width': 4, 'stroke-linecap': 'round' });
+    [0, 240].forEach(k => {
+      path(g, `M${X(k)} 456V484`, { stroke: COL.chalk, 'stroke-width': 3.5 });
+      T(g, String(k), { x: X(k), y: 526, size: 38, fill: COL.chalk, font: MATH, anchor: 'middle' });
+    });
+    T(g, 'км', { x: X(240) + 50, y: 526, size: 32, fill: COL.dim });
+    show(g, .2);
+    c06Train(p, X(240), 467);
+    klBrace(p, X(0), X(240), 320, '', .4, { fill: COL.chalk });
+    klRow(p, [{ m: 's', fill: LET }, { m: ' = ' }, { m: '240', fill: VAL }, '  км'], X(120), 302, .4, { size: 34, msize: 60 });
+    klRow(p, [{ m: 't', fill: LET }, { m: ' = ' }, { m: '4', fill: VAL }, '  ч'], X(120), 600, .5, { size: 34, msize: 60 });
+    S.q3cuts = [60, 120, 180].map(k => path(p, `M${X(k)} 440V500`, { stroke: KL.DEN, 'stroke-width': 6, 'stroke-linecap': 'round' }, { d: 0 }));
+    S.q3labs = [0, 1, 2, 3].map(i => put(klMath(p, ['60'], X(30 + 60 * i), 425, undefined, { size: 46, fill: VAL }), { o: 0 }));
+  }, { ask: done => quiz(BAND, [{
+    id: 'c-poezd', prompt: 'Поезд прошёл 240 км за 4 ч. Какова его скорость?',
+    build: blanks([{ parts: ['v = ', { box: '60' }, ' км/ч'], why: ['Скорость — путь, делённый на время: ', $m('v = s : t = 240 : 4 = 60'), ' км/ч.'],
+      hint: 'Путь разделили на время: v = s : t.',
+      fx: () => { S.q3cuts.forEach((c, i) => fx(c, { d: 1 }, i * .15, .4)); S.q3labs.forEach((e, i) => fx(e, { o: 1 }, .4 + i * .12, .3)); } }]),
+  }], done) }],
+
+  ['wrap', 'Главное', m => klWrap(m, [
+    'Буква обозначает число: подставь число — найдёшь значение',
+    ['Знак умножения можно не писать:  ', { m: '3a = 3 · a,   ab = a · b' }],
+    ['Прямоугольник:  ', { m: 'S = ab,   P = 2 · (a + b)' }],
+    ['Путь:  ', { m: 's = v · t,   v = s : t,   t = s : v' }],
+  ])],
+
+  ['final1', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-verno', prompt: 'Верно или неверно?',
+    build: grid([
+      { parts: [$m('3a'), ' при ', $m('a = 4'), ' равно 34'], ans: ['no'], why: ['3a = 3 · a = 3 · 4 = 12, а не 34.'] },
+      { parts: [$m('2b = 2 · b')], ans: ['yes'], why: 'Между числом и буквой спрятан знак умножения.' },
+      { parts: [$m('ab'), ' при ', $m('a = 3, b = 2'), ' равно 6'], ans: ['yes'], why: 'ab = a · b = 3 · 2 = 6.' },
+      { parts: ['Площадь прямоугольника ', $m('S = a + b')], ans: ['no'], why: 'Площадь — произведение сторон: S = a · b.' },
+      { parts: ['Время в пути ', $m('t = s : v')], ans: ['yes'], why: 'Из s = v · t: время — путь, делённый на скорость.' },
+    ], [['yes', 'верно', null, '1'], ['no', 'неверно', null, '2']], { multi: false, text: true }),
+  }], done, 'Практика по теме · часть 1 из 3') }],
+
+  ['final2', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-podstanovka', prompt: 'Найди значения выражений.',
+    build: blanks([
+      { parts: ['a = 3:   4a + 5 = ', { box: '17' }], why: '4 · 3 + 5 = 12 + 5 = 17.', hint: '4a = 4 · a. Сначала умножь, потом прибавь.' },
+      { parts: ['a = 8,  b = 2:   2 · (a + b) = ', { box: '20' }], why: '2 · (8 + 2) = 2 · 10 = 20.', hint: 'Сначала действие в скобках.' },
+      { parts: ['a = 6,  b = 7:   ab = ', { box: '42' }], why: 'ab = a · b = 6 · 7 = 42.', hint: 'ab — это a · b, а не число «67».' },
+    ]),
+  }], done, 'Практика по теме · часть 2 из 3') }],
+
+  ['final3', 'Практика', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-velosiped', prompt: 'Велосипедист едет 3 ч со скоростью 12 км/ч. Сколько километров он проедет?',
+    build: blanks([{ parts: ['s = ', { box: '36' }, ' км'], why: ['Путь — скорость, умноженная на время: ', $m('s = v · t = 12 · 3 = 36'), ' км.'], hint: 's = v · t.' }]),
+  }, {
+    id: 'p-peshehod', prompt: 'Пешеход прошёл 15 км со скоростью 5 км/ч. Как найти время в пути?',
+    build: choice([$m('t = 15 · 5'), $m('t = 15 : 5'), $m('t = 5 : 15')], 1, ['Время — путь, делённый на скорость: ', $m('t = s : v = 15 : 5 = 3'), ' ч.'],
+      ['Умножение даёт путь по скорости и времени, а здесь путь уже известен.', null, 'Делят путь на скорость, а не скорость на путь.']),
+  }, {
+    id: 'p-sad', prompt: 'Грядка — прямоугольник со сторонами 9 м и 4 м. Найди её площадь и периметр.',
+    build: blanks([
+      { parts: ['S = ', { box: '36' }, ' кв. м'], why: 'S = a · b = 9 · 4 = 36.', hint: 'Площадь — произведение сторон.' },
+      { parts: ['P = ', { box: '26' }, ' м'], why: 'P = 2 · (9 + 4) = 2 · 13 = 26.', hint: 'P = 2 · (a + b): сначала сложи стороны.' },
+    ]),
+  }], done, 'Практика по теме · часть 3 из 3') }],
+
+  ['finish', 'Конец темы', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
