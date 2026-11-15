@@ -77,17 +77,20 @@
   // полученный на прежних задачах, перестаёт показываться как лучший. Нет в списке — версия 1.
   const EXAM_VER = { 1: 2, 2: 2, 4: 2, 7: 2, 8: 2 };
   const examVer = n => EXAM_VER[n] || 1;
-  // Сохранённый результат варианта v экзамена главы n (или итогового теста, n = 'itog'), если он получен
+  // Сохранённый результат варианта v экзамена главы n (или итогового теста, тогда n — его id), если он получен
   // на текущей версии работы. У вариантов 1 и 2 это лучший результат, у варианта 3 итогового теста — первая попытка.
   function examBest(saved, n, v) {
     const b = (saved || {})[`${n}-${v}`];
     return b && typeof b === 'object' && (b.ver || 1) === examVer(n) ? b : null;
   }
 
-  // Итоговый тест: варианты 1 и 2 — в final.js, вариант 3 — в final-parents.js. Вариант 3 открывается на сайте
-  // только по адресу #HIDDEN_FINAL: ссылки на него на сайте нет, её даёт страница для родителей.
-  const HIDDEN_FINAL = 'proverka-itog';
-  const finalTasks = v => v === 3 ? (window.FINAL3 || []) : (window.FINAL || []).map(s => Object.assign({ t: s.t }, s.v[v - 1]));
+  // Итоговые тесты: каждый — по группе глав с from-й по to-ю (FINALS в final.js, варианты 1 и 2), вариант 3 —
+  // FINALS3[id] в final-parents.js. Вариант 3 открывается на сайте только по адресу #proverka-<id>: ссылки на него
+  // на сайте нет, её даёт страница для родителей.
+  const finalList = () => window.FINALS || [];
+  const finalTasks = (f, v) => v === 3 ? ((window.FINALS3 || {})[f.id] || []) : f.tasks.map(s => Object.assign({ t: s.t }, s.v[v - 1]));
+  const finalTitle = f => `Итоговый тест по ${f.from === f.to ? `главе ${f.from}` : `главам ${f.from}–${f.to}`}`;
+  const hiddenRoute = f => 'proverka-' + f.id;
 
   // Лист для печати: заголовок, поля для имени и оценки, задачи со строкой для ответа (или вариантами, которые обводят).
   // o: { title, sub, tasks, rules, cls, attrs } — cls и attrs дописываются к <section>.
@@ -105,7 +108,8 @@
       </section>`;
   }
 
-  window.MVK = { rich, esc, parseNum, check, fmtAnswer, plural, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES };
+  window.MVK = { rich, esc, parseNum, check, fmtAnswer, plural, grade, scale, examVer, examBest,
+    finalList, finalTasks, finalTitle, hiddenRoute, paper, RULES };
 
   // Переключатель темы (авто — как в системе, светлая, тёмная) в шапке сайта и страницы для родителей.
   // Сохранённую тему ещё до отрисовки применяет маленький скрипт в <head> каждой страницы.

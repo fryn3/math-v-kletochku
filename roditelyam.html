@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
-<link rel="stylesheet" href="css/site.css?v=11">
+<link rel="stylesheet" href="css/site.css?v=12">
 <style>
 /* Страница для родителей. Цвета светлой и тёмной темы, шрифты и клетка общие с сайтом (css/site.css),
    здесь только выбор работ, предпросмотр листов и ключ ответов. На бумаге всё печатается светлым. */
@@ -38,7 +38,11 @@
 .pick .name { flex: 1 1 9em; min-width: 0; }
 .pick .site { flex: 1 0 100%; }
 .pick.all .name { color: var(--muted); }
-.online { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--line); }
+/* Итоговый тест — выделенная строка сразу после глав, которые он проверяет */
+.pick.final { margin: 4px 0; padding: 10px 12px; border: 1.5px solid var(--pen); border-radius: 8px; background: var(--pen-soft); }
+.pick.final + .pick { border-top: 0; }
+.pick .online { flex: 1 0 100%; }
+.online { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .online p { flex: 1 1 20em; margin: 0; color: var(--muted); font-size: 0.9rem; }
 
 /* Темы свёрнуты по главам */
@@ -120,7 +124,7 @@
     <section class="intro no-print">
       <p class="eyebrow">Для родителей</p>
       <h1>Проверочные работы</h1>
-      <p>Здесь печатаются итоговый тест по всей программе, экзамены по главам в любом из трёх вариантов и задачи по отдельным темам. Варианты 1 и 2 ребёнок решает на сайте сам и видит правильные ответы. Третьего варианта на сайте нет, его ребёнок увидит впервые. Задача под одним номером во всех вариантах проверяет одно и то же умение.</p>
+      <p>Здесь печатаются экзамены по главам и итоговые тесты в любом из трёх вариантов, а также задачи по отдельным темам. Итоговый тест стоит в списке сразу после глав, которые он проверяет. Варианты 1 и 2 ребёнок решает на сайте сам и видит правильные ответы. Третьего варианта на сайте нет, его ребёнок увидит впервые. Задача под одним номером во всех вариантах проверяет одно и то же умение.</p>
       <ol>
         <li>Отметьте нужные работы и варианты и нажмите «Печать». Печатается только отмеченное: каждая работа начинается с нового листа, ответы идут в конце.</li>
         <li>Дайте ребёнку 30–40 минут на экзамен главы или около часа на итоговый тест, без справочника и калькулятора. Решать можно на черновике, ответы он записывает на листе.</li>
@@ -129,15 +133,7 @@
     </section>
     <form id="choose" class="no-print" onsubmit="return false">
       <section class="card">
-        <h2>Итоговый тест по всей программе <small id="final-size"></small></h2>
-        <div id="finals"></div>
-        <div class="online">
-          <p>Вариант 3 можно решить и на экране: откройте его на устройстве ребёнка. Программа проверит ответы, а результат первой попытки появится здесь, если открыть эту страницу в том же браузере. На сайте ссылки на этот вариант нет.</p>
-          <button class="btn ghost" type="button" id="open-final">Открыть вариант 3 на сайте</button>
-        </div>
-      </section>
-      <section class="card">
-        <h2>Экзамены по главам <small>варианты</small></h2>
+        <h2><span id="exams-title">Экзамены по главам</span> <small>варианты</small></h2>
         <div id="chapters"></div>
       </section>
       <section class="card topics">
@@ -158,21 +154,21 @@
   </main>
 </div>
 
-<script src="js/visuals.js?v=11"></script>
-<script src="js/core.js?v=11"></script>
-<script src="js/ch1-natural.js?v=11"></script>
-<script src="js/ch2-divisibility.js?v=11"></script>
-<script src="js/ch3-fractions.js?v=11"></script>
-<script src="js/ch4-decimals.js?v=11"></script>
-<script src="js/ch5-ratio.js?v=11"></script>
-<script src="js/ch6-negative.js?v=11"></script>
-<script src="js/ch7-geometry.js?v=11"></script>
-<script src="js/ch8-problems.js?v=11"></script>
-<script src="js/ch9-data.js?v=11"></script>
-<script src="js/exams.js?v=11"></script>
-<script src="js/exam-parents.js?v=11"></script>
-<script src="js/final.js?v=11"></script>
-<script src="js/final-parents.js?v=11"></script>
-<script src="js/parents.js?v=11"></script>
+<script src="js/visuals.js?v=12"></script>
+<script src="js/core.js?v=12"></script>
+<script src="js/ch1-natural.js?v=12"></script>
+<script src="js/ch2-divisibility.js?v=12"></script>
+<script src="js/ch3-fractions.js?v=12"></script>
+<script src="js/ch4-decimals.js?v=12"></script>
+<script src="js/ch5-ratio.js?v=12"></script>
+<script src="js/ch6-negative.js?v=12"></script>
+<script src="js/ch7-geometry.js?v=12"></script>
+<script src="js/ch8-problems.js?v=12"></script>
+<script src="js/ch9-data.js?v=12"></script>
+<script src="js/exams.js?v=12"></script>
+<script src="js/exam-parents.js?v=12"></script>
+<script src="js/final.js?v=12"></script>
+<script src="js/final-parents.js?v=12"></script>
+<script src="js/parents.js?v=12"></script>
 </body>
 </html>

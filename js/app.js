@@ -1,6 +1,6 @@
 /* Оглавление, страницы тем, экзамены, итоговый тест, шпаргалка, прогресс и переключатель темы. */
 (function () {
-  const { rich, esc, check, fmtAnswer, plural, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES } = window.MVK;
+  const { rich, esc, check, fmtAnswer, plural, grade, scale, examVer, examBest, finalList, finalTasks, finalTitle, hiddenRoute, paper, RULES } = window.MVK;
   // Номер версии из адреса этого скрипта (app.js?v=9): с ним же подгружается скрытый вариант итогового теста.
   const VER = (((document.currentScript || {}).src || '').match(/\?v=([\w.-]+)/) || [])[1];
   const chapters = (window.COURSE || []).slice().sort((a, b) => a.n - b.n);
@@ -19,8 +19,11 @@
   // Экзамены: EXAMS[n] — список задач главы n, у каждой два варианта (v[0] и v[1]) и тема t.
   const EXAMS = window.EXAMS || {};
   const examTasks = (n, v) => (EXAMS[n] || []).map(s => Object.assign({ t: s.t }, s.v[v - 1]));
-  // Итоговый тест по всей программе: варианты 1 и 2 (final.js) открыты, вариант 3 подгружается по скрытому адресу.
-  const FINAL = window.FINAL || [];
+  // Итоговые тесты, каждый по группе глав (final.js): варианты 1 и 2 открыты, вариант 3 подгружается по скрытому адресу.
+  // В оглавлении итоговый тест стоит после последней своей главы.
+  const FINALS = finalList();
+  const finalsAfter = n => FINALS.filter(f => f.to === n);
+  const finalAfterAll = FINALS.filter(f => !chapters.some(ch => ch.n === f.to));
   // Уроки у доски (uroki/): у темы есть урок, если в курсе книги (uroki/course.js) на её месте готовый урок
   // с тем же названием. Так ссылка не уедет на чужой урок, когда в справочнике появится новая тема.
   const lessons = {};
@@ -56,7 +59,7 @@
     return `
       <section class="hero">
         <h1>Математика 5–6 класса: общие правила и всё, что из них следует</h1>
-        <p>В каждой теме одно общее правило, из него выведены частные правила с примерами. Дальше идут частая ошибка и задачи с проверкой ответа. В теме указано, на какие правила она опирается и где используется дальше. После каждой главы есть экзамен в двух вариантах, а в конце — итоговый тест по всей программе.</p>
+        <p>В каждой теме одно общее правило, из него выведены частные правила с примерами. Дальше идут частая ошибка и задачи с проверкой ответа. В теме указано, на какие правила она опирается и где используется дальше. После каждой главы есть экзамен в двух вариантах, а после нескольких глав — итоговый тест по ним.</p>
         ${Object.keys(lessons).length ? `<a class="lesson" href="uroki/">${PLAY}Уроки у доски <small>каждая тема — анимированный урок с озвучкой</small></a>` : ''}
         <div class="progress"><span>Решено тем: <b class="mono">${done} из ${topics.length}</b></span><span class="bar" aria-hidden="true"><i style="width:${pct}%"></i></span></div>
       </section>
@@ -68,16 +71,19 @@
               <li><a href="#${t.id}"><span class="n">${t.num}</span><span class="t">${t.title}</span>${isDone(t) ? '<span class="ok" title="Все задачи решены">✓</span>' : ''}</a></li>`).join('')}
             </ol>
             ${EXAMS[ch.n] ? `<p class="exam-link">Экзамен: ${[1, 2].map(v => `<span class="nw"><a href="#ekzamen-${ch.n}-${v}">вариант ${v}</a>${scoreHtml(ch.n, v)}</span>`).join(' · ')}</p>` : ''}
-          </section>`).join('')}
-        ${FINAL.length ? `
-          <section class="final">
-            <h2><span>Итоговый тест по всей программе</span><span class="grade">5–6 класс</span></h2>
-            <p>${FINAL.length} ${plural(FINAL.length, ['задача', 'задачи', 'задач'])} по всем главам. Его можно решить здесь или распечатать и решить на бумаге.</p>
-            <p class="exam-link">Тест: ${[1, 2].map(v => `<span class="nw"><a href="#itog-${v}">вариант ${v}</a>${scoreHtml('itog', v)}</span>`).join(' · ')}</p>
-          </section>` : ''}
+          </section>${finalsAfter(ch.n).map(finalCard).join('')}`).join('')}
+        ${finalAfterAll.map(finalCard).join('')}
       </div>
       <p style="margin-top:22px">Все правила на одной странице — в <a href="#shpargalka">шпаргалке</a>.</p>`;
   }
+
+  // Карточка итогового теста в оглавлении — сразу после глав, которые он проверяет.
+  const finalCard = f => `
+          <section class="final">
+            <h2><span>${finalTitle(f)}</span><span class="grade">${f.tasks.length} ${plural(f.tasks.length, ['задача', 'задачи', 'задач'])}</span></h2>
+            <p>Проверь, что ты помнишь из ${f.from === f.to ? 'этой главы' : 'всех этих глав'}. Тест можно решить здесь или распечатать и решить на бумаге.</p>
+            <p class="exam-link">Тест: ${[1, 2].map(v => `<span class="nw"><a href="#${f.id}-${v}">вариант ${v}</a>${scoreHtml(f.id, v)}</span>`).join(' · ')}</p>
+          </section>`;
 
   function sheet() {
     return `
@@ -161,7 +167,7 @@
 
   function exam(ch, v) {
     const tasks = examTasks(ch.n, v), best = bestOf(ch.n, v);
-    const last = ch.topics[ch.topics.length - 1], nextCh = chapters[chapters.indexOf(ch) + 1];
+    const last = ch.topics[ch.topics.length - 1], nextCh = chapters[chapters.indexOf(ch) + 1], fin = finalsAfter(ch.n)[0];
     test = { n: ch.n, v, tasks, again: { href: `#ekzamen-${ch.n}-${3 - v}`, t: `Вариант ${3 - v}` } };
     return `
       <p class="crumbs"><a href="#">Оглавление</a> · Глава ${ch.n}. ${ch.title}</p>
@@ -172,35 +178,37 @@
       ${testForm(tasks)}
       <nav class="pager" aria-label="Соседние разделы">
         <a class="prev" href="#${last.id}"><small>← Назад</small>${last.num}. ${last.title}</a>
-        ${nextCh ? `<a class="next" href="#${nextCh.topics[0].id}"><small>Дальше →</small>Глава ${nextCh.n}. ${nextCh.title}</a>`
-          : FINAL.length ? '<a class="next" href="#itog-1"><small>Дальше →</small>Итоговый тест по всей программе</a>'
+        ${fin ? `<a class="next" href="#${fin.id}-1"><small>Дальше →</small>${finalTitle(fin)}</a>`
+          : nextCh ? `<a class="next" href="#${nextCh.topics[0].id}"><small>Дальше →</small>Глава ${nextCh.n}. ${nextCh.title}</a>`
           : '<a class="next" href="#"><small>Это последняя глава</small>К оглавлению</a>'}
       </nav>`;
   }
 
-  // Итоговый тест. Вариант 3 открывается только по скрытому адресу: без переключателя вариантов и навигации,
+  // Итоговый тест f. Вариант 3 открывается только по скрытому адресу: без переключателя вариантов и навигации,
   // и запоминается его первая попытка — её увидит родитель на своей странице.
-  function finalPage(v) {
-    const tasks = finalTasks(v), hidden = v === 3, best = hidden ? null : bestOf('itog', v);
-    const lastCh = chapters.filter(ch => EXAMS[ch.n]).pop();
-    test = { n: 'itog', v, tasks, draft: true, first: hidden, again: hidden ? null : { href: `#itog-${3 - v}`, t: `Вариант ${3 - v}` } };
+  function finalPage(f, v) {
+    const tasks = finalTasks(f, v), hidden = v === 3, best = hidden ? null : bestOf(f.id, v);
+    const nextCh = chapters.find(ch => ch.n > f.to);
+    test = { n: f.id, v, tasks, draft: true, first: hidden, again: hidden ? null : { href: `#${f.id}-${3 - v}`, t: `Вариант ${3 - v}` } };
     return `
       <p class="crumbs"><a href="#">Оглавление</a> · Итоговый тест</p>
       <p class="eyebrow">Итоговый тест${hidden ? ' · вариант 3' : ''}</p>
-      <h1>Итоговый тест по всей программе</h1>
-      ${hidden ? '' : variants('#itog-', v)}
-      <p>${tasks.length} ${plural(tasks.length, ['задача', 'задачи', 'задач'])} по всем главам в порядке программы. Подсказок нет, на работу нужно около часа. Реши все задачи и нажми «Проверить». Оценка по числу верных ответов: ${scale(tasks.length)}.${best ? ` Твой лучший результат в этом варианте: ${best.ok} из ${best.n}.` : ''}</p>
+      <h1>${finalTitle(f)}</h1>
+      ${hidden ? '' : variants(`#${f.id}-`, v)}
+      <p>${tasks.length} ${plural(tasks.length, ['задача', 'задачи', 'задач'])} по ${f.from === f.to ? `главе ${f.from}` : `главам с ${f.from}-й по ${f.to}-ю`} в порядке программы. Подсказок нет, на работу нужно около часа. Реши все задачи и нажми «Проверить». Оценка по числу верных ответов: ${scale(tasks.length)}.${best ? ` Твой лучший результат в этом варианте: ${best.ok} из ${best.n}.` : ''}</p>
       <p class="aside">Ответы сохраняются в этом браузере, пока ты не нажмёшь «Проверить», поэтому работу можно прервать и закончить позже. Удобнее на бумаге — распечатай задачи, а ответы потом впиши сюда.</p>
       <p><button type="button" class="btn ghost" data-print>Распечатать</button></p>
       ${testForm(tasks)}
       ${hidden ? '' : `<nav class="pager" aria-label="Соседние разделы">
-        ${lastCh ? `<a class="prev" href="#ekzamen-${lastCh.n}-1"><small>← Назад</small>Экзамен по главе ${lastCh.n}</a>` : ''}
-        <a class="next" href="#"><small>Это конец программы</small>К оглавлению</a>
+        ${EXAMS[f.to] ? `<a class="prev" href="#ekzamen-${f.to}-1"><small>← Назад</small>Экзамен по главе ${f.to}</a>` : ''}
+        ${nextCh ? `<a class="next" href="#${nextCh.topics[0].id}"><small>Дальше →</small>Глава ${nextCh.n}. ${nextCh.title}</a>`
+          : '<a class="next" href="#"><small>Это конец программы</small>К оглавлению</a>'}
       </nav>`}
-      ${paper({ title: 'Итоговый тест по всей программе', sub: `Вариант ${v}`, tasks, rules: `${RULES} На работу — около часа.` })}`;
+      ${paper({ title: finalTitle(f), sub: `Вариант ${v}`, tasks, rules: `${RULES} На работу — около часа.` })}`;
   }
 
-  // Вариант 3 итогового теста на сайт не подключён: его скрипт загружается, только когда открыт скрытый адрес.
+  // Варианты 3 итоговых тестов на сайт не подключены: их скрипт загружается, только когда открыт скрытый адрес.
+  const hiddenFinal = id => FINALS.find(f => id === hiddenRoute(f));
   let hiddenState = '';
   function loadHidden() {
     if (hiddenState === 'failed') return '<p>Не удалось загрузить работу. Проверь подключение к интернету и обнови страницу.</p>';
@@ -208,7 +216,7 @@
       hiddenState = 'loading';
       const s = document.createElement('script');
       s.src = `js/final-parents.js${VER ? '?v=' + VER : ''}`;
-      s.onload = s.onerror = () => { hiddenState = window.FINAL3 ? 'done' : 'failed'; if (current === HIDDEN_FINAL) render(); };
+      s.onload = s.onerror = () => { hiddenState = window.FINALS3 ? 'done' : 'failed'; if (hiddenFinal(current)) render(); };
       document.head.appendChild(s);
     }
     return '<p>Загружаю работу…</p>';
@@ -342,21 +350,21 @@
   app.addEventListener('input', keepDraft);
   app.addEventListener('change', keepDraft);
 
-  /* ---------- маршруты: #, #shpargalka, #ekzamen-N-V, #itog-V, скрытый #HIDDEN_FINAL, #id-темы ---------- */
+  /* ---------- маршруты: #, #shpargalka, #ekzamen-N-V, итоговый тест #<id>-V и скрытый #proverka-<id>, #id-темы ---------- */
   let current = '';
   function render() {
     const id = decodeURIComponent(location.hash.slice(1));
     const m = id.match(/^ekzamen-(\d+)-([12])$/), ch = m && chapters.find(c => c.n === +m[1]);
-    const f = id.match(/^itog-([12])$/);
+    const fin = FINALS.find(f => id === `${f.id}-1` || id === `${f.id}-2`), hid = hiddenFinal(id);
     current = id; test = null;
     if (id === 'shpargalka') app.innerHTML = sheet();
     else if (ch && EXAMS[ch.n]) app.innerHTML = exam(ch, +m[2]);
-    else if (f && FINAL.length) app.innerHTML = finalPage(+f[1]);
-    else if (id === HIDDEN_FINAL) app.innerHTML = window.FINAL3 ? finalPage(3) : loadHidden();
+    else if (fin) app.innerHTML = finalPage(fin, +id.slice(-1));
+    else if (hid) app.innerHTML = window.FINALS3 ? finalPage(hid, 3) : loadHidden();
     else if (byId[id]) app.innerHTML = topic(byId[id]);
     else { current = ''; app.innerHTML = home(); }
     if (test && test.draft) restoreDraft(document.getElementById('exam'));
-    // Страница с листом для печати печатает только его (стили @media print в index.html).
+    // Страница с листом для печати печатает только его (стили @media print в css/site.css).
     document.body.classList.toggle('has-paper', !!app.querySelector('.paper'));
     window.scrollTo(0, 0);
   }

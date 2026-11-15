@@ -1,7 +1,7 @@
-/* Страница для родителей: итоговый тест, экзамены по главам (любой из трёх вариантов) и задачи по отдельным темам
+/* Страница для родителей: экзамены по главам и итоговые тесты (любой из трёх вариантов) и задачи по отдельным темам
    для печати, ключ ответов с решениями и результаты ребёнка на сайте. */
 (function () {
-  const { rich, fmtAnswer, plural, grade, scale, examBest, HIDDEN_FINAL, finalTasks, paper, RULES } = window.MVK;
+  const { rich, fmtAnswer, plural, grade, scale, examBest, finalList, finalTasks, finalTitle, hiddenRoute, paper, RULES } = window.MVK;
   const E3 = window.EXAMS3 || {}, E12 = window.EXAMS || {};
   const course = (window.COURSE || []).slice().sort((a, b) => a.n - b.n);
   const topicList = course.flatMap(ch => ch.topics.map((t, i) => ({ ch, t, num: `${ch.n}.${i + 1}` })));
@@ -13,22 +13,29 @@
   // Экзамен главы: варианты 1 и 2 — из exams.js (они же на сайте), вариант 3 — из exam-parents.js.
   const examTasks = (n, v) => v === 3 ? (E3[n] || []) : (E12[n] || []).map(s => Object.assign({ t: s.t }, s.v[v - 1]));
   const chapters = course.filter(ch => E12[ch.n] || E3[ch.n]);
+  // Итоговый тест стоит сразу после последней своей главы: так видно, какие главы он проверяет.
+  const FINALS = finalList();
+  const finalsAfter = n => FINALS.filter(f => f.to === n);
+  const finalsLeft = FINALS.filter(f => !chapters.some(ch => ch.n === f.to));
+  const variantsOf = get => [1, 2, 3].filter(v => get(v).length);
 
-  // Задачи по одной теме: из «Проверь себя», из экзаменов главы и из итогового теста, все три варианта.
+  // Задачи по одной теме: из «Проверь себя», из экзаменов главы и из итоговых тестов, все три варианта.
   // src — откуда задача: по ней в ключе видно, какие задачи ребёнок мог решать на сайте (вариантов 3 там нет).
   const pool = {};
   const put = (k, src) => [].concat(k.t || []).forEach(id => (pool[id] = pool[id] || []).push({ k, src }));
   topicList.forEach(({ t }) => (t.tasks || []).forEach(k => put(Object.assign({ t: t.id }, k), '«Проверь себя» в теме')));
   [1, 2, 3].forEach(v => chapters.forEach(ch => examTasks(ch.n, v).forEach(k => put(k, `экзамен главы ${ch.n}, вариант ${v}`))));
-  [1, 2, 3].forEach(v => finalTasks(v).forEach(k => put(k, `итоговый тест, вариант ${v}`)));
+  [1, 2, 3].forEach(v => FINALS.forEach(f => finalTasks(f, v).forEach(k => put(k, `${finalTitle(f).toLowerCase()}, вариант ${v}`))));
 
-  // Работы по порядку печати: итоговый тест, экзамены глав, темы. sel — значение флажка и метка листа и ключа.
-  const finals = [1, 2, 3].map(v => ({ v, tasks: finalTasks(v) })).filter(w => w.tasks.length);
+  // Работы в том же порядке, что и в списке: главы, после них их итоговый тест, потом темы.
+  // sel — значение флажка и метка листа и ключа.
+  const chapterWorks = ch => variantsOf(v => examTasks(ch.n, v)).map(v => ({ sel: `ch-${ch.n}-${v}`, tasks: examTasks(ch.n, v),
+    title: `Глава ${ch.n}. ${ch.title}`, sub: `Проверочная работа · вариант ${v}`, key: `Глава ${ch.n}. ${ch.title} · вариант ${v}` }));
+  const finalWorks = f => variantsOf(v => finalTasks(f, v)).map(v => ({ sel: `${f.id}-${v}`, tasks: finalTasks(f, v), title: finalTitle(f),
+    sub: `Проверочная работа · вариант ${v}`, key: `${finalTitle(f)} · вариант ${v}`, rules: `${RULES} На работу — около часа.` }));
   const works = [
-    ...finals.map(w => ({ sel: `itog-${w.v}`, tasks: w.tasks, title: 'Итоговый тест по всей программе',
-      sub: `Проверочная работа · вариант ${w.v}`, key: `Итоговый тест · вариант ${w.v}`, rules: `${RULES} На работу — около часа.` })),
-    ...chapters.flatMap(ch => [1, 2, 3].filter(v => examTasks(ch.n, v).length).map(v => ({ sel: `ch-${ch.n}-${v}`, tasks: examTasks(ch.n, v),
-      title: `Глава ${ch.n}. ${ch.title}`, sub: `Проверочная работа · вариант ${v}`, key: `Глава ${ch.n}. ${ch.title} · вариант ${v}` }))),
+    ...chapters.flatMap(ch => [...chapterWorks(ch), ...finalsAfter(ch.n).flatMap(finalWorks)]),
+    ...finalsLeft.flatMap(finalWorks),
     ...topicList.filter(x => pool[x.t.id]).map(x => ({ sel: `t-${x.t.id}`, tasks: pool[x.t.id].map(p => p.k), src: pool[x.t.id].map(p => p.src),
       title: `Тема ${x.num}. ${x.t.title}`, sub: `Задачи по теме · глава ${x.ch.n}`, key: `Тема ${x.num}. ${x.t.title}` })),
   ];
@@ -42,29 +49,37 @@
     return done.length ? 'на сайте: ' + done.map(([v, b]) => `вариант ${v} — ${mark(b)}`).join(', ') : '';
   }
   // У вариантов 1 и 2 итогового теста — лучший результат, у варианта 3 — первая попытка с датой и номерами ошибок.
-  function finalLine(v) {
-    const b = examBest(exams, 'itog', v);
+  function finalLine(f, v) {
+    const b = examBest(exams, f.id, v);
     if (!b) return '';
     if (v < 3) return `вариант ${v} — лучший результат на сайте: ${mark(b)}`;
     const day = b.at ? ' ' + new Date(b.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '';
     const errors = b.wrong && b.wrong.length ? `, ошибки в задачах ${b.wrong.join(', ')}` : ', без ошибок';
     return `вариант 3 решён на сайте${day}: ${mark(b)}${errors}${b.tries > 1 ? ` (первая из ${b.tries} попыток)` : ''}`;
   }
-  const anyResults = chapters.some(ch => chapterLine(ch.n)) || finals.some(w => finalLine(w.v));
+  const anyResults = chapters.some(ch => chapterLine(ch.n)) || FINALS.some(f => [1, 2, 3].some(v => finalLine(f, v)));
 
   const chip = (sel, text, label) => `<label class="chip"><input type="checkbox" name="sel" value="${sel}"${label ? ` aria-label="${label}"` : ''}><span>${text}</span></label>`;
-  document.getElementById('final-size').textContent = finals.length ? count(finals[0].tasks.length, TASKS) : '';
-  document.getElementById('finals').innerHTML = `
-    <div class="pick"><span class="chips">${finals.map(w => chip(`itog-${w.v}`, `Вариант ${w.v}${w.v === 3 ? ' · скрытый' : ''}`)).join('')}</span>
-      ${finals.map(w => finalLine(w.v)).filter(Boolean).map(s => `<small class="site">${s}</small>`).join('')}</div>`;
-  // Первая строка отмечает вариант сразу во всех главах.
+  const chapterRow = ch => `
+    <div class="pick"><span class="name">${ch.n}. ${ch.title}</span>
+      <span class="chips">${variantsOf(v => examTasks(ch.n, v)).map(v => chip(`ch-${ch.n}-${v}`, v, `Глава ${ch.n}, вариант ${v}`)).join('')}</span>
+      ${chapterLine(ch.n) ? `<small class="site">${chapterLine(ch.n)}</small>` : ''}</div>`;
+  const finalRow = f => `
+    <div class="pick final"><span class="name"><b>${finalTitle(f)}</b> <small class="site">${count(f.tasks.length, TASKS)}</small></span>
+      <span class="chips">${variantsOf(v => finalTasks(f, v)).map(v => chip(`${f.id}-${v}`, v, `${finalTitle(f)}, вариант ${v}`)).join('')}</span>
+      ${[1, 2, 3].map(v => finalLine(f, v)).filter(Boolean).map(s => `<small class="site">${s}</small>`).join('')}
+      ${finalTasks(f, 3).length ? `<div class="online">
+        <p>Вариант 3 на сайте не показывается, но его можно решить на экране: откройте его на устройстве ребёнка. Программа проверит ответы, а результат первой попытки появится здесь, если открыть эту страницу в том же браузере.</p>
+        <button class="btn ghost" type="button" data-open="${f.id}">Открыть вариант 3 на сайте</button>
+      </div>` : ''}</div>`;
+  document.getElementById('exams-title').textContent = FINALS.length
+    ? `Экзамены по главам и ${FINALS.length > 1 ? 'итоговые тесты' : 'итоговый тест'}` : 'Экзамены по главам';
+  // Первая строка отмечает вариант сразу во всех главах; итоговые тесты отмечаются отдельно.
   document.getElementById('chapters').innerHTML = `
     <div class="pick all"><span class="name">Все главы сразу</span>
       <span class="chips">${[1, 2, 3].map(v => `<label class="chip"><input type="checkbox" data-all="${v}" aria-label="Вариант ${v} во всех главах"><span>${v}</span></label>`).join('')}</span></div>
-    ${chapters.map(ch => `
-    <div class="pick"><span class="name">${ch.n}. ${ch.title}</span>
-      <span class="chips">${[1, 2, 3].filter(v => examTasks(ch.n, v).length).map(v => chip(`ch-${ch.n}-${v}`, v, `Глава ${ch.n}, вариант ${v}`)).join('')}</span>
-      ${chapterLine(ch.n) ? `<small class="site">${chapterLine(ch.n)}</small>` : ''}</div>`).join('')}`;
+    ${chapters.map(ch => chapterRow(ch) + finalsAfter(ch.n).map(finalRow).join('')).join('')}
+    ${finalsLeft.map(finalRow).join('')}`;
   // Темы свёрнуты по главам; у свёрнутой главы видно, сколько тем в ней отмечено.
   document.getElementById('topics').innerHTML = course.map(ch => `
     <details>
@@ -119,8 +134,11 @@
     if (v) chapterBoxes(v).forEach(b => { b.checked = e.target.checked; });
     update();
   });
+  // Вариант 3 итогового теста на сайте открывается вместо этой страницы: кнопка «Назад» в браузере сюда не вернёт.
+  form.addEventListener('click', e => {
+    const b = e.target.closest('[data-open]'), f = b && FINALS.find(x => x.id === b.dataset.open);
+    if (f) location.replace('./#' + hiddenRoute(f));
+  });
   printBtn.addEventListener('click', () => window.print());
-  // Вариант 3 на сайте открывается вместо этой страницы: кнопка «Назад» в браузере сюда не вернёт.
-  document.getElementById('open-final').addEventListener('click', () => location.replace('./#' + HIDDEN_FINAL));
   update();
 })();
