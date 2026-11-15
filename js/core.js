@@ -59,6 +59,9 @@
     return (neg ? '−' : '') + s;
   }
 
+  // Форма слова после числа: plural(5, ['задача', 'задачи', 'задач']) → «задач».
+  const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
+
   // Школьная оценка по доле верных ответов.
   const grade = (ok, total) => { const p = total ? ok / total : 0; return p >= 0.85 ? 5 : p >= 0.65 ? 4 : p >= 0.45 ? 3 : 2; };
 
@@ -102,5 +105,5 @@
       </section>`;
   }
 
-  window.MVK = { rich, esc, parseNum, check, fmtAnswer, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES };
+  window.MVK = { rich, esc, parseNum, check, fmtAnswer, plural, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES };
 })();

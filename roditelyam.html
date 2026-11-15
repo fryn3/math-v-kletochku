@@ -30,8 +30,14 @@ a { color: var(--pen); }
 .panel { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: grid; gap: 10px; }
 .panel fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
 .panel legend { font-weight: 600; margin-bottom: 4px; }
-.chapters label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.chapters input { align-self: center; margin: 0; }
+.panel fieldset label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.panel fieldset input { align-self: center; margin: 0; }
+/* Темы свёрнуты по главам */
+.topics details { border-top: 1px dashed var(--line); padding: 5px 0 3px; }
+.topics details:last-child { border-bottom: 1px dashed var(--line); }
+.topics summary { cursor: pointer; }
+.topics details label { margin: 4px 0 0 1.4em; }
+.picked { color: var(--pen); font-weight: 600; font-size: 0.88rem; }
 .site { color: var(--muted); font-size: 0.88rem; }
 .site-note { margin: 0; color: var(--muted); font-size: 0.9rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
@@ -105,11 +111,11 @@ svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
   <header class="no-print intro">
     <p><a href="./">← На сайт</a></p>
     <h1>Проверочные работы для родителей</h1>
-    <p>Здесь печатаются итоговый тест по всей программе (все три варианта) и третий вариант экзамена по каждой главе. Варианты 1 и 2 ребёнок решает на сайте сам и видит правильные ответы. Третьего варианта на сайте нет, его ребёнок увидит впервые. Задача под одним номером во всех вариантах проверяет одно и то же умение.</p>
+    <p>Здесь печатаются итоговый тест по всей программе (все три варианта), третий вариант экзамена по каждой главе и задачи по отдельным темам. Варианты 1 и 2 ребёнок решает на сайте сам и видит правильные ответы. Третьего варианта на сайте нет, его ребёнок увидит впервые. Задача под одним номером во всех вариантах проверяет одно и то же умение.</p>
     <ol>
-      <li>Отметьте работы и нажмите «Печать». Каждая работа начинается с нового листа, ответы печатаются в конце.</li>
+      <li>Отметьте нужные работы и нажмите «Печать». Печатается только отмеченное: каждая работа начинается с нового листа, ответы идут в конце.</li>
       <li>Дайте ребёнку 30–40 минут на экзамен главы или около часа на итоговый тест, без справочника и калькулятора. Решать можно на черновике, ответы он записывает на листе.</li>
-      <li>Сверьте ответы с ключом. Для каждой задачи там есть короткое решение и тема, которую стоит повторить, если задача решена неверно.</li>
+      <li>Сверьте ответы с ключом. Для каждой задачи там есть короткое решение и тема, которую стоит повторить, если задача решена неверно. В ключе листа по теме вместо темы указано, откуда задача.</li>
     </ol>
     <form class="panel" id="choose" onsubmit="return false">
       <fieldset class="finals"><legend>Итоговый тест по всей программе</legend></fieldset>
@@ -118,6 +124,9 @@ svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
         <button class="btn ghost" type="button" id="open-final">Открыть вариант 3 на сайте</button>
       </div>
       <fieldset class="chapters"><legend>Экзамены по главам, вариант 3</legend></fieldset>
+      <fieldset class="topics"><legend>Задачи по одной теме</legend>
+        <p class="site-note">Лист по теме собирает все её задачи: из «Проверь себя», из экзаменов главы и из итогового теста, все три варианта. Задачи из «Проверь себя» и вариантов 1 и 2 ребёнок мог решать на сайте, задачи варианта 3 — нет. В ключе указано, откуда каждая задача.</p>
+      </fieldset>
       <p class="site-note" id="site-note"></p>
       <div class="actions">
         <label><input type="checkbox" id="with-keys" checked> Печатать ответы</label>
@@ -130,20 +139,21 @@ svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
   <section class="keys" id="keys" aria-label="Ответы"></section>
 </div>
 
-<script src="js/visuals.js?v=9"></script>
-<script src="js/core.js?v=9"></script>
-<script src="js/ch1-natural.js?v=9"></script>
-<script src="js/ch2-divisibility.js?v=9"></script>
-<script src="js/ch3-fractions.js?v=9"></script>
-<script src="js/ch4-decimals.js?v=9"></script>
-<script src="js/ch5-ratio.js?v=9"></script>
-<script src="js/ch6-negative.js?v=9"></script>
-<script src="js/ch7-geometry.js?v=9"></script>
-<script src="js/ch8-problems.js?v=9"></script>
-<script src="js/ch9-data.js?v=9"></script>
-<script src="js/exam-parents.js?v=9"></script>
-<script src="js/final.js?v=9"></script>
-<script src="js/final-parents.js?v=9"></script>
-<script src="js/parents.js?v=9"></script>
+<script src="js/visuals.js?v=10"></script>
+<script src="js/core.js?v=10"></script>
+<script src="js/ch1-natural.js?v=10"></script>
+<script src="js/ch2-divisibility.js?v=10"></script>
+<script src="js/ch3-fractions.js?v=10"></script>
+<script src="js/ch4-decimals.js?v=10"></script>
+<script src="js/ch5-ratio.js?v=10"></script>
+<script src="js/ch6-negative.js?v=10"></script>
+<script src="js/ch7-geometry.js?v=10"></script>
+<script src="js/ch8-problems.js?v=10"></script>
+<script src="js/ch9-data.js?v=10"></script>
+<script src="js/exams.js?v=10"></script>
+<script src="js/exam-parents.js?v=10"></script>
+<script src="js/final.js?v=10"></script>
+<script src="js/final-parents.js?v=10"></script>
+<script src="js/parents.js?v=10"></script>
 </body>
 </html>

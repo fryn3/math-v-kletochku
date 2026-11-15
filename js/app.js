@@ -1,6 +1,6 @@
 /* Оглавление, страницы тем, экзамены, итоговый тест, шпаргалка, прогресс и переключатель темы. */
 (function () {
-  const { rich, esc, check, fmtAnswer, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES } = window.MVK;
+  const { rich, esc, check, fmtAnswer, plural, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES } = window.MVK;
   // Номер версии из адреса этого скрипта (app.js?v=9): с ним же подгружается скрытый вариант итогового теста.
   const VER = (((document.currentScript || {}).src || '').match(/\?v=([\w.-]+)/) || [])[1];
   const chapters = (window.COURSE || []).slice().sort((a, b) => a.n - b.n);
@@ -138,7 +138,6 @@
   }
 
   /* ---------- экзамены глав и итоговый тест ---------- */
-  const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
   // Открытая работа: { n, v, tasks } — результат хранится под ключом «n-v»; again — куда вести после проверки;
   // draft — ответы сохраняются до проверки; first — запоминается первая попытка, а не лучшая.
   let test = null;
