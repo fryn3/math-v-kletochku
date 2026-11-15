@@ -106,4 +106,22 @@
   }
 
   window.MVK = { rich, esc, parseNum, check, fmtAnswer, plural, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES };
+
+  // Переключатель темы (авто — как в системе, светлая, тёмная) в шапке сайта и страницы для родителей.
+  // Сохранённую тему ещё до отрисовки применяет маленький скрипт в <head> каждой страницы.
+  const THEME_KEY = 'mvk-theme', themeBox = document.getElementById('theme');
+  let themeMode = 'auto';
+  try { themeMode = localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { /* хранилище недоступно */ }
+  const markTheme = () => themeBox && themeBox.querySelectorAll('[data-mode]')
+    .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === themeMode)));
+  markTheme();
+  if (themeBox) themeBox.addEventListener('click', e => {
+    const b = e.target.closest('[data-mode]');
+    if (!b) return;
+    themeMode = b.dataset.mode;
+    if (themeMode === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', themeMode);
+    try { themeMode === 'auto' ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, themeMode); } catch (e) { /* ничего */ }
+    markTheme();
+  });
 })();
