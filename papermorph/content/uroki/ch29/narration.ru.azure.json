@@ -1,0 +1,22 @@
+{
+ "angle": {
+  "ssml": "69af245623a64a7e652af55ede4433dbf5840c47",
+  "mp3": "e41cf9db7978977fbb5886271192988dfbb00122"
+ },
+ "kinds": {
+  "ssml": "b745afee344bf663817aca9bb9df07782d281363",
+  "mp3": "1f6a3519f59b9beb1aa7c329ac2590a4fb1a24fa"
+ },
+ "trap": {
+  "ssml": "a76b90c74ee4d6cd779793453e514685fed31b07",
+  "mp3": "33b5028eaeaec9bd56d623a9102618c79c90776f"
+ },
+ "clock": {
+  "ssml": "61e052cc6a24b649e6c44c730e26601b2945e575",
+  "mp3": "cc70249898f4e55a838fbb1616e6d26c9ef0dd17"
+ },
+ "q4": {
+  "ssml": "0387ce2c7cf4ac8382ef54312a9cf5fcf5e72148",
+  "mp3": "ad75697a3abc13f0f80bd09f84cbd6ffaff2dd0e"
+ }
+}

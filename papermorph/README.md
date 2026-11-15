@@ -16,6 +16,10 @@
 | `books/uroki/voices/` | пробы двух русских голосов Edge (Светлана — выбран, Дмитрий) |
 | `content/uroki/chNN/narration.ru.json` | дикторский текст урока с метками `[[метка]]` |
 | `content/uroki/chNN/narration.ru.timings.json` | кэш озвучки: время каждого слова, чтобы правка меток не требовала новой записи |
+| `content/uroki/chNN/narration.ru.stress.json` | ударения в омографах: куски текста шага со знаком ударения; эти шаги озвучивает Azure |
+| `content/uroki/chNN/narration.ru.azure.json` | какие шаги озвучены через Azure: хэши SSML и mp3 (пишет `azure_tts.py`) |
+| `content/uroki/ipa.ru.json` | формы слов с ударением в фонемах Azure (IPA, набор ru-RU) |
+| `tools/uroki/azure_tts.py` | озвучка шагов с заданным ударением через Azure Speech тем же голосом |
 | `tools/uroki/e2e_chNN.py` | интерактивный тест урока (воспроизведение, перемотка, карточки, все ответы, итог) |
 
 ## Как устроена книга
@@ -29,7 +33,7 @@
 
 ## Команды
 
-Скилл: `~/.claude/skills/papermorph` (дальше `SKILL`). Нужны `uv`, `ffmpeg`, сеть для голоса Edge и браузеры Playwright (`uv run --with playwright playwright install chromium firefox`).
+Скилл: `~/.claude/skills/papermorph` (дальше `SKILL`). Нужны `uv`, `ffmpeg`, сеть для голоса Edge и Azure Speech (ключ — в разделе «Ударение в озвучке») и браузеры Playwright (`uv run --with playwright playwright install chromium firefox`).
 
 Предпросмотр (из корня репозитория; без кэша браузера):
 
@@ -43,6 +47,12 @@ python3 ~/.claude/skills/papermorph/scripts/serve.py 8766 .
 
 ```bash
 uv run --with edge-tts python ~/.claude/skills/papermorph/scripts/tts.py papermorph/content/uroki/ch13/narration.ru.json uroki/ch13/audio/ru
+```
+
+Сразу после него — шаги с заданным ударением (раздел «Ударение в озвучке» ниже):
+
+```bash
+uv run --with azure-cognitiveservices-speech python papermorph/tools/uroki/azure_tts.py papermorph/content/uroki/ch13/narration.ru.json uroki/ch13/audio/ru
 ```
 
 Проверки всей книги (для одной темы — её папка вместо списка):
@@ -79,9 +89,27 @@ uv run --with playwright --with pillow --with numpy python ~/.claude/skills/pape
 uv run --with playwright --with numpy python ~/.claude/skills/papermorph/scripts/export.py ch13 --url http://localhost:8766/uroki/ --out /tmp/video
 ```
 
+## Ударение в озвучке
+
+Голос Edge (`tts.py`) сам выбирает ударение в словах, которые пишутся одинаково, и иногда ошибается: «Сравни числа» звучит как «числа́». В Edge это не исправить: знак ударения U+0301 и другие знаки, SSML (сервис отклоняет любые теги) и латинские буквы-двойники звук не меняют. Поэтому шаги с такими словами переозвучивает Azure Speech тем же голосом и с той же скоростью (ru-RU-SvetlanaNeural, −4 %): слово с заданным ударением уходит в SSML как `<phoneme alphabet="ipa">`. Текст урока и субтитры остаются без знаков.
+
+- `content/uroki/chNN/narration.ru.stress.json` — `{"шаг": ["кусок текста", …]}`. Кусок — часть произносимого текста шага (без меток `[[…]]`) со знаком U+0301 после ударной гласной каждого слова, которое нужно задать: `"Сравни чи́сла."`, `"два числа́?"`. Без знаков кусок должен встречаться в шаге ровно один раз; если нет — добавьте соседнее слово.
+- `content/uroki/ipa.ru.json` — каждая форма со знаком (строчными буквами) и её запись в IPA: `"чи́сла": "ˈt͡ɕislə"`. Только символы набора ru-RU из таблицы Azure (learn.microsoft.com, статья «SSML phonetic alphabets», `speech-ssml-phonetic-sets`): гласные a ʌ ə ɛ i ɪ ɨ ɔ u, мягкость ʲ, t͡s t͡ɕ ɕː ʂ ʐ j и остальные согласные таблицы; ударение ˈ (U+02C8) — перед ударным слогом. Если формы нет, скрипт остановится и назовёт её.
+- Ключ Azure (бесплатный уровень F0, регион eastus) лежит в `~/.config/papermorph/azure-speech.env` строками `AZURE_SPEECH_KEY=…` и `AZURE_SPEECH_REGION=eastus` (можно и переменными окружения с теми же именами). В репозиторий он не входит, скрипт его не печатает. Бесплатного уровня хватает с запасом: все шаги с ударениями — около 43 тысяч знаков.
+
+Порядок всегда такой: сначала `tts.py`, затем `azure_tts.py` (команды — в разделе «Команды»). `azure_tts.py` озвучивает только шаги из stress-файла и пишет то же, что `tts.py`: mp3, время слов в кэш `narration.ru.timings.json` с тем же ключом кэша (поэтому `tts.py` эти шаги не трогает) и `timings.js`; что озвучено — в `narration.ru.azure.json`. Шаг озвучивается заново, когда меняется его SSML (текст, куски, IPA, голос, скорость). Если поменялся текст шага, `tts.py` сначала озвучит его голосом Edge, а `azure_tts.py` после него — снова через Azure; запущенный раньше `tts.py`, он остановится и скажет об этом.
+
+`--dry` печатает SSML шагов и ничего не отправляет. Пробная фраза с временем слов:
+
+```bash
+uv run --with azure-cognitiveservices-speech python papermorph/tools/uroki/azure_tts.py --say "Сравни чи́сла." /tmp/proba.mp3
+```
+
+Ударение задано во всех местах с такими словами (221 место в 39 темах), даже там, где Edge читал верно: числа, часа, стороны, места, цены, длины, кружки, воды, руки, шкалы, голоса, слова, острова, поезда, реки, ребра, трубы, сорока, а после «два, три, четыре» — ряда, шага, шара. В новом тексте ищите прежде всего их. Счётная форма — «два часа́», «три шага́», «две стороны́»; после дроби и слов «часть», «половина» — «ча́са».
+
 ## Новая тема или переделка
 
-1. Дикторский текст в `content/uroki/chNN/narration.ru.json` (числа словами, метка `[[имя]]` перед словом, на котором что-то происходит), озвучка `tts.py`.
+1. Дикторский текст в `content/uroki/chNN/narration.ru.json` (числа словами, метка `[[имя]]` перед словом, на котором что-то происходит), озвучка `tts.py`; омографы — куски в `narration.ru.stress.json`, новые формы в `ipa.ru.json`, затем `azure_tts.py`.
 2. Страница `uroki/chNN/index.html` по образцу `ch13`: шаги `[id, заголовок, (m, D) => { … }, { ask }?]`, время действий — `m('метка')`.
 3. Минуты в `COURSE` в `uroki/index.html`, `CHAPTER.next` у предыдущей темы, строка в `chapters.md`.
 4. `lint.py`, `check.py`, раскадровка `strip.py`, тест `e2e`.

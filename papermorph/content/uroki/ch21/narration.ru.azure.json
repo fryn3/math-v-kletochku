@@ -1,0 +1,26 @@
+{
+ "ladder": {
+  "ssml": "e3059ad7fa05c6925ce0d941bac75592bd8e6b38",
+  "mp3": "a0a8b5f5cf85f052fd2c08bb2f523523c66a840e"
+ },
+ "comma": {
+  "ssml": "c5df99d708fb466d33b7edc592cbb878fcb537d3",
+  "mp3": "7ffc61080313de717d663d666a40311968800bd0"
+ },
+ "time": {
+  "ssml": "bf4e8324a002f7c7608421ead1c94f3db045448e",
+  "mp3": "70d647e07cb1f1b93df09c43da3f6dc49be8219b"
+ },
+ "minutes": {
+  "ssml": "f00e61982f5d0473a9e1269ed65d11058355ebb3",
+  "mp3": "cfe355f55fb70db9f79d4acd333596ac9629284d"
+ },
+ "q3": {
+  "ssml": "c29c706fa0e986f0d34516a29e893fdbafe3bc3d",
+  "mp3": "a021c221ea766aa66d558f3437209ad1aa0eda48"
+ },
+ "wrap": {
+  "ssml": "f77440ad9a93e0996f161f58ab6bb60c6cfef863",
+  "mp3": "17892f192ab5376e6aeacd83dea0db9546e3fa15"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "intro": {
+  "ssml": "fd0bf8d7ba40145dd0f998e659f6559a1cb1fd8e",
+  "mp3": "008e55505ccf1631fadb3653576a9d86f74076bd"
+ },
+ "symbols": {
+  "ssml": "630fa59a84fc9baf696d4405161feb958e08500e",
+  "mp3": "bddfec79221419f86bccb31fd52a80f76ba0fa13"
+ },
+ "place": {
+  "ssml": "7a269453f7fec0ed429f3f4cb32e03e975a0dd03",
+  "mp3": "513ab9853b371fd4f94953739034fc276283479d"
+ },
+ "final3": {
+  "ssml": "5841e5a2f2d993026423de5793a673cb413c7acf",
+  "mp3": "6fc1aff9711590dc887bff33618d549d9dbc7c75"
+ },
+ "finish": {
+  "ssml": "49a46d676b80cc402ffa70e4feef053fb86aafd6",
+  "mp3": "8624114948df992a6aeac3d67a540458342568ed"
+ }
+}

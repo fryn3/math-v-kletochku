@@ -1,0 +1,18 @@
+{
+ "intro": {
+  "ssml": "ff594471a08ca280959f7b4339102aef2cf8f88e",
+  "mp3": "8c3dea19ef9cf9be5a8071d0cd07acd33fe25c79"
+ },
+ "diff": {
+  "ssml": "ca2d37566541338e47454f96c6faf84e188520f4",
+  "mp3": "e266ecbe88ee217cbaccf2bd1be89b510dabbdf6"
+ },
+ "q2": {
+  "ssml": "dcb11c837ea177ab2cc17dc5b5af41fe54ab6f52",
+  "mp3": "24ca96d007015313543bdb601708fce512127c4d"
+ },
+ "wrap": {
+  "ssml": "a8533d58eecebdbe951be1de922f1138b2f1d69c",
+  "mp3": "12de827e77bab8fc14011030285704572bc08ff8"
+ }
+}

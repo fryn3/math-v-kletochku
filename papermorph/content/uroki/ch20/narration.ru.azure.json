@@ -1,0 +1,18 @@
+{
+ "rule": {
+  "ssml": "3eac5de0f0d6df4dc4504d94dac71aa04da97c66",
+  "mp3": "737f7c3d31857015907ccd6cefc46b1dfe438b23"
+ },
+ "newval": {
+  "ssml": "9a8698bb36fa78723ca76724c41651ddaa29feb1",
+  "mp3": "751d875f7c2c356618f4d7149954ad30ca3ccc1d"
+ },
+ "speed": {
+  "ssml": "2211c050d9c229a31cb847896afd9d2b8e5fc866",
+  "mp3": "f1428d14a0d0d0e814d91cfb3b1775b3231ce296"
+ },
+ "trap": {
+  "ssml": "77223e6bb42bd1dfd710b46ab1df4c007cde938a",
+  "mp3": "cf795cdbf25a0268db20d7da81889ecd13f96f30"
+ }
+}

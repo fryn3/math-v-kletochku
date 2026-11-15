@@ -40,6 +40,7 @@
     "voice": "ru-RU-SvetlanaNeural",
     "rate": "-4%",
     "pace": "около 1,7 слова в секунду",
+    "stress": "омографы (чи́сла / числа́, ча́са / часа́ …) задаются кусками в chNN/narration.ru.stress.json; эти шаги тем же голосом озвучивает Azure Speech (papermorph/tools/uroki/azure_tts.py, после tts.py; формы — в content/uroki/ipa.ru.json)",
     "alternative": "ru-RU-DmitryNeural (проба: papermorph/books/uroki/voices/)"
   },
   "pacing": {

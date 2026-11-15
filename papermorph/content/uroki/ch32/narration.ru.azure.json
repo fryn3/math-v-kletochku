@@ -1,0 +1,18 @@
+{
+ "parts": {
+  "ssml": "9875b31a1ccbab4348cd34bee277da60b114f6fc",
+  "mp3": "c0f1a03452bea779e2e9ee7a7b6010088b23e446"
+ },
+ "euler": {
+  "ssml": "22bc35822ab4c715987deed9654feb1e3ed45bc5",
+  "mp3": "ddfcb999ae66bc3e5c9f1fbfaa3b6814bdc25af1"
+ },
+ "unfold": {
+  "ssml": "bf11112a691fc20a872c5f1c0432c55e64159b5c",
+  "mp3": "7f040b8b8f3351df0bd422a5aaa881fa0ccfd63d"
+ },
+ "bad": {
+  "ssml": "977cde8550eaa5e7b778d505115dfe62732bc4c1",
+  "mp3": "14fa0806738426fbe373959d49bd26d2ee0d3939"
+ }
+}

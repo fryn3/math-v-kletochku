@@ -1,0 +1,22 @@
+{
+ "intro": {
+  "ssml": "b41286eba8bb93d587ade5ce205b65d3c5530a87",
+  "mp3": "4bd5cf123745fcb1b7e80b3bbea935ea0966a563"
+ },
+ "swap": {
+  "ssml": "68db005873beffa9f85d3ce1960b2f70493bf06a",
+  "mp3": "adf8da832ce581bbfcc74115fbd3c92eedce6f68"
+ },
+ "q1": {
+  "ssml": "280b24924ea371f5dd8525647fa0d3576086ca33",
+  "mp3": "3e55d9c3a2a6e760c0e107c750bdc54c1b1177f8"
+ },
+ "distrib": {
+  "ssml": "bd7f4c2496c10eccbcfdf456cec56f6d63d1ab59",
+  "mp3": "bced60bc683e2d70e364ad3721a6f790e1108db7"
+ },
+ "zero": {
+  "ssml": "94378af08b3da8de94bc391519c7e8525be2a087",
+  "mp3": "a5bf4af38876ce0117f00620f5b96c45ce32d565"
+ }
+}

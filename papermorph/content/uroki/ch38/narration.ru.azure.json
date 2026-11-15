@@ -1,0 +1,26 @@
+{
+ "intro": {
+  "ssml": "50d13cb68fd8ecadcd8a873c990b5ac85a1257d5",
+  "mp3": "25dddde72a6cfed718f9e85aab66e915555e8e70"
+ },
+ "table": {
+  "ssml": "0ff2669e02488fbff7ce78bb7050a85294cfd35e",
+  "mp3": "8f1f4b0f0c598f6b37302047a819bc152bb95ef9"
+ },
+ "scale": {
+  "ssml": "bbffbb3dc60fab8c93f3da44ec4306cd4a950770",
+  "mp3": "ffb7f4c340827ca06885ab857250141836e41884"
+ },
+ "q2": {
+  "ssml": "0967875fa379abd6be9f3aacbf9d79bb74675a90",
+  "mp3": "f829922d8f9cbb14081555425b620dd034709977"
+ },
+ "trap": {
+  "ssml": "8a972636fe049122ebccd8ce55971c4d26d0eada",
+  "mp3": "9ba2bd7524a224a65453c2b4e54babe90a53b21d"
+ },
+ "wrap": {
+  "ssml": "fe9812784174f9afd2f2bb4e270487b99dd0e562",
+  "mp3": "475835db7c0859335b5fb252401822666edbd4d3"
+ }
+}

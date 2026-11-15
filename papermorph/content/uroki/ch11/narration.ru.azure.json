@@ -1,0 +1,46 @@
+{
+ "intro": {
+  "ssml": "0cb16c77dc24026dc516ada8ff0836453be22009",
+  "mp3": "a4bf67c64dafd6b722694d3ecab58db9017476be"
+ },
+ "prime": {
+  "ssml": "01dd7ba93c92861d5259891d95f23f677820f292",
+  "mp3": "f6a6aa76206ead19e289591f038026918d5cc609"
+ },
+ "tree": {
+  "ssml": "6b35cd9c891e4c40d2f8ed9de809745f675eafc5",
+  "mp3": "d279b73bf643fd40bc322ec7b142874c1f7a29e2"
+ },
+ "q2": {
+  "ssml": "d58c78721139712f6eb9a28d780ee6bd15205712",
+  "mp3": "8381da009849b79764c3b00265fce6912a0307ff"
+ },
+ "nod": {
+  "ssml": "c22db18002ffbcb4e6386dcff49117e72190a9c2",
+  "mp3": "18edb0d760e717ea36e1b5b401c977c817c63fe0"
+ },
+ "nok": {
+  "ssml": "29388f13b83b46353c71948ea97ea57e007adfdc",
+  "mp3": "c0553e0f8ebe890965b9e868837ce1008091fa31"
+ },
+ "coprime": {
+  "ssml": "9b9884bd6d452859926f4b43b837530104b24160",
+  "mp3": "2235df28b6ba03a9095c29a2c5681bb5b5184986"
+ },
+ "trap": {
+  "ssml": "e796732cef215a67d8cb0c8b85d4a5daecc06a32",
+  "mp3": "2b3e2b15959a177934eaa1e165bcee3620ea8f1b"
+ },
+ "wrap": {
+  "ssml": "d795e721c2c2e040d6fca5186cfbaf6fe886a756",
+  "mp3": "7781faee5030682d4b62a009104df0e7e2d8e3f9"
+ },
+ "final1": {
+  "ssml": "9c7bee0e2cede19df4755fe84ee934999bec53fb",
+  "mp3": "5c067c84fc51163d3315f00e29736a701e18d1f4"
+ },
+ "finish": {
+  "ssml": "8e6ea1aaffcfdd0688986bff33ec06d12459746e",
+  "mp3": "7ccb77e5f7f5f9437eb4026aa004ec64a703694e"
+ }
+}

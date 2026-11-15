@@ -1,0 +1,22 @@
+{
+ "intro": {
+  "ssml": "ab9283c3188db6bbd11c9b3865c57ee01108711d",
+  "mp3": "484e0eb8e4fefd84c45c0f2e5787d4a603ba945b"
+ },
+ "bothx": {
+  "ssml": "763cb96b3bd4d8d8ed9720298bb814527abd7d7e",
+  "mp3": "3453c9ea25668ba2fbaa67cc0d740dcfaf5d3543"
+ },
+ "q2": {
+  "ssml": "b1ce3da7794d6fd1f1717a141c5f516e240b289b",
+  "mp3": "30fe9f709cee8564023f1870aa733db05e544657"
+ },
+ "wrap": {
+  "ssml": "4dea7e602bf69a3506bd96995e3bb3b4bf260c80",
+  "mp3": "9be657d1cdcb2c60d6f7d91f616c333590017eb7"
+ },
+ "finish": {
+  "ssml": "4a3b4141a41fffbd6cf9db94883ea7f218acff7c",
+  "mp3": "f1e041d7831cf8ef8af11fec879e7359af72fdf8"
+ }
+}

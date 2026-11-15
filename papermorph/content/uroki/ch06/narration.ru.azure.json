@@ -1,0 +1,22 @@
+{
+ "intro": {
+  "ssml": "f95ebaa573029b9f70b9668efce6f599d45aebef",
+  "mp3": "95403a63e42365d10d4dddc04185adec4fb54047"
+ },
+ "area": {
+  "ssml": "6171b6d3239e7c42ca3fc0eddaabe1e4ae949b88",
+  "mp3": "5f4392a9f494cfbe34e6e6a1a628f2be97501e0f"
+ },
+ "motion": {
+  "ssml": "1f2c70fd65ea5247a1ad03b6eec00c3abfa1600c",
+  "mp3": "e7065c450813e05d8af7f18418433d4ade099fda"
+ },
+ "inverse": {
+  "ssml": "4c2b7574e497d59a4e9f957acd5939c8f74dbe83",
+  "mp3": "bab829bbd69555949ea42614cf56ef3d69fab1e5"
+ },
+ "q3": {
+  "ssml": "9e11d05337e83f385ba2e1bcc875a06ea22e3862",
+  "mp3": "134ac8e24da090bd02bbf42988f0d56948a36ef4"
+ }
+}

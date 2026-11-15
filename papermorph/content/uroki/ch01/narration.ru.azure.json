@@ -1,0 +1,38 @@
+{
+ "intro": {
+  "ssml": "5c3d7561c9dc9177103a51a00a5a3960ff6d21fa",
+  "mp3": "701c36ef1be589c8e7183858990471d093f547b5"
+ },
+ "place": {
+  "ssml": "1d907d2185058735e03d39d0828f62fce88998d3",
+  "mp3": "7f7dc4433d075d1b0c105fce73b0095484a783be"
+ },
+ "times": {
+  "ssml": "b557794672d62dc6fe849f97fd2f458397835b8a",
+  "mp3": "0f7ac734514c4f50fbaaf422f3aad7726d9c658d"
+ },
+ "compare": {
+  "ssml": "0c55b6937f446943f79fae1daaa1d677f1e4c2fc",
+  "mp3": "cff3c4a019d8d4eb9502c3945965564f22f63409"
+ },
+ "q3": {
+  "ssml": "f9fb3d679d672a082f273bfe07a3bfe271dc1530",
+  "mp3": "ba8ad6e9630c8989429165a6d555dc2daf33b073"
+ },
+ "round": {
+  "ssml": "27699cecf6333694540f80e61e558e332e34e91c",
+  "mp3": "2189a6323a8270c11499a408a6aca1f4b832f4f1"
+ },
+ "wrap": {
+  "ssml": "273e44ae9f65939961f518607e4af43c82610f88",
+  "mp3": "5825d47870df421b526a78fe05e8fe2e9ded41d2"
+ },
+ "final1": {
+  "ssml": "1ee55bb6f5e21b0a788d78d29c7ae89c04532f85",
+  "mp3": "134dee00e4698253f765b4a3dab20193ef088bd0"
+ },
+ "final2": {
+  "ssml": "04044ca629a0e84da4cf0c15c6c506dbee808dd8",
+  "mp3": "05b73c9cb865a48a21791f602a29ddeb495be12e"
+ }
+}

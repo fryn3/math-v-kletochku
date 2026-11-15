@@ -1,0 +1,30 @@
+{
+ "intro": {
+  "ssml": "7c3ef38ea857c00a80e532b2bc7c9433acbbafc6",
+  "mp3": "25bdd5b3d9c9ec2993df2f0bcee3d438e2784e19"
+ },
+ "of": {
+  "ssml": "7b8bfb7a3947cacccf20e1fe0cfab5f406eca503",
+  "mp3": "e41ff6bccfa1a0f6916551afde402905aae7603c"
+ },
+ "sale": {
+  "ssml": "89886f5b9613515fea2dedbea25c6330e9c3cf01",
+  "mp3": "57376a908dbefda7364f0867222606daf67915fe"
+ },
+ "twice": {
+  "ssml": "d98c3ea5f53b3a05c9548b62b55efcbb03da2802",
+  "mp3": "63b723518698628ed0986e4dcb984b0398e2b90d"
+ },
+ "wrap": {
+  "ssml": "907597f12eebbc4b3452fe0d52fb2537784a674a",
+  "mp3": "477a84083da61d73a420e8d4539db538978ebf1d"
+ },
+ "final1": {
+  "ssml": "acd5488e4d119284946ad445e4b22b0108d5db40",
+  "mp3": "0a2c4cbc655ce6b4a44055fe7d0a36387cefb02a"
+ },
+ "final2": {
+  "ssml": "4495e99d2868ea4e21531815adc6ae4b960e08d6",
+  "mp3": "0ac992a9948d494491568e64c00bf23865ea7d3a"
+ }
+}

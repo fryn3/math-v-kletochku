@@ -1,0 +1,22 @@
+{
+ "recip": {
+  "ssml": "1b1c5baaa228d80695d61993090844ef16f39ff4",
+  "mp3": "9a2263d9b54ca26b2a7911dfb260edd2a486ae2c"
+ },
+ "ofnum": {
+  "ssml": "4db0ffe7eaf1bd55776575245866ebffa4536bbb",
+  "mp3": "bae8a7479f7246c589ee5dc4dd5f3f6d0a9757b5"
+ },
+ "back": {
+  "ssml": "1cd594ae8967d925d7ac897728778f6d753e0efe",
+  "mp3": "353494cf9d140ffe2e9d74f98e3e5be199b1ac7b"
+ },
+ "part": {
+  "ssml": "9ceb99dd5740583c1b98ec1c537f3ba3d4a59efc",
+  "mp3": "a9ca2ea13e00574fb4eb24db50109a9321723f2b"
+ },
+ "wrap": {
+  "ssml": "bb81f6bbad0baa95426e0dd8a1d94b18f9f381fd",
+  "mp3": "ab99efd22dc299b1cae8980a951dfb2c590971f1"
+ }
+}
