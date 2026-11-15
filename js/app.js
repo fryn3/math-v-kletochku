@@ -17,6 +17,14 @@
   // Экзамены: EXAMS[n] — список задач главы n, у каждой два варианта (v[0] и v[1]) и тема t.
   const EXAMS = window.EXAMS || {};
   const examTasks = (n, v) => (EXAMS[n] || []).map(s => Object.assign({ t: s.t }, s.v[v - 1]));
+  // Уроки у доски (uroki/): у темы есть урок, если в курсе книги (uroki/course.js) на её месте готовый урок
+  // с тем же названием. Так ссылка не уедет на чужой урок, когда в справочнике появится новая тема.
+  const lessons = {};
+  for (const [n, , , first, list] of window.UROKI_COURSE || []) list.forEach(([title, min], i) => {
+    if (min > 0) lessons[`${n}.${i + 1}`] = { href: `uroki/ch${String(first + i).padStart(2, '0')}/`, title, min };
+  });
+  const lessonOf = t => { const l = lessons[t.num]; return l && l.title === t.title ? l : null; };
+  const PLAY = '<span class="play" aria-hidden="true"><svg viewBox="0 0 10 10"><path d="M1 0l9 5-9 5z"/></svg></span>';
 
   /* ---------- прогресс (только в этом браузере) ---------- */
   const KEY = 'mvk-progress-v1';
@@ -45,6 +53,7 @@
       <section class="hero">
         <h1>Математика 5–6 класса: общие правила и всё, что из них следует</h1>
         <p>В каждой теме одно общее правило, из него выведены частные правила с примерами. Дальше идут частая ошибка и задачи с проверкой ответа. В теме указано, на какие правила она опирается и где используется дальше. После каждой главы есть экзамен в двух вариантах.</p>
+        ${Object.keys(lessons).length ? `<a class="lesson" href="uroki/">${PLAY}Уроки у доски <small>каждая тема — анимированный урок с озвучкой</small></a>` : ''}
         <div class="progress"><span>Решено тем: <b class="mono">${done} из ${topics.length}</b></span><span class="bar" aria-hidden="true"><i style="width:${pct}%"></i></span></div>
       </section>
       <div class="toc">
@@ -101,6 +110,7 @@
       <p class="crumbs"><a href="#">Оглавление</a> · Глава ${t.ch.n}. ${t.ch.title}</p>
       <p class="eyebrow">Тема ${t.num} · ${t.grade}</p>
       <h1>${t.title}</h1>
+      ${lessonOf(t) ? `<a class="lesson" href="${lessonOf(t).href}">${PLAY}Урок у доски <small>${lessonOf(t).min} мин</small></a>` : ''}
       ${t.base && t.base.length ? `<p class="base">Опирается на: ${refs(t.base)}</p>` : ''}
       <div class="rule"><div class="eyebrow">Общее правило</div>${rich(t.rule)}</div>
       ${rich(t.body)}

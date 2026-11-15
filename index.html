@@ -86,6 +86,15 @@ p { margin: 0.6em 0; }
 
 /* Главная */
 .hero p { max-width: 38em; font-size: 1.06rem; }
+/* Урок у доски: анимированный урок с озвучкой по теме (uroki/) */
+.lesson { display: inline-flex; align-items: center; gap: 9px; padding: 6px 14px 6px 7px; border: 1.5px solid var(--pen); border-radius: 999px;
+  background: var(--card); color: var(--pen); font-weight: 600; font-size: 0.92rem; text-decoration: none; }
+.lesson:hover { background: var(--pen-soft); }
+.lesson .play { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--pen); color: var(--card); }
+.lesson .play svg { width: 10px; height: 10px; margin-left: 2px; fill: currentColor; }
+.lesson small { color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+.hero .lesson { margin-top: 4px; }
+h1 + .lesson { margin: -4px 0 14px; }
 .progress { display: flex; align-items: center; gap: 12px; margin: 18px 0 6px; font-size: 0.95rem; color: var(--muted); }
 .progress .bar { flex: 1; height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; max-width: 260px; }
 .progress .bar i { display: block; height: 100%; background: var(--green); width: 0; transition: width .4s; }
@@ -225,6 +234,7 @@ footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
       <nav aria-label="Разделы">
         <a href="#">Оглавление</a>
         <a href="#shpargalka">Шпаргалка</a>
+        <a href="uroki/">Уроки у доски</a>
       </nav>
       <div class="theme" id="theme" role="group" aria-label="Тема оформления">
         <button type="button" data-mode="auto" aria-pressed="true" title="Как в системе">Авто</button>
@@ -239,18 +249,19 @@ footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
   <footer>Математика 5–6 класса коротко и по-простому. Прогресс сохраняется только в этом браузере.</footer>
 </div>
 
-<script src="js/visuals.js?v=7"></script>
-<script src="js/core.js?v=7"></script>
-<script src="js/ch1-natural.js?v=7"></script>
-<script src="js/ch2-divisibility.js?v=7"></script>
-<script src="js/ch3-fractions.js?v=7"></script>
-<script src="js/ch4-decimals.js?v=7"></script>
-<script src="js/ch5-ratio.js?v=7"></script>
-<script src="js/ch6-negative.js?v=7"></script>
-<script src="js/ch7-geometry.js?v=7"></script>
-<script src="js/ch8-problems.js?v=7"></script>
-<script src="js/ch9-data.js?v=7"></script>
-<script src="js/exams.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/visuals.js?v=8"></script>
+<script src="js/core.js?v=8"></script>
+<script src="js/ch1-natural.js?v=8"></script>
+<script src="js/ch2-divisibility.js?v=8"></script>
+<script src="js/ch3-fractions.js?v=8"></script>
+<script src="js/ch4-decimals.js?v=8"></script>
+<script src="js/ch5-ratio.js?v=8"></script>
+<script src="js/ch6-negative.js?v=8"></script>
+<script src="js/ch7-geometry.js?v=8"></script>
+<script src="js/ch8-problems.js?v=8"></script>
+<script src="js/ch9-data.js?v=8"></script>
+<script src="js/exams.js?v=8"></script>
+<script src="uroki/course.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
 </body>
 </html>

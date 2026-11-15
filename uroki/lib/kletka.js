@@ -416,3 +416,31 @@ function klClock(p, cx, cy, r, t0) {
     ticksAt(t) { minutes.forEach((e, i) => show(e, t + i * .018, .2)); },
   };
 }
+
+/* ---------- the voice review page, on the computer where it runs ---------- */
+// A lesson served by papermorph/tools/uroki/voice_review.py (its responses say «Server-Timing: golos») gets a
+// «🎙 Озвучка» button: the beat on screen opens on that page, to listen to it and fix its stress. The published book
+// and the other servers never say it, so there the button never shows and nothing is asked of any server.
+{
+  const ch = (location.pathname.match(/\/(ch\d\d)\/(?:index\.html)?$/) || [])[1];
+  const nav = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
+  if (ch && nav && (nav.serverTiming || []).some(s => s.name === 'golos')) {
+    const a = document.createElement('a');
+    a.textContent = '🎙 Озвучка';
+    a.title = 'Этот шаг на странице проверки озвучки: послушать, поправить ударение';
+    a.href = `/#${ch}`;
+    a.target = 'golos';   // the review page names its tab so: the beat opens there
+    a.style.cssText = 'position:fixed;top:10px;right:12px;z-index:50;padding:6px 12px;border-radius:16px;'
+      + 'font:600 13px/1.2 system-ui,sans-serif;color:#eef3ef;background:rgba(18,28,24,.9);'
+      + 'border:1px solid rgba(255,255,255,.22);text-decoration:none';
+    a.addEventListener('click', () => {
+      try {
+        const beat = BEATS[P.i];   // the engine turns each [id, title, …] into { id, … }
+        a.href = `/#${ch}/${beat.id || beat[0]}`;
+        if (P.playing) setPlaying(false);
+      } catch { /* the lesson has not started: its first beat */ }
+    });
+    const add = () => document.body.appendChild(a);
+    if (document.body) add(); else addEventListener('DOMContentLoaded', add);
+  }
+}

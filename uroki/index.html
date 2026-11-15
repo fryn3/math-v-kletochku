@@ -11,6 +11,7 @@
 <script src="lib/units.js"></script>
 <script src="lib/contents.js"></script>
 <script src="unit-art.js"></script>
+<script src="course.js"></script>
 <link rel="expect" href="#ch01" blocking="render">
 <style>
 /* The cover's way back to the reference site, beside the main button. */
@@ -60,26 +61,7 @@
 </main>
 
 <script>
-// The whole course: units are the chapters (главы) of the reference site, chapters are its topics (темы). A topic's
-// folder is its place in the course (3.1 is the 13th topic: ch13) and its card shows the topic's own number (3.1).
-// [unit, title, colour, first folder, [[topic, minutes], ...]]; minutes 0 = the lesson is not made yet.
-// A unit is listed once all its lessons are made: the engine numbers a unit's cards in a row from its first folder.
-// When a lesson is made: its minutes here, the previous lesson's CHAPTER.next.
-const COURSE = [
-  [1, 'Числа и действия', '#86c9e8', 1, [['Позиционная запись', 8], ['Законы арифметики', 8], ['Порядок действий', 7], ['Деление с остатком', 6],
-    ['Степень', 7], ['Буквы и формулы', 7], ['Простые уравнения', 8], ['Римские цифры', 8]]],
-  [2, 'Делимость', '#f3c95c', 9, [['Делители и кратные', 7], ['Признаки делимости', 8], ['Простые множители, НОД и НОК', 8], ['Чётные и нечётные числа', 8]]],
-  [3, 'Обыкновенные дроби', '#f4a48c', 13, [['Дробь — это деление', 7], ['Основное свойство дроби', 8], ['Сложение и вычитание дробей', 7], ['Умножение и деление дробей', 8]]],
-  [4, 'Десятичные дроби и проценты', '#8fd6b0', 17, [['Десятичные дроби', 8], ['Умножение и деление десятичных дробей', 8], ['Проценты', 8],
-    ['Среднее арифметическое', 7], ['Единицы измерения', 8]]],
-  [5, 'Отношения и пропорции', '#e8a0c8', 22, [['Отношение и пропорция', 8], ['Прямая и обратная пропорциональность', 7]]],
-  [6, 'Положительные и отрицательные числа', '#bba8ee', 24, [['Координатная прямая и модуль', 7], ['Сложение и вычитание', 7], ['Умножение и деление', 7],
-    ['Скобки и подобные слагаемые', 8], ['Уравнения', 7]]],
-  [7, 'Геометрия', '#f0b45a', 29, [['Углы и прямые', 8], ['Треугольник', 8], ['Площадь и объём', 7], ['Многогранники и развёртки', 8],
-    ['Окружность и круг', 7], ['Координаты и симметрия', 8]]],
-  [8, 'Текстовые задачи', '#c7d98a', 35, [['Движение, работа, покупки', 8], ['Части и решение с конца', 7], ['Логические задачи', 7]]],
-  [9, 'Диаграммы, перебор, вероятность', '#d9b38c', 38, [['Таблицы и диаграммы', 8], ['Перебор вариантов', 8], ['Вероятность', 7]]],
-];
+const COURSE = window.UROKI_COURSE;   // uroki/course.js
 const READY = COURSE.filter(([, , , , topics]) => topics.every(([, min]) => min > 0));
 window.UNIT_ART = READY.map(([n]) => (window.UNIT_ART_BY_UNIT || {})[n] || '');   // the sketches follow the units shown
 Contents.book({

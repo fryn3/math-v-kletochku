@@ -175,6 +175,10 @@ h2.group a:hover { text-decoration: underline; }
 .btn small { color: var(--muted); font-size: 12px; margin-left: 2px; }
 #run.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .note { flex-basis: 100%; margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.note .why { color: var(--ink); }
+.note .why::before { content: "Почему: "; color: var(--muted); }
+a.btn { text-decoration: none; color: inherit; display: inline-block; }
+a.btn.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .err { color: var(--err); }
 .busy { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: 14px; }
 .spin {

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Озвучка уроков: the page for listening to the lessons and fixing their stress (papermorph/tools/uroki/voice_review.py).
+#   papermorph/golos          start it and open http://localhost:8767/ (or just open it, if it runs already)
+#   papermorph/golos ch41     the same, at topic ch41
+exec python3 "$(dirname "$0")/tools/uroki/voice_review.py" "$@"

@@ -39,6 +39,12 @@ const FILTERS = [
   ['todo', 'Изменены', m => m.cur.dirty || !m.cur.voiced || !!m.draft || m.cur.lost.length > 0],
 ];
 
+function soon(fn, ms = 400) {   // one call after a burst of them
+  clearTimeout(soon.timers.get(fn));
+  soon.timers.set(fn, setTimeout(fn, ms));
+}
+soon.timers = new Map();
+
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
@@ -66,15 +72,18 @@ function formsFrom(words) {   // {word index: form} of the words a stress piece 
 
 function reset(m, v) {
   return Object.assign(m, { saved: v, cur: v, text: v.text, forms: formsFrom(v.words), derive: false, draft: null,
-    busy: '', error: '', editing: false });
+    busy: '', error: v.pending_error || '', editing: false, note: '' });
 }
 
-function model(v) {   // a beat from the server; one with unsaved changes keeps them
+function model(v) {   // a beat from the server, with the unsaved change the server keeps for it (the queue)
   const uid = `${v.ch}/${v.id}`;
   let m = MODELS.get(uid);
   if (!m) MODELS.set(uid, m = { uid, ch: v.ch, id: v.id });
-  else if (m.cur.dirty || m.draft || m.busy) { m.saved = v; return m; }
-  return reset(m, v);
+  else if (m.busy || m.editing) { m.saved = v; return m; }   // mid-request or mid-edit: the page's own state wins
+  reset(m, v);
+  const p = v.pending;
+  if (p) Object.assign(m, { cur: p, text: p.text, forms: formsFrom(p.words), draft: p.draft || null, note: p.note || '' });
+  return m;
 }
 
 const pendingSave = m => m.cur.dirty || !!m.draft;
@@ -148,6 +157,7 @@ function footHTML(m) {
     if (v.dirty || !v.voiced) parts.push('<button class="btn primary" data-act="save" title="Записать ударения, текст и звук в книгу (S)">Сохранить</button>');
     if (v.dirty || d) parts.push('<button class="btn ghost" data-act="revert">Отменить</button>');
   }
+  if (m.note && (v.dirty || d)) notes.push(`<span class="why">${esc(m.note)}</span>`);
   if (v.lost.length) notes.push(`Куски ударений больше не встречаются в тексте один раз и уйдут при сохранении: ${v.lost.map(p => `«${esc(p)}»`).join(', ')}`);
   if (m.error) notes.push(`<span class="err">${esc(m.error)}</span>`);
   return `<footer class="bf">${parts.join('')}${notes.map(n => `<p class="note">${n}</p>`).join('')}</footer>`;
@@ -198,7 +208,7 @@ async function refresh(m, voice, k = null, listen = true) {   // the server work
   try {
     const v = await api(voice ? '/api/draft' : '/api/analyze',
       { ch: m.ch, beat: m.id, text: m.text, forms: m.derive ? null : m.forms });
-    m.cur = v; m.text = v.text; m.forms = formsFrom(v.words); m.derive = false;
+    m.cur = v; m.text = v.text; m.forms = formsFrom(v.words); m.derive = false; m.note = v.dirty ? v.note || '' : '';
     if (voice) m.draft = v.draft.same ? null : v.draft;   // same: the clip in the book says it already
     else if (m.draft && m.draft.key !== v.key) m.draft = null;
     ok = true;
@@ -208,6 +218,7 @@ async function refresh(m, voice, k = null, listen = true) {   // the server work
   }
   m.busy = '';
   paint(m);
+  soon(loadBook);   // the counts of the queue
   if (ok && voice && listen) {
     const clip = m.draft || m.saved.clip, times = clip?.times;
     const from = k != null && times && clip.clean === m.cur.clean ? Math.max(0, times[Math.max(0, k - 2)] - 0.15) : 0;
@@ -276,14 +287,16 @@ async function save(m) {
   paint(m);
 }
 
-async function saveAll() {
-  for (const m of [...MODELS.values()].filter(pendingSave)) await save(m);
+async function saveAll() {   // the changed beats of this list
+  for (const m of S.list.filter(pendingSave)) await save(m);
 }
 
-function revert(m) {
+async function revert(m) {   // back to the book; the queue forgets the change
+  if (m.busy) return;
   if (P.m === m && P.which === 'draft') P.audio.pause();
-  reset(m, m.saved);
+  try { reset(m, await api('/api/forget', { ch: m.ch, beat: m.id })); } catch (e) { m.error = e.message; }
   paint(m);
+  soon(loadBook);
 }
 
 function applyEdit(m) {
@@ -564,8 +577,12 @@ function renderMain() {
         <a href="/uroki/${t.ch}/" target="_blank" rel="noopener">открыть урок ↗</a></div>`;
     body = S.list.map(cardHTML).join('');
   } else {
-    head = `<h1>Поиск: «${esc(S.view.q)}»</h1>
-      <div class="meta">${plural(S.list.length, ['шаг', 'шага', 'шагов'])}${S.view.more ? ' (показаны первые)' : ''} во всей книге</div>`;
+    head = S.view.kind === 'queue'
+      ? `<h1>К проверке</h1>
+        <div class="meta">${S.list.length ? `${plural(S.list.length, ['шаг', 'шага', 'шагов'])} с несохранёнными правками или предложениями.
+          Послушайте «▶ Стало» и сохраните или отмените каждую.` : 'Несохранённых правок нет.'}</div>`
+      : `<h1>Поиск: «${esc(S.view.q)}»</h1>
+        <div class="meta">${plural(S.list.length, ['шаг', 'шага', 'шагов'])}${S.view.more ? ' (показаны первые)' : ''} во всей книге</div>`;
     let last = '';
     body = S.list.map(m => {
       let h = '';
@@ -601,16 +618,21 @@ function updateCounts() {
     const el = $(`[data-count="${id}"]`, main);
     if (el) el.textContent = S.list.filter(pred).length;
   }
-  const n = [...MODELS.values()].filter(pendingSave).length, b = $('#saveAll');
-  b.hidden = n === 0;
-  b.textContent = `Сохранить всё (${n})`;
+  const n = S.list.filter(pendingSave).length, b = $('#saveAll');
+  b.hidden = n < 2;
+  b.textContent = `Сохранить все ${n}`;
+  b.title = 'Сохранить все изменённые шаги этого списка';
+  const q = S.book ? S.book.topics.reduce((a, t) => a + (t.pending || 0), 0) : 0, qb = $('#queueBtn');
+  qb.hidden = q === 0 && S.view?.kind !== 'queue';
+  qb.textContent = `К проверке${q ? ` · ${q}` : ''}`;
+  qb.classList.toggle('on', S.view?.kind === 'queue');
   renderSide();
 }
 
 function renderSide() {
   if (!S.book) return;
   const units = [], pend = {};
-  for (const m of MODELS.values()) if (pendingSave(m)) pend[m.ch] = (pend[m.ch] || 0) + 1;
+  for (const t of S.book.topics) pend[t.ch] = t.pending || 0;   // the server's queue, which every change reaches
   for (const t of S.book.topics) {
     let u = units.find(x => x.unit === t.unit);
     if (!u) units.push(u = { unit: t.unit, title: t.unit_title, color: t.color, topics: [] });
@@ -624,7 +646,7 @@ function renderSide() {
       <h2><i class="dot" style="--c:${esc(u.color)}"></i>${u.unit}. ${esc(u.title)}</h2>
       ${u.topics.map(t => `<a class="topic${t.ch === on ? ' on' : ''}" href="#${t.ch}" title="${esc(t.title)}">
         <span class="lbl">${esc(t.label)}</span><span class="tt">${esc(t.title)}</span>
-        <span class="cnt">${pend[t.ch] ? `<b class="c-pend" title="Не сохранено">● ${pend[t.ch]}</b>` : ''}${t.stale || t.lost
+        <span class="cnt">${pend[t.ch] ? `<b class="c-pend" title="Несохранённых правок и предложений">● ${pend[t.ch]}</b>` : ''}${t.stale || t.lost
           ? `<b class="c-stale" title="${t.stale ? `Записей, не совпадающих с текстом: ${t.stale}` : ''}${t.lost ? ` Неверных кусков ударений: ${t.lost}` : ''}">!</b>` : ''}${t.flagged
           ? `<b class="c-flag" title="Слов, где Silero выбирал ударение сам">${t.flagged}</b>` : ''}<b class="c-heard${t.heard === t.beats ? ' done' : ''}" title="Прослушано шагов">${t.heard}/${t.beats}</b></span>
       </a>`).join('')}
@@ -682,9 +704,28 @@ async function openSearch(q) {
   window.scrollTo(0, 0);
 }
 
+async function openQueue() {
+  const token = ++S.token;
+  closePop();
+  main.innerHTML = '<p class="loading"><i class="spin"></i> Собираю очередь…</p>';
+  let data;
+  try { data = await api('/api/queue'); } catch (e) {
+    main.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+    return;
+  }
+  if (token !== S.token) return;
+  S.view = { kind: 'queue' };
+  S.list = data.beats.map(model);
+  S.current = null;
+  renderMain();
+  setCurrent(visible()[0] || S.list[0]);
+  window.scrollTo(0, 0);
+}
+
 async function route() {
   const h = decodeURIComponent(location.hash.slice(1));
-  if (h.startsWith('q=')) {
+  if (h === 'queue') await openQueue();
+  else if (h.startsWith('q=')) {
     $('#q').value = h.slice(2);
     await openSearch(h.slice(2));
   } else {
@@ -795,8 +836,9 @@ $('#speed').addEventListener('change', e => {
 $('#run').addEventListener('click', toggleRun);
 $('#saveAll').addEventListener('click', saveAll);
 window.addEventListener('hashchange', route);
-window.addEventListener('beforeunload', e => {
-  if ([...MODELS.values()].some(pendingSave)) { e.preventDefault(); e.returnValue = ''; }
+window.addEventListener('beforeunload', e => {   // changes are kept by the server; only work in flight would be lost
+  if ([...MODELS.values()].some(m => m.busy || m.editing)) { e.preventDefault(); e.returnValue = ''; }
 });
 
+window.name = 'golos';   // a lesson's «🎙 Озвучка» button opens its beat in this tab (uroki/lib/kletka.js)
 (async () => { if (await loadBook()) await route(); })();
