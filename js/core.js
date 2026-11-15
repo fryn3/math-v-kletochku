@@ -10,10 +10,11 @@
   }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // Число из ответа: 7, -3, 0,25, 3/4, 1 2/3
+  // Число из ответа: 7, -3, 0,25, 3/4, 1 2/3. «x =» в начале и знак % или ° в конце не мешают: «x = −7», «85 %», «65°».
   const gcd = (a, b) => { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a || 1; };
   function parseNum(raw) {
-    const s = String(raw).trim().replace(/\s+/g, ' ').replace(/[−–—]/g, '-').replace(',', '.').replace(/\s*\/\s*/g, '/');
+    const s = String(raw).trim().replace(/^[xх]\s*=\s*/i, '').replace(/\s*[%°]$/, '')
+      .replace(/\s+/g, ' ').replace(/[−–—]/g, '-').replace(',', '.').replace(/\s*\/\s*/g, '/');
     let m, p, q;
     if ((m = s.match(/^(-?)(\d+) (\d+)\/(\d+)$/))) { q = +m[4]; p = (+m[2] * q + +m[3]) * (m[1] ? -1 : 1); }
     else if ((m = s.match(/^(-?\d+)\/(-?\d+)$/))) { p = +m[1]; q = +m[2]; }
@@ -69,15 +70,37 @@
       .map(g => `«${g}» — ${by[g].length > 1 ? `${by[g][0]}–${by[g][by[g].length - 1]}` : by[g][0]}`).join(', ');
   }
 
-  // Версия экзамена главы. Её увеличивают, когда в экзамене меняют задачи: результат,
+  // Версия экзамена главы (ключ itog — итогового теста). Её увеличивают, когда в работе меняют задачи: результат,
   // полученный на прежних задачах, перестаёт показываться как лучший. Нет в списке — версия 1.
   const EXAM_VER = { 1: 2, 2: 2, 4: 2, 7: 2, 8: 2 };
   const examVer = n => EXAM_VER[n] || 1;
-  // Сохранённый лучший результат варианта v экзамена главы n, если он получен на текущей версии экзамена.
+  // Сохранённый результат варианта v экзамена главы n (или итогового теста, n = 'itog'), если он получен
+  // на текущей версии работы. У вариантов 1 и 2 это лучший результат, у варианта 3 итогового теста — первая попытка.
   function examBest(saved, n, v) {
     const b = (saved || {})[`${n}-${v}`];
     return b && typeof b === 'object' && (b.ver || 1) === examVer(n) ? b : null;
   }
 
-  window.MVK = { rich, esc, parseNum, check, fmtAnswer, grade, scale, examVer, examBest };
+  // Итоговый тест: варианты 1 и 2 — в final.js, вариант 3 — в final-parents.js. Вариант 3 открывается на сайте
+  // только по адресу #HIDDEN_FINAL: ссылки на него на сайте нет, её даёт страница для родителей.
+  const HIDDEN_FINAL = 'proverka-itog';
+  const finalTasks = v => v === 3 ? (window.FINAL3 || []) : (window.FINAL || []).map(s => Object.assign({ t: s.t }, s.v[v - 1]));
+
+  // Лист для печати: заголовок, поля для имени и оценки, задачи со строкой для ответа (или вариантами, которые обводят).
+  // o: { title, sub, tasks, rules, cls, attrs } — cls и attrs дописываются к <section>.
+  const RULES = 'Реши задачи на черновике и запиши ответ на строке. Справочником и калькулятором не пользуйся.';
+  function paper(o) {
+    const line = k => k.opts
+      ? `<div class="ans">Обведи ответ: ${k.opts.map(x => `<span class="choice">${rich(x)}</span>`).join('')}</div>`
+      : '<div class="ans">Ответ: <span class="line"></span></div>';
+    return `
+      <section class="paper${o.cls ? ' ' + o.cls : ''}"${o.attrs || ''}>
+        <div class="paper-head"><h2>${o.title}</h2><span>${o.sub}</span></div>
+        <p class="who"><span>Имя ______________________</span><span>Дата ____________</span><span>Верно ____ из ${o.tasks.length}</span><span>Оценка ______</span></p>
+        <p class="rules">${o.rules || RULES}</p>
+        <ol class="ptasks">${o.tasks.map(k => `<li><div class="q">${rich(k.q)}</div>${line(k)}</li>`).join('')}</ol>
+      </section>`;
+  }
+
+  window.MVK = { rich, esc, parseNum, check, fmtAnswer, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES };
 })();

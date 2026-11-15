@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
 <style>
-/* Лист для печати: белая бумага, чёрный текст, одна работа на страницу, ключ ответов отдельно. */
+/* Лист для печати: белая бумага, чёрный текст, каждая работа с новой страницы, ключ ответов отдельно. */
 :root {
   --paper: #ffffff; --soft: #f5f7fb; --ink: #1b2130; --muted: #586174; --line: #d3d9e4; --pen: #2747c4;
   /* для рисунков из visuals.js: те же цвета, что у светлой темы сайта */
@@ -38,12 +38,15 @@ a { color: var(--pen); }
 .actions label { display: inline-flex; gap: 6px; align-items: center; }
 .btn { font: 600 0.95rem/1 "Golos Text", system-ui, sans-serif; padding: 10px 16px; border-radius: 6px; border: 1.5px solid var(--pen); background: var(--pen); color: #fff; cursor: pointer; }
 .btn:disabled { opacity: 0.45; cursor: default; }
+.btn.ghost { background: transparent; color: var(--pen); }
+.online { display: grid; gap: 8px; justify-items: start; padding: 10px 0; border-block: 1px dashed var(--line); }
+.online p { margin: 0; color: var(--muted); font-size: 0.92rem; }
 .btn:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--pen); outline-offset: 2px; }
 .empty { color: var(--muted); margin-top: 28px; }
 
-.sheet { border-top: 2px solid var(--ink); padding-top: 12px; margin-top: 32px; }
-.sheet-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
-.sheet-head span { color: var(--muted); font-size: 0.9rem; }
+.paper { border-top: 2px solid var(--ink); padding-top: 12px; margin-top: 32px; }
+.paper-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
+.paper-head span { color: var(--muted); font-size: 0.9rem; }
 .who { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 12px 0 6px; }
 .rules { margin: 0 0 16px; color: var(--muted); font-size: 0.92rem; }
 .ptasks { margin: 0; padding-left: 1.6em; display: grid; gap: 18px; }
@@ -53,7 +56,10 @@ a { color: var(--pen); }
 .choice { display: inline-block; min-width: 2.4em; margin-right: 8px; padding: 1px 10px; text-align: center; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; }
 
 .keys { margin-top: 40px; border-top: 2px solid var(--ink); padding-top: 12px; }
-.key { break-inside: avoid; }
+/* Короткий ключ печатается целиком, длинный (итоговый тест) переносится между строками таблицы */
+.key:not(.long) { break-inside: avoid; }
+.key.long tr { break-inside: avoid; }
+.keys h2, .key h3 { break-after: avoid; }
 .key-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 0.94rem; }
 .key-table th, .key-table td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
 .key-table th { font-weight: 600; color: var(--muted); font-size: 0.85rem; }
@@ -78,8 +84,10 @@ svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
   body { font-size: 12pt; }
   .wrap { max-width: none; padding: 0; }
   .no-print { display: none !important; }
-  .sheet { border-top: 0; margin-top: 0; padding-top: 0; }
-  .sheet:not(.is-hidden) ~ .sheet:not(.is-hidden) { break-before: page; }
+  .paper { border-top: 0; margin-top: 0; padding-top: 0; line-height: 1.5; }
+  .paper:not(.is-hidden) ~ .paper:not(.is-hidden) { break-before: page; }
+  .ptasks { gap: 14px; }
+  .ans { margin-top: 6px; }
   .keys { border-top: 0; margin-top: 0; padding-top: 0; break-before: page; }
   .keys h2 { margin-bottom: 4px; }
   .key h3 { margin: 0.9em 0 0.4em; }
@@ -97,14 +105,19 @@ svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
   <header class="no-print intro">
     <p><a href="./">← На сайт</a></p>
     <h1>Проверочные работы для родителей</h1>
-    <p>Здесь третий вариант экзамена по каждой главе. На сайте его нет: варианты 1 и 2 ребёнок решает сам и видит правильные ответы, а этот увидит впервые. Задача под тем же номером проверяет то же умение, что и на сайте.</p>
+    <p>Здесь печатаются итоговый тест по всей программе (все три варианта) и третий вариант экзамена по каждой главе. Варианты 1 и 2 ребёнок решает на сайте сам и видит правильные ответы. Третьего варианта на сайте нет, его ребёнок увидит впервые. Задача под одним номером во всех вариантах проверяет одно и то же умение.</p>
     <ol>
-      <li>Отметьте главы и нажмите «Печать». Каждая работа печатается на отдельном листе, ответы — на последнем.</li>
-      <li>Дайте ребёнку 30–40 минут без справочника и калькулятора. Решать можно на черновике, ответы он записывает на листе.</li>
+      <li>Отметьте работы и нажмите «Печать». Каждая работа начинается с нового листа, ответы печатаются в конце.</li>
+      <li>Дайте ребёнку 30–40 минут на экзамен главы или около часа на итоговый тест, без справочника и калькулятора. Решать можно на черновике, ответы он записывает на листе.</li>
       <li>Сверьте ответы с ключом. Для каждой задачи там есть короткое решение и тема, которую стоит повторить, если задача решена неверно.</li>
     </ol>
     <form class="panel" id="choose" onsubmit="return false">
-      <fieldset class="chapters"><legend>Главы</legend></fieldset>
+      <fieldset class="finals"><legend>Итоговый тест по всей программе</legend></fieldset>
+      <div class="online">
+        <p>Вариант 3 итогового теста можно решить и на экране. Откройте его на устройстве ребёнка: программа сама проверит ответы, а результат первой попытки появится здесь, если открыть эту страницу в том же браузере. На сайте ссылки на этот вариант нет.</p>
+        <button class="btn ghost" type="button" id="open-final">Открыть вариант 3 на сайте</button>
+      </div>
+      <fieldset class="chapters"><legend>Экзамены по главам, вариант 3</legend></fieldset>
       <p class="site-note" id="site-note"></p>
       <div class="actions">
         <label><input type="checkbox" id="with-keys" checked> Печатать ответы</label>
@@ -112,23 +125,25 @@ svg text { fill: var(--ink); font-family: "Golos Text", system-ui, sans-serif; }
       </div>
     </form>
   </header>
-  <p class="empty no-print" id="empty">Отметьте главы, и здесь появятся листы для печати.</p>
+  <p class="empty no-print" id="empty">Отметьте работы, и здесь появятся листы для печати.</p>
   <main id="sheets"></main>
   <section class="keys" id="keys" aria-label="Ответы"></section>
 </div>
 
-<script src="js/visuals.js?v=7"></script>
-<script src="js/core.js?v=7"></script>
-<script src="js/ch1-natural.js?v=7"></script>
-<script src="js/ch2-divisibility.js?v=7"></script>
-<script src="js/ch3-fractions.js?v=7"></script>
-<script src="js/ch4-decimals.js?v=7"></script>
-<script src="js/ch5-ratio.js?v=7"></script>
-<script src="js/ch6-negative.js?v=7"></script>
-<script src="js/ch7-geometry.js?v=7"></script>
-<script src="js/ch8-problems.js?v=7"></script>
-<script src="js/ch9-data.js?v=7"></script>
-<script src="js/exam-parents.js?v=7"></script>
-<script src="js/parents.js?v=7"></script>
+<script src="js/visuals.js?v=9"></script>
+<script src="js/core.js?v=9"></script>
+<script src="js/ch1-natural.js?v=9"></script>
+<script src="js/ch2-divisibility.js?v=9"></script>
+<script src="js/ch3-fractions.js?v=9"></script>
+<script src="js/ch4-decimals.js?v=9"></script>
+<script src="js/ch5-ratio.js?v=9"></script>
+<script src="js/ch6-negative.js?v=9"></script>
+<script src="js/ch7-geometry.js?v=9"></script>
+<script src="js/ch8-problems.js?v=9"></script>
+<script src="js/ch9-data.js?v=9"></script>
+<script src="js/exam-parents.js?v=9"></script>
+<script src="js/final.js?v=9"></script>
+<script src="js/final-parents.js?v=9"></script>
+<script src="js/parents.js?v=9"></script>
 </body>
 </html>

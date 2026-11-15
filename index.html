@@ -195,6 +195,14 @@ a.btn { display: inline-block; text-decoration: none; }
 .score { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
 .score.low { color: var(--muted); }
 .nw { white-space: nowrap; }
+.fb .hint { margin-top: 6px; }
+
+/* Итоговый тест */
+.toc section.final { border: 2px solid var(--pen); }
+.toc .final p { margin: 4px 0 0; }
+.aside { font-size: 0.92rem; color: var(--muted); }
+/* Лист для печати: на экране его нет, при печати он заменяет страницу (класс has-paper у body) */
+.paper { display: none; }
 
 /* Навигация по темам */
 .pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 36px; }
@@ -215,9 +223,31 @@ a.btn { display: inline-block; text-decoration: none; }
 footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media print {
+  /* На бумаге всегда светлая тема, даже если на экране тёмная */
+  :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+    --paper: #ffffff; --card: #ffffff; --ink: #1b2130; --muted: #586174; --line: #d3d9e4; --pen: #2747c4;
+    --pen-soft: rgba(39, 71, 196, 0.075); --red: #c9372b; --green: #1b7f45; --shade: #7f97f0;
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; color-scheme: light;
+  }
+  @page { size: A4; margin: 14mm; }
   body { background: #fff; color: #000; font-size: 12pt; }
   .tools, .tasks, .pager, footer, .progress { display: none !important; }
   .sheet section, .toc section { border-color: #999; }
+  body.has-paper .top, body.has-paper main > :not(.paper) { display: none !important; }
+  body.has-paper .wrap { max-width: none; padding: 0; }
+  body.has-paper main { padding: 0; }
+  .paper { display: block; line-height: 1.5; }
+  .paper-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
+  .paper-head h2 { margin: 0; font-size: 14pt; }
+  .paper-head span { color: var(--muted); font-size: 10.5pt; }
+  .paper .who { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 12px 0 6px; }
+  .paper .rules { margin: 0 0 14px; color: var(--muted); font-size: 10.5pt; }
+  .paper .ptasks { margin: 0; padding-left: 1.6em; display: grid; gap: 14px; }
+  .paper .ptasks li { break-inside: avoid; }
+  .paper .ans { margin-top: 6px; color: var(--muted); }
+  .paper .line { display: inline-block; min-width: 10em; border-bottom: 1px solid var(--ink); }
+  .paper .choice { display: inline-block; min-width: 2.4em; margin-right: 8px; padding: 1px 10px; text-align: center; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; }
+  .paper figure { margin: 6px 0 0; }
 }
 </style>
 <script>
@@ -249,19 +279,20 @@ footer { color: var(--muted); font-size: 0.85rem; padding-block: 10px 30px; }
   <footer>Математика 5–6 класса коротко и по-простому. Прогресс сохраняется только в этом браузере.</footer>
 </div>
 
-<script src="js/visuals.js?v=8"></script>
-<script src="js/core.js?v=8"></script>
-<script src="js/ch1-natural.js?v=8"></script>
-<script src="js/ch2-divisibility.js?v=8"></script>
-<script src="js/ch3-fractions.js?v=8"></script>
-<script src="js/ch4-decimals.js?v=8"></script>
-<script src="js/ch5-ratio.js?v=8"></script>
-<script src="js/ch6-negative.js?v=8"></script>
-<script src="js/ch7-geometry.js?v=8"></script>
-<script src="js/ch8-problems.js?v=8"></script>
-<script src="js/ch9-data.js?v=8"></script>
-<script src="js/exams.js?v=8"></script>
-<script src="uroki/course.js?v=8"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/visuals.js?v=9"></script>
+<script src="js/core.js?v=9"></script>
+<script src="js/ch1-natural.js?v=9"></script>
+<script src="js/ch2-divisibility.js?v=9"></script>
+<script src="js/ch3-fractions.js?v=9"></script>
+<script src="js/ch4-decimals.js?v=9"></script>
+<script src="js/ch5-ratio.js?v=9"></script>
+<script src="js/ch6-negative.js?v=9"></script>
+<script src="js/ch7-geometry.js?v=9"></script>
+<script src="js/ch8-problems.js?v=9"></script>
+<script src="js/ch9-data.js?v=9"></script>
+<script src="js/exams.js?v=9"></script>
+<script src="js/final.js?v=9"></script>
+<script src="uroki/course.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>

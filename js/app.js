@@ -1,6 +1,8 @@
-/* Оглавление, страницы тем, экзамены, шпаргалка, прогресс и переключатель темы. */
+/* Оглавление, страницы тем, экзамены, итоговый тест, шпаргалка, прогресс и переключатель темы. */
 (function () {
-  const { rich, esc, check, fmtAnswer, grade, scale, examVer, examBest } = window.MVK;
+  const { rich, esc, check, fmtAnswer, grade, scale, examVer, examBest, HIDDEN_FINAL, finalTasks, paper, RULES } = window.MVK;
+  // Номер версии из адреса этого скрипта (app.js?v=9): с ним же подгружается скрытый вариант итогового теста.
+  const VER = (((document.currentScript || {}).src || '').match(/\?v=([\w.-]+)/) || [])[1];
   const chapters = (window.COURSE || []).slice().sort((a, b) => a.n - b.n);
   const topics = [];
   chapters.forEach(ch => ch.topics.forEach((t, i) => {
@@ -17,6 +19,8 @@
   // Экзамены: EXAMS[n] — список задач главы n, у каждой два варианта (v[0] и v[1]) и тема t.
   const EXAMS = window.EXAMS || {};
   const examTasks = (n, v) => (EXAMS[n] || []).map(s => Object.assign({ t: s.t }, s.v[v - 1]));
+  // Итоговый тест по всей программе: варианты 1 и 2 (final.js) открыты, вариант 3 подгружается по скрытому адресу.
+  const FINAL = window.FINAL || [];
   // Уроки у доски (uroki/): у темы есть урок, если в курсе книги (uroki/course.js) на её месте готовый урок
   // с тем же названием. Так ссылка не уедет на чужой урок, когда в справочнике появится новая тема.
   const lessons = {};
@@ -52,7 +56,7 @@
     return `
       <section class="hero">
         <h1>Математика 5–6 класса: общие правила и всё, что из них следует</h1>
-        <p>В каждой теме одно общее правило, из него выведены частные правила с примерами. Дальше идут частая ошибка и задачи с проверкой ответа. В теме указано, на какие правила она опирается и где используется дальше. После каждой главы есть экзамен в двух вариантах.</p>
+        <p>В каждой теме одно общее правило, из него выведены частные правила с примерами. Дальше идут частая ошибка и задачи с проверкой ответа. В теме указано, на какие правила она опирается и где используется дальше. После каждой главы есть экзамен в двух вариантах, а в конце — итоговый тест по всей программе.</p>
         ${Object.keys(lessons).length ? `<a class="lesson" href="uroki/">${PLAY}Уроки у доски <small>каждая тема — анимированный урок с озвучкой</small></a>` : ''}
         <div class="progress"><span>Решено тем: <b class="mono">${done} из ${topics.length}</b></span><span class="bar" aria-hidden="true"><i style="width:${pct}%"></i></span></div>
       </section>
@@ -65,6 +69,12 @@
             </ol>
             ${EXAMS[ch.n] ? `<p class="exam-link">Экзамен: ${[1, 2].map(v => `<span class="nw"><a href="#ekzamen-${ch.n}-${v}">вариант ${v}</a>${scoreHtml(ch.n, v)}</span>`).join(' · ')}</p>` : ''}
           </section>`).join('')}
+        ${FINAL.length ? `
+          <section class="final">
+            <h2><span>Итоговый тест по всей программе</span><span class="grade">5–6 класс</span></h2>
+            <p>${FINAL.length} ${plural(FINAL.length, ['задача', 'задачи', 'задач'])} по всем главам. Его можно решить здесь или распечатать и решить на бумаге.</p>
+            <p class="exam-link">Тест: ${[1, 2].map(v => `<span class="nw"><a href="#itog-${v}">вариант ${v}</a>${scoreHtml('itog', v)}</span>`).join(' · ')}</p>
+          </section>` : ''}
       </div>
       <p style="margin-top:22px">Все правила на одной странице — в <a href="#shpargalka">шпаргалке</a>.</p>`;
   }
@@ -127,8 +137,11 @@
       </nav>`;
   }
 
-  /* ---------- экзамен ---------- */
+  /* ---------- экзамены глав и итоговый тест ---------- */
   const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
+  // Открытая работа: { n, v, tasks } — результат хранится под ключом «n-v»; again — куда вести после проверки;
+  // draft — ответы сохраняются до проверки; first — запоминается первая попытка, а не лучшая.
+  let test = null;
 
   function examTaskHtml(k, i) {
     const ctrl = k.opts
@@ -138,33 +151,92 @@
     return `<div class="task" data-i="${i}"><div class="q"><span class="k">${i + 1}.</span><div>${rich(k.q)}</div></div>${ctrl}<div class="fb" aria-live="polite"></div></div>`;
   }
 
+  const variants = (href, v) => `<div class="seg" role="group" aria-label="Вариант">${[1, 2].map(k =>
+    `<a href="${href}${k}"${k === v ? ' aria-current="page"' : ''}>Вариант ${k}</a>`).join('')}</div>`;
+  const testForm = tasks => `
+      <form id="exam" autocomplete="off">
+        ${tasks.map(examTaskHtml).join('')}
+        <p><button class="btn" type="submit">Проверить</button></p>
+      </form>
+      <div id="exam-result" aria-live="polite"></div>`;
+
   function exam(ch, v) {
     const tasks = examTasks(ch.n, v), best = bestOf(ch.n, v);
     const last = ch.topics[ch.topics.length - 1], nextCh = chapters[chapters.indexOf(ch) + 1];
+    test = { n: ch.n, v, tasks, again: { href: `#ekzamen-${ch.n}-${3 - v}`, t: `Вариант ${3 - v}` } };
     return `
       <p class="crumbs"><a href="#">Оглавление</a> · Глава ${ch.n}. ${ch.title}</p>
       <p class="eyebrow">Экзамен по главе ${ch.n}</p>
       <h1>${ch.title}: экзамен</h1>
-      <div class="seg" role="group" aria-label="Вариант">${[1, 2].map(k =>
-        `<a href="#ekzamen-${ch.n}-${k}"${k === v ? ' aria-current="page"' : ''}>Вариант ${k}</a>`).join('')}</div>
+      ${variants(`#ekzamen-${ch.n}-`, v)}
       <p>${tasks.length} ${plural(tasks.length, ['задача', 'задачи', 'задач'])} по всем темам главы, подсказок нет. Реши все задачи и нажми «Проверить». Оценка по числу верных ответов: ${scale(tasks.length)}.${best ? ` Твой лучший результат в этом варианте: ${best.ok} из ${best.n}.` : ''}</p>
-      <form id="exam" data-ch="${ch.n}" data-v="${v}" autocomplete="off">
-        ${tasks.map(examTaskHtml).join('')}
-        <p><button class="btn" type="submit">Проверить</button></p>
-      </form>
-      <div id="exam-result" aria-live="polite"></div>
+      ${testForm(tasks)}
       <nav class="pager" aria-label="Соседние разделы">
         <a class="prev" href="#${last.id}"><small>← Назад</small>${last.num}. ${last.title}</a>
         ${nextCh ? `<a class="next" href="#${nextCh.topics[0].id}"><small>Дальше →</small>Глава ${nextCh.n}. ${nextCh.title}</a>`
-          : `<a class="next" href="#"><small>Это последняя глава</small>К оглавлению</a>`}
+          : FINAL.length ? '<a class="next" href="#itog-1"><small>Дальше →</small>Итоговый тест по всей программе</a>'
+          : '<a class="next" href="#"><small>Это последняя глава</small>К оглавлению</a>'}
       </nav>`;
   }
 
+  // Итоговый тест. Вариант 3 открывается только по скрытому адресу: без переключателя вариантов и навигации,
+  // и запоминается его первая попытка — её увидит родитель на своей странице.
+  function finalPage(v) {
+    const tasks = finalTasks(v), hidden = v === 3, best = hidden ? null : bestOf('itog', v);
+    const lastCh = chapters.filter(ch => EXAMS[ch.n]).pop();
+    test = { n: 'itog', v, tasks, draft: true, first: hidden, again: hidden ? null : { href: `#itog-${3 - v}`, t: `Вариант ${3 - v}` } };
+    return `
+      <p class="crumbs"><a href="#">Оглавление</a> · Итоговый тест</p>
+      <p class="eyebrow">Итоговый тест${hidden ? ' · вариант 3' : ''}</p>
+      <h1>Итоговый тест по всей программе</h1>
+      ${hidden ? '' : variants('#itog-', v)}
+      <p>${tasks.length} ${plural(tasks.length, ['задача', 'задачи', 'задач'])} по всем главам в порядке программы. Подсказок нет, на работу нужно около часа. Реши все задачи и нажми «Проверить». Оценка по числу верных ответов: ${scale(tasks.length)}.${best ? ` Твой лучший результат в этом варианте: ${best.ok} из ${best.n}.` : ''}</p>
+      <p class="aside">Ответы сохраняются в этом браузере, пока ты не нажмёшь «Проверить», поэтому работу можно прервать и закончить позже. Удобнее на бумаге — распечатай задачи, а ответы потом впиши сюда.</p>
+      <p><button type="button" class="btn ghost" data-print>Распечатать</button></p>
+      ${testForm(tasks)}
+      ${hidden ? '' : `<nav class="pager" aria-label="Соседние разделы">
+        ${lastCh ? `<a class="prev" href="#ekzamen-${lastCh.n}-1"><small>← Назад</small>Экзамен по главе ${lastCh.n}</a>` : ''}
+        <a class="next" href="#"><small>Это конец программы</small>К оглавлению</a>
+      </nav>`}
+      ${paper({ title: 'Итоговый тест по всей программе', sub: `Вариант ${v}`, tasks, rules: `${RULES} На работу — около часа.` })}`;
+  }
+
+  // Вариант 3 итогового теста на сайт не подключён: его скрипт загружается, только когда открыт скрытый адрес.
+  let hiddenState = '';
+  function loadHidden() {
+    if (hiddenState === 'failed') return '<p>Не удалось загрузить работу. Проверь подключение к интернету и обнови страницу.</p>';
+    if (!hiddenState) {
+      hiddenState = 'loading';
+      const s = document.createElement('script');
+      s.src = `js/final-parents.js${VER ? '?v=' + VER : ''}`;
+      s.onload = s.onerror = () => { hiddenState = window.FINAL3 ? 'done' : 'failed'; if (current === HIDDEN_FINAL) render(); };
+      document.head.appendChild(s);
+    }
+    return '<p>Загружаю работу…</p>';
+  }
+
+  // Черновик итогового теста: ответы хранятся в этом браузере, пока работу не проверили, но не дольше недели.
+  const draftKey = () => `mvk-draft-${test.n}-${test.v}`;
+  function saveDraft(form) {
+    const a = test.tasks.map((k, i) => answerOf(form, i));
+    try { localStorage.setItem(draftKey(), JSON.stringify({ ver: examVer(test.n), at: Date.now(), a })); } catch (e) { /* ничего */ }
+  }
+  const dropDraft = () => { try { localStorage.removeItem(draftKey()); } catch (e) { /* ничего */ } };
+  function restoreDraft(form) {
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(draftKey())); } catch (e) { /* хранилище недоступно */ }
+    if (!d) return;
+    if (d.ver !== examVer(test.n) || !Array.isArray(d.a) || !(Date.now() - d.at < 7 * 864e5)) { dropDraft(); return; }
+    // У поля ответа value — текст, у группы переключателей value отмечает вариант с таким значением.
+    d.a.forEach((val, i) => { const el = form.elements['q' + i]; if (el && val) el.value = val; });
+  }
+
   const answerOf = (form, i) => String((form.elements['q' + i] || {}).value || '').trim();
+  const topicsOf = k => [].concat(k.t || []).map(id => byId[id]).filter(Boolean);
 
   // Перед проверкой: если есть пустые ответы, сначала спрашиваем.
   function submitExam(form, force) {
-    const empty = examTasks(+form.dataset.ch, +form.dataset.v).map((k, i) => i).filter(i => !answerOf(form, i)).map(i => i + 1);
+    const empty = test.tasks.map((k, i) => i).filter(i => !answerOf(form, i)).map(i => i + 1);
     if (!empty.length || force) return gradeExam(form);
     document.getElementById('exam-result').innerHTML = `<div class="result">
         <p>Нет ответа ${empty.length === 1 ? 'в задаче' : 'в задачах'} ${empty.join(', ')}. Можно вернуться и дорешать или проверить как есть: пустой ответ считается ошибкой.</p>
@@ -173,7 +245,7 @@
   }
 
   function gradeExam(form) {
-    const n = +form.dataset.ch, v = +form.dataset.v, tasks = examTasks(n, v), review = [];
+    const { n, v, tasks } = test, review = [], wrong = [];
     let ok = 0;
     tasks.forEach((k, i) => {
       const box = form.querySelector(`.task[data-i="${i}"]`), fb = box.querySelector('.fb');
@@ -186,23 +258,32 @@
         fb.className = 'fb ok';
         fb.textContent = 'Верно.';
       } else {
-        const t = byId[k.t];
-        if (t && !review.includes(t)) review.push(t);
+        const ts = topicsOf(k);
+        wrong.push(i + 1);
+        ts.forEach(t => { if (!review.includes(t)) review.push(t); });
         box.classList.add('wrong');
         box.querySelector('.k').textContent = '✗';
         fb.className = 'fb no';
-        fb.innerHTML = `${r.msg ? esc(r.msg) + ' ' : ''}Правильный ответ: <b>${fmtAnswer([].concat(k.a)[0])}</b>.${t ? ` Повтори тему ${ref(t)}.` : ''}`;
+        fb.innerHTML = `${r.msg ? esc(r.msg) + ' ' : ''}Правильный ответ: <b>${fmtAnswer([].concat(k.a)[0])}</b>.${ts.length ? ` Повтори ${ts.length > 1 ? 'темы' : 'тему'} ${ts.map(ref).join(' и ')}.` : ''}${k.why ? `<div class="hint">${rich(k.why)}</div>` : ''}`;
       }
     });
     [...form.elements].forEach(el => { el.disabled = true; });
     form.querySelector('[type="submit"]').hidden = true;
     const key = `${n}-${v}`, prev = bestOf(n, v);
-    if (!prev || prev.n !== tasks.length || ok > prev.ok) { progress.exams[key] = { ok, n: tasks.length, ver: examVer(n) }; save(); }
-    const other = 3 - v, res = document.getElementById('exam-result');
+    if (test.first) {
+      // Скрытый вариант: родителю важна первая попытка, следующие только считаются.
+      if (prev) prev.tries = (prev.tries || 1) + 1;
+      else progress.exams[key] = { ok, n: tasks.length, ver: examVer(n), at: Date.now(), wrong, tries: 1 };
+      save();
+    } else if (!prev || prev.n !== tasks.length || ok > prev.ok) { progress.exams[key] = { ok, n: tasks.length, ver: examVer(n) }; save(); }
+    if (test.draft) dropDraft();
+    review.sort((a, b) => topics.indexOf(a) - topics.indexOf(b));
+    const res = document.getElementById('exam-result');
     res.innerHTML = `<div class="result">
         <p class="big"><b>${ok} из ${tasks.length}</b> — оценка «${grade(ok, tasks.length)}»</p>
         <p>${review.length ? `Повтори ${review.length === 1 ? 'тему' : 'темы'}: ${review.map(ref).join(', ')}.` : 'Все задачи решены верно!'}</p>
-        <p class="acts"><button type="button" class="btn ghost" data-retry>Решить заново</button><a class="btn ghost" href="#ekzamen-${n}-${other}">Вариант ${other}</a></p>
+        <p class="acts">${test.again ? `<button type="button" class="btn ghost" data-retry>Решить заново</button><a class="btn ghost" href="${test.again.href}">${test.again.t}</a>`
+          : '<a class="btn ghost" href="#">К оглавлению</a>'}</p>
       </div>`;
     res.scrollIntoView({ block: 'nearest' });
   }
@@ -239,6 +320,7 @@
     const opt = e.target.closest('[data-opt]'), show = e.target.closest('[data-show]');
     if (e.target.closest('[data-retry]')) { render(); return; }
     if (e.target.closest('[data-force]')) { submitExam(document.getElementById('exam'), true); return; }
+    if (e.target.closest('[data-print]')) { window.print(); return; }
     if (opt) { const box = opt.closest('.task'); answer(byId[current], +box.dataset.i, opt.dataset.opt, box); }
     if (show) {
       const task = byId[current].tasks[+show.dataset.show];
@@ -256,16 +338,27 @@
     if (next) next.focus(); else el.form.querySelector('[type="submit"]').click();
   });
 
-  /* ---------- маршруты: #, #shpargalka, #ekzamen-N-V, #id-темы ---------- */
+  // Черновик итогового теста сохраняется при каждом изменении ответа.
+  const keepDraft = e => { const f = e.target.form; if (f && f.id === 'exam' && test && test.draft) saveDraft(f); };
+  app.addEventListener('input', keepDraft);
+  app.addEventListener('change', keepDraft);
+
+  /* ---------- маршруты: #, #shpargalka, #ekzamen-N-V, #itog-V, скрытый #HIDDEN_FINAL, #id-темы ---------- */
   let current = '';
   function render() {
     const id = decodeURIComponent(location.hash.slice(1));
     const m = id.match(/^ekzamen-(\d+)-([12])$/), ch = m && chapters.find(c => c.n === +m[1]);
-    current = id;
+    const f = id.match(/^itog-([12])$/);
+    current = id; test = null;
     if (id === 'shpargalka') app.innerHTML = sheet();
     else if (ch && EXAMS[ch.n]) app.innerHTML = exam(ch, +m[2]);
+    else if (f && FINAL.length) app.innerHTML = finalPage(+f[1]);
+    else if (id === HIDDEN_FINAL) app.innerHTML = window.FINAL3 ? finalPage(3) : loadHidden();
     else if (byId[id]) app.innerHTML = topic(byId[id]);
     else { current = ''; app.innerHTML = home(); }
+    if (test && test.draft) restoreDraft(document.getElementById('exam'));
+    // Страница с листом для печати печатает только его (стили @media print в index.html).
+    document.body.classList.toggle('has-paper', !!app.querySelector('.paper'));
     window.scrollTo(0, 0);
   }
   window.addEventListener('hashchange', render);
