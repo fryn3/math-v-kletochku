@@ -65,7 +65,7 @@ def beat_line(acc, clean, pieces, where):
 
 
 def main(files):
-    acc = st.silero().packages[0].accentor
+    acc = st.accentor()   # restored as the voice restores it: the quantized one reads some homographs otherwise
     total, body = 0, []
     print = lambda *a, **k: body.append(" ".join(map(str, a)))   # the summary goes first, so collect the text
     for f in files:

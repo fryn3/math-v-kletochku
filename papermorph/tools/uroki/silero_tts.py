@@ -96,6 +96,18 @@ def silero():
     return _silero["m"]
 
 
+def accentor():
+    """Silero's accentor as the voice uses it. The model ships its homograph solver quantized, and apply_tts restores
+    the weights (unpack_q_model, once) before it places any stress; called before that, the accentor reads some
+    homographs otherwise (on 2026-11-15, 42 words of the book: «равно́» where the voice says «ра́вно»), so the weights
+    are restored here first, and marked restored so apply_tts does not scale them again."""
+    for package in silero().packages:
+        if not getattr(package, "q_model_unpacked", True):
+            package.unpack_q_model()
+            package.q_model_unpacked = True
+    return silero().packages[0].accentor
+
+
 def vosk_model():
     if "m" not in _vosk:
         from vosk import Model, SetLogLevel
