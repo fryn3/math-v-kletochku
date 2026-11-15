@@ -36,12 +36,13 @@
     "notation": "деление «:», умножение «·», десятичная запятая; смешанное число 3 2/5 — целая часть рядом с дробью; в озвучке все числа словами; «ост.» для остатка; тысячи через неразрывный пробел"
   },
   "voice": {
-    "engine": "edge",
-    "voice": "ru-RU-SvetlanaNeural",
-    "rate": "-4%",
-    "pace": "около 1,7 слова в секунду",
-    "stress": "омографы (чи́сла / числа́, ча́са / часа́ …) задаются кусками в chNN/narration.ru.stress.json; эти шаги тем же голосом озвучивает Azure Speech (papermorph/tools/uroki/azure_tts.py, после tts.py; формы — в content/uroki/ipa.ru.json)",
-    "alternative": "ru-RU-DmitryNeural (проба: papermorph/books/uroki/voices/)"
+    "engine": "silero",
+    "voice": "xenia",
+    "rate": "78%",
+    "model": "Silero TTS v5_6_ru, локально (papermorph/tools/uroki/silero_tts.py); выбран автором на слух 2026-11-15 из пяти проб (books/uroki/review/udareniya/varianty.md); лицензия моделей CC BY-NC-SA 4.0, указана на обложке",
+    "pace": "около 1,7 слова в секунду (книга идёт так же долго, как шла голосом Edge)",
+    "stress": "Silero ставит ударения сам; ошибки и омографы задаются кусками в chNN/narration.ru.stress.json (U+0301 после ударной гласной), silero_tts.py передаёт их как «+»; проверка глазами — silero_stress_text.py",
+    "previous": "ru-RU-SvetlanaNeural (Edge, −4 %) — голос книги до 2026-11-15; ru-RU-DmitryNeural — проба (papermorph/books/uroki/voices/)"
   },
   "pacing": {
     "minutes": [
